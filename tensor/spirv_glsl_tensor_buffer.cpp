@@ -165,12 +165,12 @@ void CompilerTensorAsBuffer::emit_instruction(const Instruction &instruction) {
 
     opcode = get_remapped_spirv_op(opcode);
     switch (opcode) {
-    case spv::OpTensorQuerySizeEXT: {
+    case spv::OpTensorQuerySizeARM: {
         flush_variable_declaration(ops[1]);
         emit_binary_func_op(ops[0], ops[1], ops[2], ops[3], "tensorSizeARM");
         break;
     }
-    case spv::OpTensorReadEXT: {
+    case spv::OpTensorReadARM: {
         flush_variable_declaration(ops[1]);
         emit_uninitialized_temporary_expression(ops[0], ops[1]);
 
@@ -200,7 +200,7 @@ void CompilerTensorAsBuffer::emit_instruction(const Instruction &instruction) {
                   ");");
         break;
     }
-    case spv::OpTensorWriteEXT: {
+    case spv::OpTensorWriteARM: {
         flush_variable_declaration(ops[0]);
 
         const auto &outType = expression_type(ops[2]);

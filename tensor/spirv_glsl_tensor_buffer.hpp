@@ -9,7 +9,6 @@
 #include <map>
 #include <string>
 
-#include <spirv.hpp>
 #include <spirv_glsl.hpp>
 #include <tuple>
 
