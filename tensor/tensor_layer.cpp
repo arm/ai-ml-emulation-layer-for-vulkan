@@ -160,7 +160,9 @@ class TensorLayer : public VulkanLayerImpl {
             {"vkGetPhysicalDeviceFormatProperties2", PFN_vkVoidFunction(vkGetPhysicalDeviceFormatProperties2)},
             {"vkGetPhysicalDeviceFeatures2", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2)},
             {"vkGetPhysicalDeviceFeatures2KHR", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2KHR)},
-            {"vkCreateDevice", PFN_vkVoidFunction(vkCreateDevice)}};
+            {"vkCreateDevice", PFN_vkVoidFunction(vkCreateDevice)},
+            // Device functions
+            {"vkSetDebugUtilsObjectNameEXT", PFN_vkVoidFunction(vkSetDebugUtilsObjectNameEXT)}};
 
         auto it = vtable.find(name);
         if (it != vtable.end()) {
@@ -740,6 +742,25 @@ class TensorLayer : public VulkanLayerImpl {
 
         loadVkStructureList(const_cast<VkDeviceCreateInfo *>(createInfo), originCreateInfoChain);
         return result;
+    }
+
+    static VkResult VKAPI_CALL vkSetDebugUtilsObjectNameEXT(VkDevice device,
+                                                            const VkDebugUtilsObjectNameInfoEXT *pNameInfo) {
+        auto handle = VulkanLayerImpl::getHandle(device);
+        switch (pNameInfo->objectType) {
+        case VK_OBJECT_TYPE_TENSOR_ARM: {
+            auto tensorARM = reinterpret_cast<TensorARM *>(pNameInfo->objectHandle);
+            VkDebugUtilsObjectNameInfoEXT newNameInfo{
+                VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT, pNameInfo->pNext, VK_OBJECT_TYPE_BUFFER,
+                reinterpret_cast<uint64_t>(tensorARM->getTensorBuffer()), pNameInfo->pObjectName};
+            return handle->loader->vkSetDebugUtilsObjectNameEXT(device, &newNameInfo);
+        } break;
+        case VK_OBJECT_TYPE_TENSOR_VIEW_ARM:
+            break;
+        default:
+            return handle->loader->vkSetDebugUtilsObjectNameEXT(device, pNameInfo);
+        }
+        return VK_SUCCESS;
     }
 
     static std::shared_ptr<DeviceMemory> getHandle(const VkDeviceMemory handle) {

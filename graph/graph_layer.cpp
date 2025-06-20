@@ -232,6 +232,9 @@ class GraphLayer : public VulkanLayerImpl {
              PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyProperties2)},
             {"vkGetPhysicalDeviceFeatures2", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2)},
             {"vkCreateDevice", PFN_vkVoidFunction(vkCreateDevice)},
+
+            // Device functions
+            {"vkSetDebugUtilsObjectNameEXT", PFN_vkVoidFunction(vkSetDebugUtilsObjectNameEXT)},
         };
 
         auto it = vtable.find(name);
@@ -421,7 +424,8 @@ class GraphLayer : public VulkanLayerImpl {
         return VK_SUCCESS;
     }
 
-    static void vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice, VkPhysicalDeviceFeatures2 *pFeatures) {
+    static void VKAPI_CALL vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
+                                                        VkPhysicalDeviceFeatures2 *pFeatures) {
         auto handle = VulkanLayerImpl::getHandle(physicalDevice);
         auto pDataGraphFeatures =
             const_cast<VkPhysicalDeviceDataGraphFeaturesARM *>(findType<VkPhysicalDeviceDataGraphFeaturesARM>(
@@ -898,6 +902,33 @@ class GraphLayer : public VulkanLayerImpl {
             };
             handle->loader->vkCmdPipelineBarrier2(commandBuffer, &newDependencyInfo);
         }
+    }
+
+    /*******************************************************************************
+     * Debugging
+     *******************************************************************************/
+
+    static VkResult VKAPI_CALL vkSetDebugUtilsObjectNameEXT(VkDevice device,
+                                                            const VkDebugUtilsObjectNameInfoEXT *pNameInfo) {
+        auto handle = VulkanLayerImpl::getHandle(device);
+
+        switch (pNameInfo->objectType) {
+        case VK_OBJECT_TYPE_PIPELINE: {
+            auto pipeline = reinterpret_cast<VkPipeline>(pNameInfo->objectHandle);
+            if (dataGraphPipelineMap.find(pipeline) != dataGraphPipelineMap.end()) {
+                return VK_SUCCESS;
+            }
+        } break;
+        case VK_OBJECT_TYPE_SHADER_MODULE: {
+            auto shaderModule = reinterpret_cast<VkShaderModule>(pNameInfo->objectHandle);
+            if (shaderModuleMap.find(shaderModule) != shaderModuleMap.end()) {
+                return VK_SUCCESS;
+            }
+        } break;
+        default:
+            break;
+        }
+        return handle->physicalDevice->instance->loader->vkSetDebugUtilsObjectNameEXT(device, pNameInfo);
     }
 
     /**************************************************************************
