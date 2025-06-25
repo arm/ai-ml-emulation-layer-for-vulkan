@@ -209,6 +209,7 @@ constexpr std::array<const VkExtensionProperties, 1> extensions{
 constexpr std::array<const VkExtensionProperties, 1> requiredExtensions = {
     VkExtensionProperties{VK_ARM_TENSORS_EXTENSION_NAME, VK_ARM_TENSORS_SPEC_VERSION},
 };
+
 constexpr VkLayerProperties layerProperties = {
     "VK_LAYER_ML_Graph_Emulation",
     VK_MAKE_VERSION(1, 3, 0),
