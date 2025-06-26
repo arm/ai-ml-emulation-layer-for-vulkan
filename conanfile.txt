@@ -1,0 +1,15 @@
+#
+# SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+#
+
+# This file serves only as a manifest for listing project dependencies.
+# It is not intended for use in building or packaging with Conan.
+
+[requires]
+glslang/1.4.313.0
+gtest/1.16.0
+spirv-headers/1.4.313.0
+spirv-cross/1.4.313.0
+spirv-tools/1.4.313.0
+vulkan-headers/1.4.313.0
