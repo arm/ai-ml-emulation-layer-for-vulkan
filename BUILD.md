@@ -97,7 +97,7 @@ with is:
 To build the Emulation Layer, run:
 
 ```powershell
-$env:REPO="path\to\ngp\repo"
+$env:REPO="path\to\repo"
 cmake -B build                                                 `
    -DGLSLANG_PATH="$env:REPO\dependencies\glslang"             `
    -DSPIRV_CROSS_PATH="$env:REPO\dependencies\SPIRV-Cross"     `
