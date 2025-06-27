@@ -32,6 +32,7 @@ option(VMEL_TESTS_ENABLE "Enable tests" ON)
 set(VMEL_GCC_SANITIZERS "" CACHE STRING "Sanitizers")
 option(VMEL_ENABLE_LINT "Enable linting using cppcheck" OFF)
 option(VMEL_DISABLE_PRECOMPILE_SHADERS "Disable precompilation of SPIR-V shaders" OFF)
+option(VMEL_BUILD_DOCS "Build documentation" OFF)
 
 ###############################################################################
 # Vulkan and SPIR-V dependencies
@@ -122,6 +123,7 @@ mlsdk_package(PACKAGE_NAME ${VMEL_PACKAGE_NAME}
 ###############################################################################
 # Documentation
 ###############################################################################
-if(ML_SDK_BUILD_DOCS)
+if(ML_SDK_BUILD_DOCS OR VMEL_BUILD_DOCS)
     include(docs/docs.cmake)
 endif()
+unset(VMEL_BUILD_DOCS CACHE)

@@ -10,7 +10,7 @@ enabling ML workloads to be executed on any Vulkan® Compute capable device. The
 Emulation Layer is split into separate graph and tensor layers that are inserted
 by the Vulkan® Loader.
 
-## Building the Emulation Layer from source
+### Building the Emulation Layer from source
 
 The build system must have:
 
@@ -46,7 +46,7 @@ $ cmake -B build                                               \
 $ cmake --build build
 ```
 
-To build the documentation, add the `-DML_SDK_BUILD_DOCS` build flag.
+To build the documentation, add the `-DVMEL_BUILD_DOCS` build flag.
 
 To install the Emulation Layer into a `deploy` folder, run:
 
