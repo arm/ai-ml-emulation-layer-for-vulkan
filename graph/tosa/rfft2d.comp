@@ -20,8 +20,11 @@ void main() {
     uint H = tensorSizeARM(inputData, 1);
     uint W = tensorSizeARM(inputData, 2);
 
-    double sumReal = 0.0;
-    double sumImag = 0.0;
+    // Use Kahan summation to counteract cumulative errors in float summation
+    float sumReal = 0.0;
+    float sumImag = 0.0;
+    precise float errorReal = 0.0;
+    precise float errorImag = 0.0;
 
     bool skipImag = false;
     if (oy == 0 && (ox == 0 || ox == (W / 2))) {
@@ -36,17 +39,34 @@ void main() {
 
             float valueReal[4];
             tensorReadARM(inputData, uint[](on, iy, ix), valueReal);
-            dvec4 valueRealVec = dvec4(valueReal[0], valueReal[1], valueReal[2], valueReal[3]);
+            vec4 valueRealVec = vec4(valueReal[0], valueReal[1], valueReal[2], valueReal[3]);
 
-            dvec4 angles = 2.0 * PI * (double(iy * oy) / H + ixs * ox / W);
-            sumReal += dot(valueRealVec, cos(vec4(angles)));
+            // Angles are fractional multiples of 2 pi with a fixed denominator.
+            // Taking the numerators modulo the denominator maps the fractions to the range [0, 1),
+            // giving angles in [0, 2 pi).
+            // Mathematically this gives the same result for sin and cos but numerically it is
+            // more accurate since we avoid large angles.
+            vec4 angles = 2.0 * PI * mod(iy * oy * W + ixs * ox * H, W * H) / (W * H);
 
-            if (!skipImag) {
-                sumImag += -dot(valueRealVec, sin(vec4(angles)));
+            // Compute next term in the sum and subtract the accumulated error from it
+            float termReal = dot(valueRealVec, cos(angles)) - errorReal;
+            // Compute new sum
+            precise float sumNewReal = sumReal + termReal;
+            // Compute new error; algebraically this is always 0
+            errorReal = (sumNewReal - sumReal) - termReal;
+            // Update sum
+            sumReal = sumNewReal;
+
+            if (!skipImag){
+                float termImag = dot(valueRealVec, -sin(angles)) - errorImag;
+                precise float sumNewImag = sumImag + termImag;
+                errorImag = (sumNewImag - sumImag) - termImag;
+                sumImag = sumNewImag;
             }
         }
     }
 
-    tensorWriteARM(outputRealData, index, float(sumReal));
-    tensorWriteARM(outputImagData, index, float(sumImag));
+    // Write output
+    tensorWriteARM(outputRealData, index, sumReal);
+    tensorWriteARM(outputImagData, index, sumImag);
 }
