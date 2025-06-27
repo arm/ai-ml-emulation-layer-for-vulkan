@@ -16,4 +16,3 @@ ML Emulation Layer for Vulkan®
    license.rst
    contributing.rst
    security.rst
-   puml.rst
