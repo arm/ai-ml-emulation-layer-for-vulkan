@@ -18,6 +18,7 @@
 #include "tensor_view.hpp"
 #include <limits>
 #include <memory>
+#include <variant>
 
 using namespace mlsdk::el::log;
 
@@ -84,6 +85,51 @@ inline std::size_t spirvHash(const std::vector<uint32_t> &spirv) {
  * Layer
  *******************************************************************************/
 
+// This class manages aliasing of images and tensors to device memory and offsets.
+class MemoryAliasing {
+    using Resource = std::variant<VkImage, VkTensorARM>;
+    struct DeviceMemoryAndOffset {
+        VkDeviceMemory deviceMemory;
+        VkDeviceSize offset;
+        bool operator==(const DeviceMemoryAndOffset &other) const noexcept {
+            return deviceMemory == other.deviceMemory && offset == other.offset;
+        }
+    };
+
+    std::map<Resource, DeviceMemoryAndOffset> resourceMap;
+
+  public:
+    template <typename T>
+    void addAliasingResource(const VkDeviceMemory &memory, const VkDeviceSize &offset, T resource) {
+        resourceMap[resource] = {memory, offset};
+    }
+
+    template <typename T>
+    std::vector<T> getAliasingResources(const VkDeviceMemory &memory, const VkDeviceSize &offset) const {
+        std::vector<T> resources;
+        for (const auto &[resource, memAndOffset] : resourceMap) {
+            if (std::holds_alternative<T>(resource) && memAndOffset == DeviceMemoryAndOffset{memory, offset}) {
+                resources.push_back(std::get<T>(resource));
+            }
+        }
+        return resources;
+    }
+
+    template <typename T> void removeAliasingResource(T resource) { resourceMap.erase(Resource(resource)); }
+
+    void removeAliasingMemory(const VkDeviceMemory &mem) {
+        std::vector<Resource> resourcesToRemove;
+        for (const auto &[resource, memory] : resourceMap) {
+            if (memory.deviceMemory == mem) {
+                resourcesToRemove.push_back(resource);
+            }
+        }
+        for (auto resource : resourcesToRemove) {
+            resourceMap.erase(resource);
+        }
+    }
+};
+
 constexpr std::array<const VkExtensionProperties, 1> extensions = {
     VkExtensionProperties{VK_ARM_TENSORS_EXTENSION_NAME, VK_ARM_TENSORS_SPEC_VERSION},
 };
@@ -139,6 +185,7 @@ class TensorLayer : public VulkanLayerImpl {
             {"vkCreateImage", PFN_vkVoidFunction(vkCreateImage)},
             {"vkBindImageMemory", PFN_vkVoidFunction(vkBindImageMemory)},
             {"vkBindImageMemory2", PFN_vkVoidFunction(vkBindImageMemory2)},
+            {"vkDestroyImage", PFN_vkVoidFunction(vkDestroyImage)},
 
             // Memory
             {"vkAllocateMemory", PFN_vkVoidFunction(vkAllocateMemory)},
@@ -189,6 +236,10 @@ class TensorLayer : public VulkanLayerImpl {
         auto tensorARM = reinterpret_cast<TensorARM *>(tensor);
         tensorARM->destroy(*VulkanLayerImpl::getHandle(device), allocator);
         destroyObject(allocator, tensorARM);
+        {
+            scopedMutex l(globalMutex);
+            memoryAliasing.removeAliasingResource(tensor);
+        }
     }
 
     static VkResult VKAPI_CALL vkCreateTensorViewARM(VkDevice device, const VkTensorViewCreateInfoARM *createInfo,
@@ -226,11 +277,15 @@ class TensorLayer : public VulkanLayerImpl {
             result = tensor->bindTensorMemory(*VulkanLayerImpl::getHandle(device), bindInfos[i].memory,
                                               bindInfos[i].memoryOffset);
             if (result == VK_SUCCESS) {
-                auto deviceMemory = getHandle(bindInfos[i].memory);
-                deviceMemory->boundTensor = bindInfos[i].tensor;
-                if (deviceMemory->boundImage != VK_NULL_HANDLE) {
-                    // update tensor info if tensor aliased with an image
-                    tensor->updateAliasedTensorInfo(*VulkanLayerImpl::getHandle(device), deviceMemory->boundImage);
+                {
+                    scopedMutex l(globalMutex);
+                    memoryAliasing.addAliasingResource(bindInfos[i].memory, bindInfos[i].memoryOffset,
+                                                       bindInfos[i].tensor);
+                    auto images =
+                        memoryAliasing.getAliasingResources<VkImage>(bindInfos[i].memory, bindInfos[i].memoryOffset);
+                    if (images.size() > 0) {
+                        tensor->updateAliasedTensorInfo(*VulkanLayerImpl::getHandle(device), images[0]);
+                    }
                 }
             } else {
                 break;
@@ -384,11 +439,10 @@ class TensorLayer : public VulkanLayerImpl {
                 shaderModulepCode                            // code
             };
             auto &shaderStageCreateInfoNew = createInfosNew[i].stage;
-            // The incoming shader is provided via a "const *" pNext chain. To replace the old shader with the new one,
-            // we would have to copy all structs in the chain to work around pNext being immutable.
-            // Instead, we explicitly call vkCreateShaderModule and set ".module" in the copied
-            // VkPipelineShaderStageCreateInfo, as it will take preference over the VkShaderModuleCreateInfo in the
-            // pNext chain.
+            // The incoming shader is provided via a "const *" pNext chain. To replace the old shader with the new
+            // one, we would have to copy all structs in the chain to work around pNext being immutable. Instead, we
+            // explicitly call vkCreateShaderModule and set ".module" in the copied VkPipelineShaderStageCreateInfo,
+            // as it will take preference over the VkShaderModuleCreateInfo in the pNext chain.
             VkShaderModule shaderModule;
             handle->loader->vkCreateShaderModule(device, &shaderModuleCreateInfo, pAllocator, &shaderModule);
             shaderCache[pShaderCreateInfo] = shaderModule;
@@ -595,12 +649,14 @@ class TensorLayer : public VulkanLayerImpl {
         auto handle = VulkanLayerImpl::getHandle(device);
         auto result = handle->loader->vkBindImageMemory(device, image, memory, memoryOffset);
         if (result == VK_SUCCESS) {
-            auto deviceMemory = getHandle(memory);
-            deviceMemory->boundImage = image;
-            if (deviceMemory->boundTensor != VK_NULL_HANDLE) {
-                // update tensor info if tensor is aliased with image
-                auto tensor = reinterpret_cast<TensorARM *>(deviceMemory->boundTensor);
-                tensor->updateAliasedTensorInfo(*handle, image);
+            {
+                scopedMutex l(globalMutex);
+                memoryAliasing.addAliasingResource(memory, memoryOffset, image);
+                auto tensors = memoryAliasing.getAliasingResources<VkTensorARM>(memory, memoryOffset);
+                for (auto &&tensor : tensors) {
+                    TensorARM *underlyingTensor = reinterpret_cast<TensorARM *>(tensor);
+                    underlyingTensor->updateAliasedTensorInfo(*VulkanLayerImpl::getHandle(device), image);
+                }
             }
         }
         return result;
@@ -612,17 +668,31 @@ class TensorLayer : public VulkanLayerImpl {
         auto result = handle->loader->vkBindImageMemory2(device, bindInfoCount, pBindInfos);
         if (result == VK_SUCCESS) {
             for (uint32_t i = 0; i < bindInfoCount; i++) {
-                auto deviceMemory = getHandle(pBindInfos[i].memory);
-                deviceMemory->boundImage = pBindInfos[i].image;
-                if (deviceMemory->boundTensor != VK_NULL_HANDLE) {
-                    // update tensor info if tensor is aliased with image
-                    auto tensor = reinterpret_cast<TensorARM *>(deviceMemory->boundTensor);
-                    tensor->updateAliasedTensorInfo(*handle, deviceMemory->boundImage);
+                {
+                    scopedMutex l(globalMutex);
+                    memoryAliasing.addAliasingResource(pBindInfos[i].memory, pBindInfos[i].memoryOffset,
+                                                       pBindInfos[i].image);
+                    auto tensors = memoryAliasing.getAliasingResources<VkTensorARM>(pBindInfos[i].memory,
+                                                                                    pBindInfos[i].memoryOffset);
+                    for (auto &&tensor : tensors) {
+                        TensorARM *underlyingTensor = reinterpret_cast<TensorARM *>(tensor);
+                        underlyingTensor->updateAliasedTensorInfo(*VulkanLayerImpl::getHandle(device),
+                                                                  pBindInfos[i].image);
+                    }
                 }
             }
         }
 
         return result;
+    }
+
+    static void vkDestroyImage(VkDevice device, VkImage image, const VkAllocationCallbacks *pAllocator) {
+        auto handle = VulkanLayerImpl::getHandle(device);
+        handle->loader->vkDestroyImage(device, image, pAllocator);
+        {
+            scopedMutex l(globalMutex);
+            memoryAliasing.removeAliasingResource(image);
+        }
     }
 
     static VkResult vkAllocateMemory(VkDevice device, const VkMemoryAllocateInfo *pAllocateInfo,
@@ -644,17 +714,13 @@ class TensorLayer : public VulkanLayerImpl {
             pAllocateInfo->memoryTypeIndex,
         };
         auto result = handle->loader->vkAllocateMemory(device, &newAllocateInfo, pAllocator, pMemory);
-        if (result == VK_SUCCESS) {
-            scopedMutex l(globalMutex);
-            deviceMemoryMap[*pMemory] = std::make_shared<DeviceMemory>();
-        }
         return result;
     }
 
     static void vkFreeMemory(VkDevice device, VkDeviceMemory memory, const VkAllocationCallbacks *pAllocator) {
         {
             scopedMutex l(globalMutex);
-            deviceMemoryMap.erase(memory);
+            memoryAliasing.removeAliasingMemory(memory);
         }
         auto handle = VulkanLayerImpl::getHandle(device);
         return handle->loader->vkFreeMemory(device, memory, pAllocator);
@@ -763,13 +829,9 @@ class TensorLayer : public VulkanLayerImpl {
         return VK_SUCCESS;
     }
 
-    static std::shared_ptr<DeviceMemory> getHandle(const VkDeviceMemory handle) {
-        scopedMutex l(globalMutex);
-        return deviceMemoryMap[handle];
-    }
-
     static inline std::unordered_map<std::size_t, std::vector<uint32_t>> spirvCache;
-    static inline std::unordered_map<VkDeviceMemory, std::shared_ptr<DeviceMemory>> deviceMemoryMap;
+
+    static inline MemoryAliasing memoryAliasing;
 };
 } // namespace mlsdk::el::layer
 
