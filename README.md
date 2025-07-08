@@ -172,7 +172,7 @@ $env:VMEL_GRAPH_SEVERITY="debug"
 $env:VMEL_TENSOR_SEVERITY="info"
 ```
 
-### Building for Android
+### Building for Android (Experimental)
 
 The Android NDK toolset is required to build the Emulation layer for an Android
 device. The Android device must have Vulkan® API 1.3 support.
