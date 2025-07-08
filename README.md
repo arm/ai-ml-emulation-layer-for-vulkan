@@ -31,7 +31,7 @@ For the preferred dependency versions see the manifest file.
 ### Building for Linux
 
 Building the code requires CMake. Also required are Vulkan® and SPIR-V™
-dependencies including the Arm® Vulkan® ML extensions.
+dependencies including the ML extensions for Vulkan®.
 
 To build the Emulation Layer, run:
 
