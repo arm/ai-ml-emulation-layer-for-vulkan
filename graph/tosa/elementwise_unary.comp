@@ -131,6 +131,17 @@ float erf(float x) {
     return s * prod;
 }
 
+float tanh_clamped(float x)
+{
+    if(x > 10.0){
+        return 1.0;
+    }
+    if(x < -10.0){
+        return -1.0;
+    }
+    return tanh(x);
+}
+
 void main() {
     uint[RANK] index;
     getIndex(outputData, index);

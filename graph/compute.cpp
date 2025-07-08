@@ -2814,8 +2814,8 @@ void GraphPipeline::makeTable(const std::shared_ptr<TensorDescriptor> &input,
 
 void GraphPipeline::makeTanh(const std::shared_ptr<TensorDescriptor> &input1,
                              const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline =
-        std::make_shared<ElementwiseUnary>(loader, device, pipelineCache, input1, output, debugName, "tanh(value1)");
+    auto pipeline = std::make_shared<ElementwiseUnary>(loader, device, pipelineCache, input1, output, debugName,
+                                                       "tanh_clamped(value1)");
     pipelines.emplace_back(pipeline);
 }
 

@@ -265,7 +265,7 @@ mlel_spv_elementwise(elementwise_binary greater_equal "value1 >= value2" int flo
 # Activation functions
 mlel_spv_elementwise(elementwise_unary erf "erf(value1)" float16_t float)
 mlel_spv_elementwise(elementwise_unary sigmoid "1.0 / (1.0 + exp(-value1))" float16_t float)
-mlel_spv_elementwise(elementwise_unary tanh "tanh(value1)" float16_t float)
+mlel_spv_elementwise(elementwise_unary tanh "tanh_clamped(value1)" float16_t float)
 
 # Reduce
 macro(mlel_spv_reduce NAME INIT OPERATION TYPES)
