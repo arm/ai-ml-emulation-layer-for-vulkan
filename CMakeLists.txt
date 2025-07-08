@@ -23,10 +23,14 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 ###############################################################################
 # Options for ML Emulation Layer for Vulkan
 ###############################################################################
-
-set(VMEL_PACKAGE_NAME ${PROJECT_NAME})
-set(VMEL_NAMESPACE ${PROJECT_NAME})
-set(CPACK_PACKAGE_NAME "ml-emulation-layer")
+if(ML_SDK_GENERATE_CPACK)
+    set(ML_SDK_EL_PACKAGE_NAME "ml-sdk")
+    set(ML_SDK_EL_NAMESPACE "ml-sdk")
+else()
+    set(ML_SDK_EL_PACKAGE_NAME ${PROJECT_NAME})
+    set(ML_SDK_EL_NAMESPACE ${PROJECT_NAME})
+    set(CPACK_PACKAGE_NAME "ml-emulation-layer")
+endif()
 
 option(VMEL_TESTS_ENABLE "Enable tests" ON)
 set(VMEL_GCC_SANITIZERS "" CACHE STRING "Sanitizers")
@@ -114,10 +118,11 @@ endif()
 ###############################################################################
 
 include(package)
-
-mlsdk_package(PACKAGE_NAME ${VMEL_PACKAGE_NAME}
-    NAMESPACE ${VMEL_NAMESPACE}
-    LICENSES "${CMAKE_CURRENT_LIST_DIR}/LICENSES/Apache-2.0.txt")
+if(NOT ML_SDK_GENERATE_CPACK)
+    mlsdk_package(PACKAGE_NAME ${ML_SDK_EL_PACKAGE_NAME}
+        NAMESPACE ${ML_SDK_EL_NAMESPACE}
+        LICENSES "${CMAKE_CURRENT_LIST_DIR}/LICENSES/Apache-2.0.txt")
+endif()
 
 ###############################################################################
 # Documentation

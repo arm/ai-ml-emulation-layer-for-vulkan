@@ -10,7 +10,7 @@ add_subdirectory(tosa)
 
 add_library(VkLayer_Graph SHARED)
 
-add_library(${VMEL_NAMESPACE}::VkLayer_Graph ALIAS VkLayer_Graph)
+add_library(${ML_SDK_EL_NAMESPACE}::VkLayer_Graph ALIAS VkLayer_Graph)
 
 target_compile_options(VkLayer_Graph PRIVATE ${VMEL_COMPILE_OPTIONS})
 
@@ -38,7 +38,7 @@ target_link_libraries(VkLayer_Graph PRIVATE
 target_include_directories(VkLayer_Graph PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR})
 
-install(TARGETS VkLayer_Graph EXPORT ${VMEL_PACKAGE_NAME}Config)
+install(TARGETS VkLayer_Graph EXPORT ${ML_SDK_EL_PACKAGE_NAME}Config)
 
 # Generate VkLayer_Graph.json
 set(GRAPH_LIBRARY_PATH $<TARGET_FILE_NAME:VkLayer_Graph>)

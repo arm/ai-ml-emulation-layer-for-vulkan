@@ -4,7 +4,7 @@
 
 add_library(VkLayer_Tensor SHARED)
 
-add_library(${VMEL_NAMESPACE}::VkLayer_Tensor ALIAS VkLayer_Tensor)
+add_library(${ML_SDK_EL_NAMESPACE}::VkLayer_Tensor ALIAS VkLayer_Tensor)
 
 target_compile_options(VkLayer_Tensor PRIVATE ${VMEL_COMPILE_OPTIONS})
 
@@ -22,7 +22,7 @@ target_link_libraries(VkLayer_Tensor PRIVATE
     spirv-cross-core
     spirv-cross-glsl)
 
-install(TARGETS VkLayer_Tensor EXPORT ${VMEL_PACKAGE_NAME}Config)
+install(TARGETS VkLayer_Tensor EXPORT ${ML_SDK_EL_PACKAGE_NAME}Config)
 
 # Generate VkLayer_Graph.json
 set(TENSOR_LIBRARY_PATH $<TARGET_FILE_NAME:VkLayer_Tensor>)
