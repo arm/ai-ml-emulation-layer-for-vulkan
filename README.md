@@ -92,7 +92,7 @@ Common severity for both layers can be set using the following command:
 export VMEL_COMMON_SEVERITY=debug
 ```
 
-## Building for Windows®
+### Building for Windows®
 
 To build on Windows®, the machine must have a Vulkan® ICD and Vulkan® Loader
 installed. Vulkan® API 1.3 must also be supported.
