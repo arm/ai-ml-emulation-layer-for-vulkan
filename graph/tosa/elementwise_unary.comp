@@ -142,6 +142,10 @@ float tanh_clamped(float x)
     return tanh(x);
 }
 
+float log_guarded(float x) {
+    return x < 0.0 ? NAN : log(x);
+}
+
 void main() {
     uint[RANK] index;
     getIndex(outputData, index);
