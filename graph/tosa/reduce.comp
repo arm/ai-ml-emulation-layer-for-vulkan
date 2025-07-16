@@ -40,7 +40,7 @@ void main() {
                 // Ignore value and continue
                 continue;
             }
-            else {
+            if (pushConstants.nanMode == NAN_MODE_PROPAGATE) {
                 // If any value is NaN, then the result must be NaN
                 result = value;
                 break;
