@@ -915,12 +915,14 @@ class GraphLayer : public VulkanLayerImpl {
         switch (pNameInfo->objectType) {
         case VK_OBJECT_TYPE_PIPELINE: {
             auto pipeline = reinterpret_cast<VkPipeline>(pNameInfo->objectHandle);
+            scopedMutex l(globalMutex);
             if (dataGraphPipelineMap.find(pipeline) != dataGraphPipelineMap.end()) {
                 return VK_SUCCESS;
             }
         } break;
         case VK_OBJECT_TYPE_SHADER_MODULE: {
             auto shaderModule = reinterpret_cast<VkShaderModule>(pNameInfo->objectHandle);
+            scopedMutex l(globalMutex);
             if (shaderModuleMap.find(shaderModule) != shaderModuleMap.end()) {
                 return VK_SUCCESS;
             }

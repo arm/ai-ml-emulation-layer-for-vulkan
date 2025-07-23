@@ -233,13 +233,13 @@ class TensorLayer : public VulkanLayerImpl {
 
     static void VKAPI_CALL vkDestroyTensorARM(VkDevice device, VkTensorARM tensor,
                                               const VkAllocationCallbacks *allocator) {
-        auto tensorARM = reinterpret_cast<TensorARM *>(tensor);
-        tensorARM->destroy(*VulkanLayerImpl::getHandle(device), allocator);
-        destroyObject(allocator, tensorARM);
         {
             scopedMutex l(globalMutex);
             memoryAliasing.removeAliasingResource(tensor);
         }
+        auto tensorARM = reinterpret_cast<TensorARM *>(tensor);
+        tensorARM->destroy(*VulkanLayerImpl::getHandle(device), allocator);
+        destroyObject(allocator, tensorARM);
     }
 
     static VkResult VKAPI_CALL vkCreateTensorViewARM(VkDevice device, const VkTensorViewCreateInfoARM *createInfo,
