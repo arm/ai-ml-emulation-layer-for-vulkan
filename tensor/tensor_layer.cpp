@@ -147,7 +147,7 @@ using VulkanLayerImpl =
 class TensorLayer : public VulkanLayerImpl {
   public:
     static PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char *name) {
-        static std::map<std::string, PFN_vkVoidFunction> vtable = {
+        static const vTable vtable = {
             // Device functions
             {"vkGetDeviceProcAddr", PFN_vkVoidFunction(vkGetDeviceProcAddr)},
 
@@ -200,7 +200,7 @@ class TensorLayer : public VulkanLayerImpl {
     }
 
     static PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char *name) {
-        static std::map<std::string, PFN_vkVoidFunction> vtable = {
+        static const vTable vtable = {
             {"vkGetInstanceProcAddr", PFN_vkVoidFunction(vkGetInstanceProcAddr)},
             // PhysicalDevice functions
             {"vkGetPhysicalDeviceProperties2", PFN_vkVoidFunction(vkGetPhysicalDeviceProperties2)},

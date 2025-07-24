@@ -222,7 +222,7 @@ using VulkanLayerImpl = VulkanLayer<layerProperties, extensions, requiredExtensi
 class GraphLayer : public VulkanLayerImpl {
   public:
     static PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char *name) {
-        static std::map<std::string, PFN_vkVoidFunction> vtable = {
+        static const vTable vtable = {
             // Instance functions
             {"vkGetInstanceProcAddr", PFN_vkVoidFunction(vkGetInstanceProcAddr)},
 
@@ -246,7 +246,7 @@ class GraphLayer : public VulkanLayerImpl {
     }
 
     static PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char *name) {
-        static std::map<std::string, PFN_vkVoidFunction> vtable = {
+        static const vTable vtable = {
             // Device functions
             {"vkGetDeviceProcAddr", PFN_vkVoidFunction(vkGetDeviceProcAddr)},
 

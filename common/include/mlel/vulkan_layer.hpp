@@ -384,12 +384,15 @@ class VulkanLayer {
   public:
     VulkanLayer() = delete;
 
+    // Enable heterogeneous lookup, e.g. const char*
+    using vTable = std::map<std::string, PFN_vkVoidFunction, std::less<>>;
+
     /*******************************************************************************
      * GetProcAddress
      *******************************************************************************/
 
     static PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char *name) {
-        static std::map<std::string, PFN_vkVoidFunction> vtable = {
+        static const vTable vtable = {
             // Instance functions
             {"vkGetInstanceProcAddr", PFN_vkVoidFunction(vkGetInstanceProcAddr)},
             {"vkCreateInstance", PFN_vkVoidFunction(vkCreateInstance)},
@@ -415,7 +418,7 @@ class VulkanLayer {
     }
 
     static PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char *name) {
-        static std::map<std::string, PFN_vkVoidFunction> vtable = {
+        static const vTable vtable = {
             // Device functions
             {"vkGetDeviceProcAddr", PFN_vkVoidFunction(vkGetDeviceProcAddr)},
             {"vkDestroyDevice", PFN_vkVoidFunction(vkDestroyDevice)},
