@@ -237,9 +237,11 @@ class TensorLayer : public VulkanLayerImpl {
             scopedMutex l(globalMutex);
             memoryAliasing.removeAliasingResource(tensor);
         }
-        auto tensorARM = reinterpret_cast<TensorARM *>(tensor);
-        tensorARM->destroy(*VulkanLayerImpl::getHandle(device), allocator);
-        destroyObject(allocator, tensorARM);
+        if (tensor) {
+            auto tensorARM = reinterpret_cast<TensorARM *>(tensor);
+            tensorARM->destroy(*VulkanLayerImpl::getHandle(device), allocator);
+            destroyObject(allocator, tensorARM);
+        }
     }
 
     static VkResult VKAPI_CALL vkCreateTensorViewARM(VkDevice device, const VkTensorViewCreateInfoARM *createInfo,
@@ -257,9 +259,11 @@ class TensorLayer : public VulkanLayerImpl {
 
     static void VKAPI_CALL vkDestroyTensorViewARM(VkDevice device, VkTensorViewARM tensorView,
                                                   const VkAllocationCallbacks *allocator) {
-        auto tensorViewARM = reinterpret_cast<TensorViewARM *>(tensorView);
-        tensorViewARM->destroy(*VulkanLayerImpl::getHandle(device), allocator);
-        destroyObject(allocator, tensorViewARM);
+        if (tensorView) {
+            auto tensorViewARM = reinterpret_cast<TensorViewARM *>(tensorView);
+            tensorViewARM->destroy(*VulkanLayerImpl::getHandle(device), allocator);
+            destroyObject(allocator, tensorViewARM);
+        }
     }
 
     static void VKAPI_CALL vkGetTensorMemoryRequirementsARM(VkDevice device,
@@ -271,21 +275,18 @@ class TensorLayer : public VulkanLayerImpl {
 
     static VkResult VKAPI_CALL vkBindTensorMemoryARM(VkDevice device, uint32_t bindInfoCount,
                                                      const VkBindTensorMemoryInfoARM *bindInfos) {
+        auto handle = VulkanLayerImpl::getHandle(device);
         VkResult result = VK_SUCCESS;
         for (uint32_t i = 0; i < bindInfoCount; i++) {
             auto tensor = reinterpret_cast<TensorARM *>(bindInfos[i].tensor);
-            result = tensor->bindTensorMemory(*VulkanLayerImpl::getHandle(device), bindInfos[i].memory,
-                                              bindInfos[i].memoryOffset);
+            result = tensor->bindTensorMemory(*handle, bindInfos[i].memory, bindInfos[i].memoryOffset);
             if (result == VK_SUCCESS) {
-                {
-                    scopedMutex l(globalMutex);
-                    memoryAliasing.addAliasingResource(bindInfos[i].memory, bindInfos[i].memoryOffset,
-                                                       bindInfos[i].tensor);
-                    auto images =
-                        memoryAliasing.getAliasingResources<VkImage>(bindInfos[i].memory, bindInfos[i].memoryOffset);
-                    if (images.size() > 0) {
-                        tensor->updateAliasedTensorInfo(*VulkanLayerImpl::getHandle(device), images[0]);
-                    }
+                scopedMutex l(globalMutex);
+                memoryAliasing.addAliasingResource(bindInfos[i].memory, bindInfos[i].memoryOffset, bindInfos[i].tensor);
+                auto images =
+                    memoryAliasing.getAliasingResources<VkImage>(bindInfos[i].memory, bindInfos[i].memoryOffset);
+                if (!images.empty()) {
+                    tensor->updateAliasedTensorInfo(*handle, images[0]);
                 }
             } else {
                 break;
@@ -649,14 +650,12 @@ class TensorLayer : public VulkanLayerImpl {
         auto handle = VulkanLayerImpl::getHandle(device);
         auto result = handle->loader->vkBindImageMemory(device, image, memory, memoryOffset);
         if (result == VK_SUCCESS) {
-            {
-                scopedMutex l(globalMutex);
-                memoryAliasing.addAliasingResource(memory, memoryOffset, image);
-                auto tensors = memoryAliasing.getAliasingResources<VkTensorARM>(memory, memoryOffset);
-                for (auto &&tensor : tensors) {
-                    TensorARM *underlyingTensor = reinterpret_cast<TensorARM *>(tensor);
-                    underlyingTensor->updateAliasedTensorInfo(*VulkanLayerImpl::getHandle(device), image);
-                }
+            scopedMutex l(globalMutex);
+            memoryAliasing.addAliasingResource(memory, memoryOffset, image);
+            auto tensors = memoryAliasing.getAliasingResources<VkTensorARM>(memory, memoryOffset);
+            for (auto &&tensor : tensors) {
+                TensorARM *underlyingTensor = reinterpret_cast<TensorARM *>(tensor);
+                underlyingTensor->updateAliasedTensorInfo(*handle, image);
             }
         }
         return result;
@@ -668,17 +667,14 @@ class TensorLayer : public VulkanLayerImpl {
         auto result = handle->loader->vkBindImageMemory2(device, bindInfoCount, pBindInfos);
         if (result == VK_SUCCESS) {
             for (uint32_t i = 0; i < bindInfoCount; i++) {
-                {
-                    scopedMutex l(globalMutex);
-                    memoryAliasing.addAliasingResource(pBindInfos[i].memory, pBindInfos[i].memoryOffset,
-                                                       pBindInfos[i].image);
-                    auto tensors = memoryAliasing.getAliasingResources<VkTensorARM>(pBindInfos[i].memory,
-                                                                                    pBindInfos[i].memoryOffset);
-                    for (auto &&tensor : tensors) {
-                        TensorARM *underlyingTensor = reinterpret_cast<TensorARM *>(tensor);
-                        underlyingTensor->updateAliasedTensorInfo(*VulkanLayerImpl::getHandle(device),
-                                                                  pBindInfos[i].image);
-                    }
+                scopedMutex l(globalMutex);
+                memoryAliasing.addAliasingResource(pBindInfos[i].memory, pBindInfos[i].memoryOffset,
+                                                   pBindInfos[i].image);
+                auto tensors =
+                    memoryAliasing.getAliasingResources<VkTensorARM>(pBindInfos[i].memory, pBindInfos[i].memoryOffset);
+                for (auto &&tensor : tensors) {
+                    TensorARM *underlyingTensor = reinterpret_cast<TensorARM *>(tensor);
+                    underlyingTensor->updateAliasedTensorInfo(*handle, pBindInfos[i].image);
                 }
             }
         }
