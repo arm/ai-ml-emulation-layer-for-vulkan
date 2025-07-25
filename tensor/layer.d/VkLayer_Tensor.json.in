@@ -49,6 +49,7 @@
                     "vkGetDeviceQueue",
                     "vkGetDeviceQueue2",
                     "vkGetDeviceTensorMemoryRequirementsARM",
+                    "vkGetPhysicalDeviceExternalTensorPropertiesARM",
                     "vkGetPhysicalDeviceFeatures2",
                     "vkGetPhysicalDeviceFeatures2KHR",
                     "vkGetPhysicalDeviceFormatProperties2",

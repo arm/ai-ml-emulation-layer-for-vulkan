@@ -58,7 +58,7 @@ vk::raii::Instance createInstance(vk::raii::Context &ctx, std::vector<const char
         VK_MAKE_API_VERSION(1, 3, 0, 0), // application version
         "ML Emulation Layer",            // engine name
         VK_MAKE_API_VERSION(1, 3, 0, 0), // engine version
-        VK_MAKE_API_VERSION(1, 3, 0, 0), // api version
+        VK_API_VERSION_1_3,              // api version
     };
     vk::InstanceCreateFlags flags;
 #ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
@@ -1916,4 +1916,35 @@ TEST_F(MLEmulationLayerForVulkan, GetQueueFamilyDataGraphPropertiesARM) {
     uint32_t queueFamilyIndex = physicalDevice->getComputeFamilyIndex();
     const auto result = vkPhysicalDevice.getQueueFamilyDataGraphPropertiesARM(queueFamilyIndex);
     ASSERT_FALSE(result.empty());
+}
+
+TEST_F(MLEmulationLayerForVulkan, GetExternalTensorProperties) {
+    vk::raii::Context ctx{};
+    auto instance = createInstance(ctx, {"VK_LAYER_ML_Tensor_Emulation"});
+    auto [device, physicalDevice] =
+        createDevice(instance, {"VK_LAYER_ML_Tensor_Emulation"}, {VK_ARM_TENSORS_EXTENSION_NAME});
+
+    const VkExternalMemoryHandleTypeFlagBits handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+
+    std::vector<int64_t> dimensions = {1, 32, 4};
+    VkTensorDescriptionARM tensorDesc = {VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM,
+                                         nullptr,
+                                         VK_TENSOR_TILING_LINEAR_ARM,
+                                         VK_FORMAT_R8_UINT,
+                                         1,
+                                         dimensions.data(),
+                                         nullptr,
+                                         VK_TENSOR_USAGE_SHADER_BIT_ARM};
+    VkPhysicalDeviceExternalTensorInfoARM externalTensorInfoARM = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_TENSOR_INFO_ARM, nullptr, {}, &tensorDesc, handleType};
+    auto properties = physicalDevice.getExternalTensorPropertiesARM(externalTensorInfoARM);
+
+    VkPhysicalDeviceExternalBufferInfo externalBufferInfo = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_BUFFER_INFO,
+                                                             nullptr,
+                                                             {},
+                                                             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                             VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+    auto bufferProperties = physicalDevice.getExternalBufferProperties(externalBufferInfo);
+
+    ASSERT_EQ(properties.externalMemoryProperties, bufferProperties.externalMemoryProperties);
 }

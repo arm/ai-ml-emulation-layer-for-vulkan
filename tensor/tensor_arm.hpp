@@ -32,6 +32,9 @@ class TensorARM {
         VkBufferCreateFlags flags;
         VkFormat format;
         bool isOptimalTilingAliasing;
+
+        static VkBufferCreateFlags convertToBufferCreateFlags(VkTensorCreateFlagsARM flags);
+        static VkBufferUsageFlags convertToBufferUsageFlags(VkTensorUsageFlagsARM usage);
     };
 
     TensorARM() = default;
