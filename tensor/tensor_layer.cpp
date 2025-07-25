@@ -209,6 +209,8 @@ class TensorLayer : public VulkanLayerImpl {
             {"vkGetPhysicalDeviceFeatures2", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2)},
             {"vkGetPhysicalDeviceFeatures2KHR", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2KHR)},
             {"vkCreateDevice", PFN_vkVoidFunction(vkCreateDevice)},
+            {"vkGetPhysicalDeviceExternalTensorPropertiesARM",
+             PFN_vkVoidFunction(vkGetPhysicalDeviceExternalTensorPropertiesARM)},
             // Device functions
             {"vkSetDebugUtilsObjectNameEXT", PFN_vkVoidFunction(vkSetDebugUtilsObjectNameEXT)}};
 
@@ -227,6 +229,8 @@ class TensorLayer : public VulkanLayerImpl {
             {"vkGetPhysicalDeviceFormatProperties2", PFN_vkVoidFunction(vkGetPhysicalDeviceFormatProperties2)},
             {"vkGetPhysicalDeviceFeatures2", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2)},
             {"vkGetPhysicalDeviceFeatures2KHR", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2KHR)},
+            {"vkGetPhysicalDeviceExternalTensorPropertiesARM",
+             PFN_vkVoidFunction(vkGetPhysicalDeviceExternalTensorPropertiesARM)},
             {"vkCreateDevice", PFN_vkVoidFunction(vkCreateDevice)}};
 
         if (auto it = vtable.find(name); it != vtable.end()) {
@@ -339,6 +343,25 @@ class TensorLayer : public VulkanLayerImpl {
                                                               void *pData) {
         auto tensor = reinterpret_cast<TensorARM *>(pInfo->tensor);
         return tensor->getOpaqueCaptureDescriptorDataEXT(*VulkanLayerImpl::getHandle(device), pData);
+    }
+
+    static void VKAPI_CALL vkGetPhysicalDeviceExternalTensorPropertiesARM(
+        VkPhysicalDevice physicalDevice, const VkPhysicalDeviceExternalTensorInfoARM *pExternalTensorInfo,
+        VkExternalTensorPropertiesARM *pExternalTensorProperties) {
+        auto handle = VulkanLayerImpl::getHandle(physicalDevice);
+        VkExternalMemoryHandleTypeFlagBits handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+
+        VkPhysicalDeviceExternalBufferInfo externalBufferInfo{
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_BUFFER_INFO, nullptr,
+            TensorARM::TensorInfo::convertToBufferCreateFlags(pExternalTensorInfo->flags),
+            TensorARM::TensorInfo::convertToBufferUsageFlags(pExternalTensorInfo->pDescription->usage), handleType};
+
+        VkExternalBufferProperties externalBufferProperties{VK_STRUCTURE_TYPE_EXTERNAL_BUFFER_PROPERTIES, nullptr, {}};
+
+        handle->loader->vkGetPhysicalDeviceExternalBufferProperties(physicalDevice, &externalBufferInfo,
+                                                                    &externalBufferProperties);
+
+        pExternalTensorProperties->externalMemoryProperties = externalBufferProperties.externalMemoryProperties;
     }
 
     static VkResult vkCreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo *pCreateInfo,

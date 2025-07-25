@@ -15,6 +15,37 @@ using namespace mlsdk::el::utils;
 
 namespace mlsdk::el::layer {
 
+VkBufferCreateFlags TensorARM::TensorInfo::convertToBufferCreateFlags(VkTensorCreateFlagsARM tensorFlags) {
+    VkBufferCreateFlags bufferFlags = {};
+    if (tensorFlags & VK_TENSOR_CREATE_PROTECTED_BIT_ARM) {
+        bufferFlags |= VK_BUFFER_CREATE_PROTECTED_BIT;
+    }
+    if (tensorFlags & VK_TENSOR_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_ARM) {
+        bufferFlags |= VK_BUFFER_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT;
+    }
+    return bufferFlags;
+}
+
+VkBufferUsageFlags TensorARM::TensorInfo::convertToBufferUsageFlags(VkTensorUsageFlagsARM tensorUsage) {
+    VkBufferUsageFlags bufferUsage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+    bufferUsage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+#endif
+    if (tensorUsage & VK_TENSOR_USAGE_SHADER_BIT_ARM) {
+        bufferUsage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    }
+    if (tensorUsage & VK_TENSOR_USAGE_TRANSFER_SRC_BIT_ARM) {
+        bufferUsage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    }
+    if (tensorUsage & VK_TENSOR_USAGE_TRANSFER_DST_BIT_ARM) {
+        bufferUsage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    }
+    if (tensorUsage & VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM) {
+        bufferUsage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    }
+    return bufferUsage;
+}
+
 TensorARM::TensorInfo::TensorInfo(const VkTensorCreateInfoARM &createInfo) {
     const VkTensorDescriptionARM &desc = *createInfo.pDescription;
     format = desc.format;
@@ -23,26 +54,9 @@ TensorARM::TensorInfo::TensorInfo(const VkTensorCreateInfoARM &createInfo) {
                                  std::to_string(desc.dimensionCount));
     isOptimalTilingAliasing =
         (desc.usage & VK_TENSOR_USAGE_IMAGE_ALIASING_BIT_ARM) && desc.tiling == VK_TENSOR_TILING_OPTIMAL_ARM;
-    usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
-    usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-#endif
-    if (desc.usage & VK_TENSOR_USAGE_SHADER_BIT_ARM) {
-        usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    }
-    if (desc.usage & VK_TENSOR_USAGE_TRANSFER_SRC_BIT_ARM) {
-        usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    }
-    if (desc.usage & VK_TENSOR_USAGE_TRANSFER_DST_BIT_ARM) {
-        usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    }
-    if (desc.usage & VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM) {
-        usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    }
 
-    flags = (createInfo.flags & VK_TENSOR_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_ARM)
-                ? VK_BUFFER_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT
-                : 0;
+    usage = convertToBufferUsageFlags(desc.usage);
+    flags = convertToBufferCreateFlags(createInfo.flags);
 
     uint32_t dimensionCount = desc.dimensionCount;
     dimensions = std::vector<int64_t>{desc.pDimensions, desc.pDimensions + dimensionCount};
