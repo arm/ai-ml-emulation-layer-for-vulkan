@@ -151,7 +151,7 @@ const Graph *GraphPassBase::getGraphById(const Operand &operand) {
     return nullptr;
 }
 
-std::tuple<std::vector<analysis::TensorEXT *>, std::vector<analysis::TensorEXT *>>
+std::tuple<std::vector<analysis::TensorARM *>, std::vector<analysis::TensorARM *>>
 GraphPassBase::getGraphType(const Operand &operand) {
     // <return id> = OpTypeGraphARM <number of inputs> [inputs] [outputs]
     const auto &opTypeGraphARM = get_def_use_mgr()->GetDef(operand.AsId());
@@ -161,13 +161,13 @@ GraphPassBase::getGraphType(const Operand &operand) {
     auto numInputs = (op++)->AsLiteralUint64();
 
     // Inputs
-    std::vector<analysis::TensorEXT *> inputs;
+    std::vector<analysis::TensorARM *> inputs;
     while (numInputs-- > 0) {
         inputs.push_back(getTensorType(*op++));
     }
 
     // Outputs
-    std::vector<analysis::TensorEXT *> outputs;
+    std::vector<analysis::TensorARM *> outputs;
     while (op != opTypeGraphARM->end()) {
         outputs.push_back(getTensorType(*op++));
     }
@@ -175,11 +175,11 @@ GraphPassBase::getGraphType(const Operand &operand) {
     return {inputs, outputs};
 }
 
-analysis::TensorEXT *GraphPassBase::getTensorType(const Operand &operand, const uint32_t index) const {
+analysis::TensorARM *GraphPassBase::getTensorType(const Operand &operand, const uint32_t index) const {
     return getTensorType(operand.AsId(), index);
 }
 
-analysis::TensorEXT *GraphPassBase::getTensorType(uint32_t id, const uint32_t index) const {
+analysis::TensorARM *GraphPassBase::getTensorType(uint32_t id, const uint32_t index) const {
     const auto &instruction = get_def_use_mgr()->GetDef(id);
 
     switch (instruction->opcode()) {
@@ -203,7 +203,7 @@ analysis::TensorEXT *GraphPassBase::getTensorType(uint32_t id, const uint32_t in
 
     const auto &type = context()->get_type_mgr()->GetType(id);
     assert(type);
-    const auto &tensorType = type->AsTensorEXT();
+    const auto &tensorType = type->AsTensorARM();
     assert(tensorType);
 
     return tensorType;
@@ -301,7 +301,7 @@ std::shared_ptr<TensorDescriptor> GraphPassBase::getTensor(const Operand &operan
     return getTensor(*instruction, arrayIndex);
 }
 
-std::shared_ptr<TensorDescriptor> GraphPassBase::makeTensor(const analysis::TensorEXT *tensor) const {
+std::shared_ptr<TensorDescriptor> GraphPassBase::makeTensor(const analysis::TensorARM *tensor) const {
     const VkFormat format = getVkFormat(tensor->element_type());
     const std::vector<int64_t> dimensions =
         tensor->is_shaped() ? getConstVector<int64_t>(tensor->shape_id()) : std::vector<int64_t>{};

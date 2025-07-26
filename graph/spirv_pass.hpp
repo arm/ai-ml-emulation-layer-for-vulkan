@@ -45,10 +45,10 @@ class GraphPassBase : public Pass {
     void handleGraphs();
     void handleInputsAndOutputs(const Instruction &opGraphEntryPoint);
     const Graph *getGraphById(const Operand &operand);
-    std::tuple<std::vector<analysis::TensorEXT *>, std::vector<analysis::TensorEXT *>>
+    std::tuple<std::vector<analysis::TensorARM *>, std::vector<analysis::TensorARM *>>
     getGraphType(const Operand &operand);
-    analysis::TensorEXT *getTensorType(const Operand &operand, const uint32_t index = 0) const;
-    analysis::TensorEXT *getTensorType(uint32_t id, const uint32_t index = 0) const;
+    analysis::TensorARM *getTensorType(const Operand &operand, const uint32_t index = 0) const;
+    analysis::TensorARM *getTensorType(uint32_t id, const uint32_t index = 0) const;
     std::tuple<uint64_t, uint64_t> getDescriptorSetAndBinding(const Operand &operand);
     std::tuple<uint64_t, uint64_t, std::shared_ptr<mlsdk::el::compute::TensorDescriptor>>
     getTensorByDecoration(const Operand &operand, const uint32_t arrayIndex);
@@ -57,7 +57,7 @@ class GraphPassBase : public Pass {
                                                                     const uint32_t arrayIndex = 0);
     std::shared_ptr<mlsdk::el::compute::TensorDescriptor> getTensor(const Operand &operand,
                                                                     const uint32_t arrayIndex = 0);
-    std::shared_ptr<mlsdk::el::compute::TensorDescriptor> makeTensor(const analysis::TensorEXT *tensor) const;
+    std::shared_ptr<mlsdk::el::compute::TensorDescriptor> makeTensor(const analysis::TensorARM *tensor) const;
     std::shared_ptr<mlsdk::el::compute::TensorDescriptor> makeCompositeTensor(const uint32_t id) const;
     VkFormat getVkFormat(const analysis::Type *type) const;
     bool getBoolConstant(const Operand &operand);
@@ -91,7 +91,7 @@ class GraphPassBase : public Pass {
                 kernel.push_back(getConstant<T>(components[isSplat ? 0 : i]));
             }
         } else if (const auto &null = constant->AsNullConstant()) {
-            if (const auto &tensor = constant->type()->AsTensorEXT()) {
+            if (const auto &tensor = constant->type()->AsTensorARM()) {
                 // TensorARM rank=1, shape=[array size]
                 // Tensor must be rank 1, and first element of the shape is the number of vector elements
                 const auto &shape = getConstVector<T>(tensor->shape_id());
