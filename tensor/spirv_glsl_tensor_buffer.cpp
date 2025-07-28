@@ -85,7 +85,7 @@ CompilerTensorAsBuffer::CompilerTensorAsBuffer(std::vector<uint32_t> spirv_) : C
     std::map<uint32_t, uint32_t> typeMap{};
     for (auto tensorTypeId : tensorTypeIds) {
         // Get tensor element type id
-        uint32_t elementTypeId = get<SPIRType>(tensorTypeId).tensor.type;
+        uint32_t elementTypeId = get<SPIRType>(tensorTypeId).ext.tensor.type;
 
         if (auto tensorStructDoneId = typeMap[elementTypeId]; tensorStructDoneId != 0) {
             auto &tensorStructDone = get<SPIRType>(tensorStructDoneId);
@@ -279,7 +279,7 @@ uint32_t CompilerTensorAsBuffer::createTensorBuffer(uint32_t tensorTypeId) {
 
     // Create buffer array type
     // Same as spirv_parse.cpp:parse `case OpTypeRuntimeArray`
-    uint32_t elementTypeId = tensorType.tensor.type;
+    uint32_t elementTypeId = tensorType.ext.tensor.type;
     auto *elementType = &get<SPIRType>(elementTypeId);
     if (elementType->basetype == SPIRType::Boolean) {
         // Bool tensors are strictly defined to use 8-bit bools, but the same is not true for buffers.
