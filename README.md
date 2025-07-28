@@ -7,8 +7,8 @@ ML Emulation Layer is required.
 
 The ML Emulation Layer for Vulkan® provides an implementation of the ML APIs
 enabling ML workloads to be executed on any Vulkan® Compute capable device. The
-Emulation Layer is split into separate graph and tensor layers that are inserted
-by the Vulkan® Loader.
+Emulation Layer is split into separate graph, VK_ARM_data_graph, and tensor,
+VK_ARM_tensors, layers that are inserted by the Vulkan® Loader.
 
 ### Building the Emulation Layer from source
 
