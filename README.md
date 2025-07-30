@@ -251,6 +251,18 @@ sudo update-grub
 sudo reboot
 ```
 
+## Known Limitations
+
+- Resources created with `VK_IMAGE_TILING_OPTIMAL` and
+  `VK_TENSOR_TILING_OPTIMAL_ARM` flags cannot be used with memory aliasing.
+- Data graph pipeline creation without a shader module is not supported.
+- The following `VK_ARM_data_graph` functions are not implemented:
+
+  - `vkGetDataGraphPipelineAvailablePropertiesARM`
+  - `vkGetDataGraphPipelinePropertiesARM`
+  - `vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM`
+  - `vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM`
+
 ## License
 
 The ML Emulation Layer for Vulkan® is provided under an Apache-2.0 license.

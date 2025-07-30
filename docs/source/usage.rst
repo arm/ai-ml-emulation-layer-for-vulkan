@@ -39,4 +39,4 @@ Troubleshooting
 .. include:: ../generated/README.md
     :parser: myst_parser.sphinx_
     :start-after: ### Troubleshooting
-    :end-before: ## License
+    :end-before: ## Known Limitations
