@@ -112,8 +112,8 @@ PipelineBase::PipelineBase(std::shared_ptr<Device> &_device, const DescriptorMap
 void PipelineBase::updateDescriptorSet(const vk::raii::DescriptorSets &descriptorSets,
                                        const DescriptorMap &descriptorMap) const {
     uint32_t set = 0;
-    for (auto &bindingMap : descriptorMap) {
-        for (auto [binding, tensors] : bindingMap) {
+    for (const auto &bindingMap : descriptorMap) {
+        for (const auto &[binding, tensors] : bindingMap) {
             for (uint32_t arrayIndex = 0; arrayIndex < tensors.size(); arrayIndex++) {
                 tensors[arrayIndex]->updateDescriptorSet(descriptorSets[set], binding, arrayIndex);
             }
@@ -337,23 +337,18 @@ void GraphPipeline::dispatchUpdateSubmit() {
 
     commandBuffer.begin(commandBufferBeginInfo);
 
-    auto descriptorPool = createDescriptorPool();
-
-    std::vector<vk::DescriptorSetLayout> vkDescriptorSetLayouts;
-    std::transform(descriptorSetLayouts.begin(), descriptorSetLayouts.end(), std::back_inserter(vkDescriptorSetLayouts),
-                   [](const auto &layout) { return *layout; });
-
-    const vk::DescriptorSetAllocateInfo descriptorSetAllocateInfo{
-        descriptorPool,                          // descriptor pool
-        uint32_t(vkDescriptorSetLayouts.size()), // descriptor set layout count
-        vkDescriptorSetLayouts.data()            // descriptor set layouts
-    };
-
-    vk::raii::DescriptorSets descriptorSets{&(*device), descriptorSetAllocateInfo};
-
+    auto [descriptorPool, descriptorSets] = createDescriptorSets(descriptorMap);
     dispatch(commandBuffer, descriptorSets);
 
-    updateDescriptorSet(descriptorSets, descriptorMap);
+    // Update just one of them to prove the point
+    {
+        const uint32_t set = 0;
+        const auto &bindingMap = descriptorMap.at(0);
+        const uint32_t binding = 0;
+        const auto &tensors = bindingMap.at(binding);
+        const uint32_t arrayIndex = 0;
+        tensors[arrayIndex]->updateDescriptorSet(descriptorSets[set], binding, arrayIndex);
+    }
 
     commandBuffer.end();
 
