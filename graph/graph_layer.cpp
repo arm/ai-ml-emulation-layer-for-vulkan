@@ -950,7 +950,7 @@ class GraphLayer : public VulkanLayerImpl {
     static std::shared_ptr<PipelineCache> getHandle(const VkPipelineCache handle) {
         scopedMutex l(globalMutex);
         if (handle != VK_NULL_HANDLE) {
-            return pipelineCacheMap[handle];
+            graphLog(Severity::Warning) << "Using an externally provided pipeline cache is not supported" << std::endl;
         }
         // Null handle means no (persistent) pipeline caching
         return std::make_shared<PipelineCache>(nullptr, 0, handle);
@@ -968,14 +968,12 @@ class GraphLayer : public VulkanLayerImpl {
 
     static std::map<VkDescriptorSet, std::shared_ptr<DataGraphDescriptorSet>> descriptorSetMap;
     static std::map<VkPipeline, std::shared_ptr<DataGraphPipelineARM>> dataGraphPipelineMap;
-    static std::map<VkPipelineCache, std::shared_ptr<PipelineCache>> pipelineCacheMap;
     static std::map<VkTensorViewARM, std::shared_ptr<TensorView>> tensorViewMap;
     static std::map<VkShaderModule, std::shared_ptr<ShaderModule>> shaderModuleMap;
 };
 
 std::map<VkDescriptorSet, std::shared_ptr<DataGraphDescriptorSet>> GraphLayer::descriptorSetMap;
 std::map<VkPipeline, std::shared_ptr<DataGraphPipelineARM>> GraphLayer::dataGraphPipelineMap;
-std::map<VkPipelineCache, std::shared_ptr<PipelineCache>> GraphLayer::pipelineCacheMap;
 std::map<VkTensorViewARM, std::shared_ptr<TensorView>> GraphLayer::tensorViewMap;
 std::map<VkShaderModule, std::shared_ptr<ShaderModule>> GraphLayer::shaderModuleMap;
 
