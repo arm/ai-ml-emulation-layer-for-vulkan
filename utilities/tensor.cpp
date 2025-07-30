@@ -131,7 +131,13 @@ void Tensor::updateDescriptorSet(const vk::raii::DescriptorSet &descriptorSet, u
 }
 
 void Tensor::print() const {
-    const auto p = static_cast<const uint8_t *>(pointer);
+    const auto *p = data();
+
+    if (std::all_of(p, p + size(), [](const auto value) { return value == uint8_t(0); })) {
+        std::cout << "All zeros, size: " << size() << std::endl;
+        return;
+    }
+
     std::ios_base::fmtflags coutFlags(std::cout.flags());
 
     std::cout << std::hex << std::setfill('0');

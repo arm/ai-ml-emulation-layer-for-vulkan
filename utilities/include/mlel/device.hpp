@@ -71,7 +71,8 @@ class PhysicalDevice {
 
 class Device {
   public:
-    Device(const std::shared_ptr<PhysicalDevice> &_physicalDevice, const std::vector<const char *> &deviceExtensions);
+    Device(const std::shared_ptr<PhysicalDevice> &_physicalDevice, const std::vector<const char *> &deviceExtensions,
+           const void *deviceFeatures);
 
     vk::raii::Device const &operator&() const;
     const std::shared_ptr<PhysicalDevice> &getPhysicalDevice() const;
@@ -80,8 +81,8 @@ class Device {
                          const uint32_t memoryTypeBits = 0xffffffff) const;
 
   private:
-    vk::raii::Device createDevice(const std::vector<const char *> &layers,
-                                  const std::vector<const char *> &extensions) const;
+    vk::raii::Device createDevice(const std::vector<const char *> &layers, const std::vector<const char *> &extensions,
+                                  const void *deviceFeatures) const;
 
     std::shared_ptr<PhysicalDevice> physicalDevice;
     vk::raii::Device device;
@@ -92,6 +93,6 @@ class Device {
  *******************************************************************************/
 
 std::shared_ptr<Device> makeDevice(const std::vector<const char *> &instanceLayers,
-                                   const std::vector<const char *> &deviceExtensions);
+                                   const std::vector<const char *> &deviceExtensions, const void *deviceFeatures);
 
 } // namespace mlsdk::el::utilities

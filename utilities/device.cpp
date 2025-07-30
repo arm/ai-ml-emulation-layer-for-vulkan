@@ -223,8 +223,8 @@ PhysicalDevice::getQueueCreateInfo(const vk::raii::PhysicalDevice &physicalDevic
  *******************************************************************************/
 
 Device::Device(const std::shared_ptr<PhysicalDevice> &_physicalDevice,
-               const std::vector<const char *> &deviceExtensions)
-    : physicalDevice(_physicalDevice), device{createDevice({}, deviceExtensions)} {}
+               const std::vector<const char *> &deviceExtensions, const void *deviceFeatures)
+    : physicalDevice(_physicalDevice), device{createDevice({}, deviceExtensions, deviceFeatures)} {}
 
 vk::raii::Device const &Device::operator&() const { return device; }
 
@@ -248,7 +248,7 @@ Device::allocateDeviceMemory(const vk::DeviceSize size, const vk::MemoryProperty
 }
 
 vk::raii::Device Device::createDevice(const std::vector<const char *> &layers,
-                                      const std::vector<const char *> &extensions) const {
+                                      const std::vector<const char *> &extensions, const void *deviceFeatures) const {
     auto queueCreateInfo = physicalDevice->getQueueCreateInfo(vk::QueueFlagBits::eCompute);
 
     const vk::DeviceCreateInfo deviceCreateInfo{
@@ -259,6 +259,8 @@ vk::raii::Device Device::createDevice(const std::vector<const char *> &layers,
         layers.data(),                                 // enabled layers
         static_cast<uint32_t>(extensions.size()),      // enabled extension count
         extensions.data(),                             // enabled extensions
+        nullptr,                                       // Don't set pEnabledFeatures here!
+        deviceFeatures                                 // Attach deviceFeatures via pNext
     };
     vk::raii::Device device(&(*physicalDevice), deviceCreateInfo);
 
@@ -270,12 +272,12 @@ vk::raii::Device Device::createDevice(const std::vector<const char *> &layers,
  *******************************************************************************/
 
 std::shared_ptr<Device> makeDevice(const std::vector<const char *> &instanceLayers,
-                                   const std::vector<const char *> &deviceExtensions) {
+                                   const std::vector<const char *> &deviceExtensions, const void *deviceFeatures) {
     auto context = std::make_shared<vk::raii::Context>();
     auto instance = std::make_shared<Instance>(context, instanceLayers);
     auto physicalDevice = std::make_shared<PhysicalDevice>(instance, deviceExtensions);
 
-    return std::make_shared<Device>(physicalDevice, deviceExtensions);
+    return std::make_shared<Device>(physicalDevice, deviceExtensions, deviceFeatures);
 };
 
 } // namespace mlsdk::el::utilities

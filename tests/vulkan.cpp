@@ -304,7 +304,16 @@ std::shared_ptr<Device> createDevice() {
         layers.emplace_back("VK_LAYER_KHRONOS_validation");
     }
 
-    return makeDevice(layers, extensions);
+    // Enable base features
+    vk::PhysicalDeviceFeatures baseFeatures = {};
+    baseFeatures.shaderInt64 = VK_TRUE;
+    baseFeatures.shaderFloat64 = VK_TRUE;
+
+    // Create the features2 wrapper
+    vk::PhysicalDeviceFeatures2 features2 = {};
+    features2.setFeatures(baseFeatures);
+
+    return makeDevice(layers, extensions, &features2);
 }
 
 } // namespace
