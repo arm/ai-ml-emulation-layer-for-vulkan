@@ -145,12 +145,12 @@ void TensorARM::updateAliasedTensorInfo(const Device &dev, VkImage image) {
 }
 
 void TensorARM::copyToTensor(CommandBuffer &cmd, const TensorARM &dstTensor) {
-    auto &srcDimensions = m_info.dimensions;
-    auto &srcStrides = m_info.strides;
-    auto srcElementSize = m_info.elementSize;
-    auto &dstDimensions = dstTensor.m_info.dimensions;
-    auto &dstStrides = dstTensor.m_info.strides;
-    auto dstElementSize = dstTensor.m_info.elementSize;
+    const auto &srcDimensions = m_info.dimensions;
+    const auto &srcStrides = m_info.strides;
+    const auto srcElementSize = m_info.elementSize;
+    const auto &dstDimensions = dstTensor.m_info.dimensions;
+    const auto &dstStrides = dstTensor.m_info.strides;
+    const auto dstElementSize = dstTensor.m_info.elementSize;
 
     if (srcDimensions.size() != dstDimensions.size() || srcElementSize != dstElementSize ||
         !std::equal(srcDimensions.begin(), srcDimensions.end(), dstDimensions.begin())) {
@@ -244,12 +244,12 @@ VkDescriptorPool TensorCopyPipeline::createDescriptorPool() const {
     };
 
     const VkDescriptorPoolCreateInfo createInfo = {
-        VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, // type
-        nullptr,                                       // next
-        0,                                             // flags
-        1,                                             // max sets
-        1,                                             // pool size count
-        &poolSize,                                     // pool size
+        VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,     // type
+        nullptr,                                           // next
+        VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT, // flags
+        1,                                                 // max sets
+        1,                                                 // pool size count
+        &poolSize,                                         // pool size
     };
 
     VkDescriptorPool pool;
