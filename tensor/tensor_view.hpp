@@ -7,8 +7,8 @@
 #pragma once
 
 #include "mlel/vulkan_layer.hpp"
+#include "tensor_arm.hpp"
 #include "tensor_descriptor.hpp"
-#include "tensor_ext.hpp"
 #include <vulkan/vulkan.hpp>
 
 namespace mlsdk::el::layer {

@@ -11,7 +11,7 @@ target_compile_options(VkLayer_Tensor PRIVATE ${VMEL_COMPILE_OPTIONS})
 target_sources(VkLayer_Tensor PRIVATE
     tensor_layer.cpp
     tensor_processor.cpp
-    tensor_ext.cpp
+    tensor_arm.cpp
     tensor_log.cpp
     tensor_view.cpp
     tensor_descriptor.cpp

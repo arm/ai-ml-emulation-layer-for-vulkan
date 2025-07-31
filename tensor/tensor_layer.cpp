@@ -13,7 +13,7 @@
 #include "tensor_log.hpp"
 
 #include "descriptor_binding.hpp"
-#include "tensor_ext.hpp"
+#include "tensor_arm.hpp"
 #include "tensor_processor.hpp"
 #include "tensor_view.hpp"
 #include <limits>

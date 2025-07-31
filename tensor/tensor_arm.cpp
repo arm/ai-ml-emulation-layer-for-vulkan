@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  */
-#include "tensor_ext.hpp"
+#include "tensor_arm.hpp"
+
 #include "mlel/utils.hpp"
 
 #include <numeric>
