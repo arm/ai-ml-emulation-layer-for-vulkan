@@ -51,8 +51,11 @@ class Shape {
 
 class Tensor {
   public:
-    Tensor(const std::shared_ptr<Device> &_device, const Shape &shape, const std::vector<uint8_t> &data = {});
-    Tensor(const std::shared_ptr<Device> &_device, const Shape &shape, const uint8_t *pointer, const size_t size);
+    // Set useForCopy to make this tensor having the buffer bit set in BufferInfo struct
+    Tensor(const std::shared_ptr<Device> &_device, const Shape &shape, const std::vector<uint8_t> &data = {},
+           bool useForCopy = false);
+    Tensor(const std::shared_ptr<Device> &_device, const Shape &shape, const uint8_t *pointer, const size_t size,
+           bool useForCopy = false);
 
     vk::TensorARM const &operator&() const { return *tensor; }
 
@@ -150,7 +153,7 @@ class Tensor {
         return true;
     }
 
-    vk::raii::TensorARM createTensor() const;
+    vk::raii::TensorARM createTensor(bool useForCopy) const;
     std::shared_ptr<vk::raii::DeviceMemory> allocateTensorMemory() const;
     vk::MemoryRequirements getTensorMemoryRequirements() const;
     void *bindAndMapTensor() const;

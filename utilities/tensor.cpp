@@ -78,11 +78,13 @@ vk::Format Shape::getFormat() const { return format; }
  * Tensor
  *******************************************************************************/
 
-Tensor::Tensor(const std::shared_ptr<Device> &_device, const Shape &_shape, const std::vector<uint8_t> &_data)
-    : Tensor(_device, _shape, _data.data(), _data.size()) {}
+Tensor::Tensor(const std::shared_ptr<Device> &_device, const Shape &_shape, const std::vector<uint8_t> &_data,
+               bool useForCopy)
+    : Tensor(_device, _shape, _data.data(), _data.size(), useForCopy) {}
 
-Tensor::Tensor(const std::shared_ptr<Device> &_device, const Shape &_shape, const uint8_t *_pointer, const size_t _size)
-    : shape{_shape}, physicalDevice{_device->getPhysicalDevice()}, device{_device}, tensor{createTensor()},
+Tensor::Tensor(const std::shared_ptr<Device> &_device, const Shape &_shape, const uint8_t *_pointer, const size_t _size,
+               bool useForCopy)
+    : shape{_shape}, physicalDevice{_device->getPhysicalDevice()}, device{_device}, tensor{createTensor(useForCopy)},
       memoryRequirements{getTensorMemoryRequirements()}, deviceMemory{allocateTensorMemory()},
       pointer{bindAndMapTensor()}, tensorView{createTensorView()}, tensorDescription{createTensorDescription()} {
     setData(_pointer, _size);
@@ -154,14 +156,15 @@ void Tensor::print() const {
     std::cout.flags(coutFlags);
 }
 
-vk::raii::TensorARM Tensor::createTensor() const {
+vk::raii::TensorARM Tensor::createTensor(bool useForCopy) const {
+    const auto flags = useForCopy ? vk::TensorUsageFlagBitsARM::eShader : vk::TensorUsageFlagsARM{};
     const vk::TensorDescriptionARM tensorDescription{
         vk::TensorTilingARM::eLinear,           // tiling
         shape.getFormat(),                      // format
         uint32_t(shape.getDimensions().size()), // dimensions count
         shape.getDimensions().data(),           // dimensions
         shape.getStrides().data(),              // strides
-        {},                                     // usage flags
+        flags,                                  // usage flags
     };
 
     const vk::TensorCreateInfoARM tensorCreateInfo{

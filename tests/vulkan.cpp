@@ -1260,8 +1260,11 @@ TEST_F(MLEmulationLayerForVulkan, CopyLargeNonPackedTensor) {
     const std::vector<int64_t> dimensions{1, 1920, 1080, 3};
     const std::vector<int64_t> strides = {12441600, 6480, 6, 2};
 
-    auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, dimensions});
-    auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, dimensions, strides});
+    const std::vector<uint8_t> data;
+    const auto useForCopy = true;
+    auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, dimensions}, data, useForCopy);
+    auto outputTensor =
+        std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, dimensions, strides}, data, useForCopy);
     for (size_t i = 0; i < inputTensor->size(); ++i) {
         *(inputTensor->data() + i) = -128 + static_cast<int>(i % 256);
     }
