@@ -22,6 +22,7 @@ CompilerTensorAsBuffer::CompilerTensorAsBuffer(std::vector<uint32_t> spirv_) : C
      The end result is that a TensorARM variable (where TYPE is e.g. uint16_t and 0<RANK<=6)
 
      layout (set = SET, binding = BIND) uniform TensorARM<TYPE, RANK> VAR;
+     layout (set = SET, binding = BIND) uniform TensorARM<TYPE, RANK> ARRAY[X];
 
      is replaced by a combination of types
 
@@ -40,15 +41,25 @@ CompilerTensorAsBuffer::CompilerTensorAsBuffer(std::vector<uint32_t> spirv_) : C
      {
         _Tensor_Descriptor_TYPE descriptor;
      } _tensor_interface_VAR;
+     layout(set = SET, binding = BIND) uniform _Tensor_Interface_ARRAY
+     {
+        _Tensor_Descriptor_TYPE descriptor;
+     } _tensor_interface_ARRAY[X];
 
      Finally, before entering the `main` function, a global variable of name `VAR` and type `_Tensor_Descriptor_TYPE` is
      declared, and can be used wherever the original TensorARM variable was used.
      The variable is initialized at the start of the `main` function to point to the corresponding `descriptor` member.
+     Note, this is for non-array tensors only. Arrays of tensors are handled by replacing the tensor access with an
+     indexed access to the descriptor.
 
      _Tensor_Descriptor_TYPE VAR;
 
      void main(){
         VAR = _tensor_interface_VAR.descriptor;
+
+        // Example of how code of tensorWriteARM is updated
+        tensorWriteARM(_tensor_interface_ARRAY[X].descriptor, ...)
+
         ...
      }
      */
@@ -232,6 +243,27 @@ void CompilerTensorAsBuffer::emit_instruction(const Instruction &instruction) {
 
         break;
     }
+    case spv::OpAccessChain: {
+        // Tensor arrays are accessed here, when called with []
+        const auto resultId = ops[0];     // ID to be used downstream
+        const auto resultTypeId = ops[1]; // The pointer type
+        const auto varId = ops[2];        // base variable, tensor
+        const auto indexId = ops[3];      // index expression
+        std::string varName = get_name(varId);
+
+        if (std::any_of(tensorArrayVariables.begin(), tensorArrayVariables.end(),
+                        [varId](const auto tensorVarId) { return varId == tensorVarId; })) {
+            // Convert index ID into a GLSL expression
+            // Inject a new GLSL expression:
+            std::string newExpr = varName + '[' + to_expression(indexId) + "].descriptor";
+
+            set<SPIRExpression>(resultTypeId, SPIRExpression(newExpr, resultId, true));
+            break; // Done, don't emit normal code for this Op
+        } else {
+            CompilerGLSL::emit_instruction(instruction);
+        }
+        break;
+    }
     default:
         CompilerGLSL::emit_instruction(instruction);
     }
@@ -374,7 +406,7 @@ void CompilerTensorAsBuffer::createTensorInterface(uint32_t tensorVarId) {
     // Retrieve data about the original variable
     const auto &varName = ir.get_name(tensorVarId);
     auto &tensorVar = get<SPIRVariable>(tensorVarId);
-    uint32_t tensorPtrId = tensorVar.basetype;
+    const auto &tensorType = get_type_from_variable(tensorVarId);
 
     // Add IDs for the new types and variable
     uint32_t tensorInterfaceId = ir.increase_bound_by(3);
@@ -384,12 +416,20 @@ void CompilerTensorAsBuffer::createTensorInterface(uint32_t tensorVarId) {
     // Create a SPIRType for the struct
     auto &tensorInterface = set<SPIRType>(tensorInterfaceId, spv::OpTypeStruct);
     tensorInterface.basetype = SPIRType::Struct;
-    tensorInterface.member_types.push_back(tensorPtrId);
+    tensorInterface.member_types.push_back(tensorType.self); // base type, no array
 
     ir.set_decoration(tensorInterfaceId, spv::DecorationBlock);
     ir.set_member_decoration(tensorInterfaceId, 0, spv::DecorationOffset, 0);
     ir.set_name(tensorInterfaceId, join("_Tensor_Interface_", varName));
     ir.set_member_name(tensorInterfaceId, 0, "descriptor");
+
+    // Handle array case
+    bool isTensorArray = false;
+    if (!tensorType.array_size_literal.empty() && tensorType.array_size_literal.front()) {
+        isTensorArray = true;
+        tensorInterface.array.push_back(tensorType.array.front());
+        tensorInterface.array_size_literal.push_back(true);
+    }
 
     // Create a SPIRType for a pointer-to-struct
     auto &tensorInterfacePtr = set<SPIRType>(tensorInterfacePtrId, spv::OpTypePointer);
@@ -413,16 +453,22 @@ void CompilerTensorAsBuffer::createTensorInterface(uint32_t tensorVarId) {
     ir.set_decoration(tensorInterfaceVarId, spv::DecorationBinding, binding);
     ir.set_decoration(tensorInterfaceVarId, spv::DecorationDescriptorSet, descriptorSet);
 
-    // Change original variable to be a "regular" global variable.
-    tensorVar.storage = spv::StorageClassGeneric;
-    ir.unset_decoration(tensorVarId, spv::DecorationBinding);
-    ir.unset_decoration(tensorVarId, spv::DecorationDescriptorSet);
-    global_variables.push_back(tensorVarId);
+    if (isTensorArray) {
+        // Change name of original variable
+        ir.set_name(tensorVarId, ir.get_name(tensorInterfaceVarId));
+        tensorArrayVariables.push_back(tensorVarId);
+    } else {
+        // Change original variable to be a "regular" global variable.
+        tensorVar.storage = spv::StorageClassGeneric;
+        ir.unset_decoration(tensorVarId, spv::DecorationBinding);
+        ir.unset_decoration(tensorVarId, spv::DecorationDescriptorSet);
+        global_variables.push_back(tensorVarId);
 
-    // SPIRV-Cross will now declare the original variable globally, without initialization.
-    // We will manually initialize it inside the GLSL "main" function by overriding
-    // `CompilerGLSL::emit_entry_point_declarations`.
-    tensorVariables.push_back({tensorVarId, tensorInterfaceVarId});
+        // SPIRV-Cross will now declare the original variable globally, without initialization.
+        // We will manually initialize it inside the GLSL "main" function by overriding
+        // `CompilerGLSL::emit_entry_point_declarations`.
+        tensorVariables.push_back({tensorVarId, tensorInterfaceVarId});
+    }
 }
 
 } // namespace mlsdk::el::layer

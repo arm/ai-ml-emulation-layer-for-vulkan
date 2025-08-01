@@ -1,0 +1,60 @@
+/*
+ * SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+#version 460 core
+
+#extension GL_ARM_tensors : enable
+#extension GL_EXT_shader_explicit_arithmetic_types : enable
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+// Array of tensors
+const uint NUM_TENSORS = 4;
+layout(set = 0, binding = 0) uniform tensorARM<int8_t, 1> itain[NUM_TENSORS];
+layout(set = 0, binding = 1) uniform tensorARM<int8_t, 1> itaout[NUM_TENSORS];
+
+// Example of helper function having a tensor argument
+// Note: The standard does not allow tensor arrays as arguments.
+uint size_dim0(tensorARM<int8_t, 1> tensor) {
+    return tensorSizeARM(tensor, 0);
+}
+
+int8_t read(tensorARM<int8_t, 1> tensor, uint coords[1]) {
+    int8_t value;
+    tensorReadARM(tensor, coords, value);
+    return value;
+}
+
+void write(tensorARM<int8_t, 1> tensor, uint coords[1], int8_t value) {
+    tensorWriteARM(tensor, coords, value);
+}
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    uint tensor_index = global_id / NUM_TENSORS;
+    uint element_index = global_id % NUM_TENSORS;
+
+    if (tensor_index >= itain.length()) {
+        return;
+    }
+
+    // Use tensorSizeARM to query runtime size and validate element index
+    uint length = tensorSizeARM(itain[tensor_index], 0);
+
+    // Early exit if element index is out of bounds (should not happen if dispatch is correct)
+    if (element_index >= length) {
+        return;
+    }
+
+    uint coords[] = {element_index};
+
+    int8_t value = int8_t(0x55);
+    tensorReadARM(itain[tensor_index], coords, value);
+    tensorWriteARM(itaout[tensor_index], coords, value);
+
+    // Use helper functions to validate tensor transformation
+    uint length2 = size_dim0(itain[tensor_index]);
+    value = read(itain[tensor_index], coords);
+    write(itaout[tensor_index], coords, value);
+}

@@ -11,6 +11,10 @@ layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 layout(set = 0, binding = 0) uniform tensorARM<int8_t, 4> intensor;
 layout(set = 0, binding = 1) uniform tensorARM<int8_t, 4> outtensor;
 
+uint size_dim3(tensorARM<int8_t, 4> tensor) {
+    return tensorSizeARM(tensor, 3);
+}
+
 int8_t read(tensorARM<int8_t, 4> tensor, uint coords[4]) {
     int8_t value;
     tensorReadARM(tensor, coords, value);
@@ -26,7 +30,8 @@ void main() {
     uint ox = gl_GlobalInvocationID.x;
     uint oc = gl_GlobalInvocationID.z;
 
-    if (oy >= tensorSizeARM(intensor, 1) || ox >= tensorSizeARM(intensor, 2) || oc >= tensorSizeARM(intensor, 3)) {
+    // Both direct usage of tensorSizeARM and a helper function
+    if (oy >= tensorSizeARM(intensor, 1) || ox >= tensorSizeARM(intensor, 2) || oc >= size_dim3(intensor)) {
         return;
     }
     uint coords[4] = uint[](0u, oy, ox, oc);
