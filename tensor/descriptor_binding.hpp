@@ -23,17 +23,6 @@ template <typename T> inline bool hasTensor(const T &obj) {
 
 inline bool hasTensor(const VkDescriptorPoolSize &obj) { return obj.type == VK_DESCRIPTOR_TYPE_TENSOR_ARM; }
 
-template <typename T> inline std::set<uint32_t> pickTensorIndices(const std::vector<T> &indices) {
-    std::set<uint32_t> tensorIndices;
-    for (uint32_t i = 0; i < uint32_t(indices.size()); ++i) {
-        if (!hasTensor(indices[i])) {
-            continue;
-        }
-        tensorIndices.insert(i);
-    }
-    return tensorIndices;
-}
-
 inline std::vector<VkDescriptorSetLayoutBinding>
 substituteTensorBinding(uint32_t bindingCount, const VkDescriptorSetLayoutBinding *pBindings,
                         const VkDescriptorSetLayoutBindingFlagsCreateInfo *bindingInfo) {
@@ -41,7 +30,7 @@ substituteTensorBinding(uint32_t bindingCount, const VkDescriptorSetLayoutBindin
 
     // Loop over bindings and replace tensors bindings with uniform buffer for tensor descriptor
     for (uint32_t i = 0; i < bindingCount; i++) {
-        if (pBindings[i].descriptorType == VK_DESCRIPTOR_TYPE_TENSOR_ARM) {
+        if (hasTensor(pBindings[i])) {
             // Change binding to uniform buffer
             descriptorSetLayoutBindings[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 
@@ -66,7 +55,7 @@ substituteTensorWriteDescriptorSet(const Device &dev, uint32_t descriptorWriteCo
 
     // Loop over write descriptors and replace tensor bindings with uniform buffer for tensor description
     for (uint32_t i = 0; i < descriptorWriteCount; i++) {
-        if (pDescriptorWrites[i].descriptorType != VK_DESCRIPTOR_TYPE_TENSOR_ARM) {
+        if (!hasTensor(pDescriptorWrites[i])) {
             const auto &write = pDescriptorWrites[i];
             if (!write.pImageInfo || write.pImageInfo->imageLayout != VK_IMAGE_LAYOUT_TENSOR_ALIASING_ARM) {
                 writes.emplace_back(write);
@@ -123,8 +112,8 @@ substituteTensorDescriptorPoolSizes(const std::vector<VkDescriptorPoolSize> &poo
     uint32_t tensorCount = 0;
 
     // Loop over the descriptor sizes and remove tensor descriptors
-    for (const auto poolSize : poolSizes) {
-        if (poolSize.type == VK_DESCRIPTOR_TYPE_TENSOR_ARM) {
+    for (const auto &poolSize : poolSizes) {
+        if (hasTensor(poolSize)) {
             tensorCount += poolSize.descriptorCount;
             continue;
         }

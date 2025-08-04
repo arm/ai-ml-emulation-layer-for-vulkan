@@ -110,9 +110,9 @@ PipelineBase::PipelineBase(std::shared_ptr<Device> &_device, const DescriptorMap
       shaderModule{createShaderModule(_spirv)}, commandPool{createCommandPool()} {}
 
 void PipelineBase::updateDescriptorSet(const vk::raii::DescriptorSets &descriptorSets,
-                                       const DescriptorMap &descriptorMap) const {
+                                       const DescriptorMap &_descriptorMap) const {
     uint32_t set = 0;
-    for (const auto &bindingMap : descriptorMap) {
+    for (const auto &bindingMap : _descriptorMap) {
         for (const auto &[binding, tensors] : bindingMap) {
             for (uint32_t arrayIndex = 0; arrayIndex < tensors.size(); arrayIndex++) {
                 tensors[arrayIndex]->updateDescriptorSet(descriptorSets[set], binding, arrayIndex);
@@ -211,7 +211,7 @@ std::vector<vk::raii::DescriptorSetLayout> PipelineBase::createDescriptorSetLayo
     return descriptorSetLayouts;
 }
 
-PipelineBase::PoolAndSet PipelineBase::createDescriptorSets(const DescriptorMap &descriptorMap) const {
+PipelineBase::PoolAndSet PipelineBase::createDescriptorSets(const DescriptorMap &_descriptorMap) const {
     auto descriptorPool = createDescriptorPool();
 
     std::vector<vk::DescriptorSetLayout> vkDescriptorSetLayouts;
@@ -226,7 +226,7 @@ PipelineBase::PoolAndSet PipelineBase::createDescriptorSets(const DescriptorMap 
 
     vk::raii::DescriptorSets descriptorSets{&(*device), descriptorSetAllocateInfo};
 
-    updateDescriptorSet(descriptorSets, descriptorMap);
+    updateDescriptorSet(descriptorSets, _descriptorMap);
 
     return {std::move(descriptorPool), std::move(descriptorSets)};
 }

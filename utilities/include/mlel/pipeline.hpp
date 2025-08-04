@@ -102,7 +102,6 @@ class PipelineBase {
 
     vk::raii::DescriptorPool descriptorPool;
     std::vector<vk::raii::DescriptorSetLayout> descriptorSetLayouts;
-    std::shared_ptr<vk::raii::DescriptorSets> descriptorSets;
     std::shared_ptr<vk::raii::PipelineLayout> pipelineLayout;
     vk::raii::ShaderModule shaderModule;
     vk::raii::CommandPool commandPool;
