@@ -46,7 +46,7 @@ $ cmake -B build                                               \
 $ cmake --build build
 ```
 
-To build the documentation, add the `-DVMEL_BUILD_DOCS` build flag.
+To build the documentation, add the `-DVMEL_BUILD_DOCS=ON` build flag.
 
 To install the Emulation Layer into a `deploy` folder, run:
 
