@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -378,6 +378,24 @@ TEST_F(MLEmulationLayerForVulkan, CreateDevice) {
     vk::raii::Context ctx{};
     auto instance = createInstance(ctx, {"VK_LAYER_ML_Tensor_Emulation"});
     auto [device, physicalDevice] = createDevice(instance, {"VK_LAYER_ML_Tensor_Emulation"});
+}
+
+TEST_F(MLEmulationLayerForVulkan, ToolingInfo) {
+    vk::raii::Context ctx{};
+    auto instance = createInstance(ctx, {"VK_LAYER_ML_Graph_Emulation", "VK_LAYER_ML_Tensor_Emulation"});
+    auto [device, physicalDevice] = createDevice(instance, {"VK_EXT_tooling_info"});
+
+    auto tools = physicalDevice.getToolPropertiesEXT();
+
+    bool graphLayerTool = false;
+    bool tensorLayerTool = false;
+
+    for (auto t : tools) {
+        tensorLayerTool |= std::strcmp(t.name, "Tensor Layer") == 0;
+        graphLayerTool |= std::strcmp(t.name, "Graph Layer") == 0;
+    }
+
+    ASSERT_TRUE(graphLayerTool && tensorLayerTool) << "Tooling Info feature failed!";
 }
 
 TEST_F(MLEmulationLayerForVulkan, CheckTensorFeature) {

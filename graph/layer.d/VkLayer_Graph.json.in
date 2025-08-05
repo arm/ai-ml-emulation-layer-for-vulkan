@@ -45,6 +45,7 @@
                     "vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM",
                     "vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM",
                     "vkGetPhysicalDeviceQueueFamilyProperties",
+                    "vkGetPhysicalDeviceToolPropertiesEXT",
                     "vkSetDebugUtilsObjectNameEXT",
                     "vkUpdateDescriptorSets"
                 ]

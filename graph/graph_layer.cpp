@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -272,6 +272,7 @@ class GraphLayer : public VulkanLayerImpl {
              PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyProperties2)},
             {"vkGetPhysicalDeviceFeatures2", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2)},
             {"vkGetPhysicalDeviceFeatures2KHR", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2KHR)},
+            {"vkGetPhysicalDeviceToolPropertiesEXT", PFN_vkVoidFunction(vkGetPhysicalDeviceToolPropertiesEXT)},
             {"vkCreateDevice", PFN_vkVoidFunction(vkCreateDevice)},
 
             // Device functions
@@ -346,6 +347,7 @@ class GraphLayer : public VulkanLayerImpl {
              PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyProperties2)},
             {"vkGetPhysicalDeviceFeatures2", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2)},
             {"vkGetPhysicalDeviceFeatures2KHR", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2KHR)},
+            {"vkGetPhysicalDeviceToolPropertiesEXT", PFN_vkVoidFunction(vkGetPhysicalDeviceToolPropertiesEXT)},
             {"vkCreateDevice", PFN_vkVoidFunction(vkCreateDevice)}};
 
         if (auto it = vtable.find(name); it != vtable.end()) {
@@ -1149,6 +1151,53 @@ class GraphLayer : public VulkanLayerImpl {
         }
         return deviceHandle->physicalDevice->instance->loader->vkSetDebugUtilsObjectNameEXT(device, pNameInfo);
     }
+
+    static VkResult VKAPI_CALL vkGetPhysicalDeviceToolPropertiesEXT(VkPhysicalDevice device, uint32_t *pToolCount,
+                                                                    VkPhysicalDeviceToolProperties *pToolProperties) {
+        auto handle = VulkanLayerImpl::getHandle(device);
+
+        VkPhysicalDeviceToolProperties tool = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TOOL_PROPERTIES_EXT,
+                                               nullptr,
+                                               "Graph Layer",
+                                               "1.0",
+                                               VK_TOOL_PURPOSE_ADDITIONAL_FEATURES_BIT,
+                                               "Graph Layer",
+                                               "VK_LAYER_ML_Graph_Emulation"};
+
+        // Query mode
+        if (pToolProperties == nullptr) {
+            VkResult result = handle->loader->vkGetPhysicalDeviceToolPropertiesEXT(device, pToolCount, nullptr);
+
+            if (result == VK_SUCCESS) {
+                *pToolCount += 1;
+            }
+            return result;
+        }
+
+        const uint32_t capacity = *pToolCount;
+        if (capacity == 0) {
+            *pToolCount = 0;
+            return VK_INCOMPLETE;
+        }
+
+        // Reserve one slot
+        uint32_t downstreamCapacity = capacity - 1;
+
+        VkResult result =
+            handle->loader->vkGetPhysicalDeviceToolPropertiesEXT(device, &downstreamCapacity, pToolProperties);
+
+        const uint32_t written = downstreamCapacity;
+
+        if (result == VK_SUCCESS) {
+            pToolProperties[written] = tool;
+            *pToolCount = written + 1;
+            return VK_SUCCESS;
+        }
+
+        *pToolCount = written;
+        return result;
+    }
+
     /**************************************************************************
      * Handles
      **************************************************************************/
