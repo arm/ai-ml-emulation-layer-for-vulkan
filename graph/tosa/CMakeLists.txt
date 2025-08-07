@@ -40,14 +40,21 @@ add_custom_target(mlel_generate_glsl_header DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/
 
 # Macro for generating target
 macro(mlel_generate_spv_inc)
+    # Strip the path from the SPV files
+    set(SHORT_SPV_FILES "")
+    foreach(f ${SPV_FILES})
+        get_filename_component(fname "${f}" NAME)
+        list(APPEND SHORT_SPV_FILES "${fname}")
+    endforeach()
     add_custom_command(
         OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shaders_spv.hpp.inc
         COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/generate_spv_header.cmake
             OUTPUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/shaders_spv.hpp.inc"
-            INPUT_FILES ${SPV_FILES}
+            INPUT_FILES ${SHORT_SPV_FILES}
         DEPENDS
             ${CMAKE_CURRENT_SOURCE_DIR}/generate_spv_header.cmake
-            ${SPV_FILES})
+            ${SHORT_SPV_FILES}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
     add_custom_target(mlel_generate_spv_header DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shaders_spv.hpp.inc)
 endmacro()
