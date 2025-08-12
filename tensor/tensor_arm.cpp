@@ -211,7 +211,8 @@ TensorCopyPipeline::PushConstant TensorCopyPipeline::createPushConstant(const Te
 }
 
 VkShaderModule TensorCopyPipeline::createShaderModule(const TensorARM &srcTensor) const {
-    auto srcType = makeFormat((srcTensor.getTensorInfo().format))->glslType();
+    const auto srcType = makeFormat((srcTensor.getTensorInfo().format))->glslType();
+    const auto lock = std::lock_guard(cacheMutex);
     auto &spirv = spirvCache[srcType];
     if (spirv.empty()) {
         std::string tmp = glsl;
@@ -430,8 +431,6 @@ void TensorCopyPipeline::cmdBindAndDispatchCopy(VkCommandBuffer cmd, uint32_t re
                                     nullptr);
     loader->vkCmdDispatch(cmd, divideRoundUp(regionCount, warp1D), 1, 1);
 }
-
-std::map<std::string, std::vector<uint32_t>> TensorCopyPipeline::spirvCache;
 
 const std::string TensorCopyPipeline::glsl =
 #include "shaders/copy.comp"

@@ -7,6 +7,8 @@
 #pragma once
 
 #include "mlel/vulkan_layer.hpp"
+
+#include <unordered_map>
 #include <vulkan/vulkan.hpp>
 
 namespace mlsdk::el::layer {
@@ -90,7 +92,8 @@ class TensorCopyPipeline {
 
     static const uint32_t warp1D = 128;
     static const std::string glsl;
-    static std::map<std::string, std::vector<uint32_t>> spirvCache;
+    static inline std::mutex cacheMutex;
+    static inline std::unordered_map<std::string, std::vector<uint32_t>> spirvCache;
 };
 
 } // namespace mlsdk::el::layer
