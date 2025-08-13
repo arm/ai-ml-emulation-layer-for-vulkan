@@ -94,7 +94,6 @@ class PipelineBase {
     std::shared_ptr<vk::raii::PipelineLayout> createPipelineLayout() const;
     vk::raii::ShaderModule createShaderModule(const std::vector<uint32_t> &code) const;
     vk::raii::CommandPool createCommandPool() const;
-    virtual vk::raii::Pipeline createPipeline() const = 0;
     void updateDescriptorSet(const vk::raii::DescriptorSets &descriptorSets, const DescriptorMap &descriptorMap) const;
 
     std::shared_ptr<Device> device;
@@ -135,7 +134,7 @@ class GraphPipeline : public PipelineBase {
         void *pointer;
     };
 
-    vk::raii::Pipeline createPipeline() const override;
+    vk::raii::Pipeline createPipeline() const;
     vk::raii::DataGraphPipelineSessionARM createGraphPipelineSession() const;
     std::map<vk::DataGraphPipelineSessionBindPointARM, vk::MemoryRequirements>
     createMemoryRequirements(const vk::raii::DataGraphPipelineSessionARM &graphPipelineSession) const;
@@ -162,7 +161,7 @@ class TensorComputePipeline : public PipelineBase {
     void dispatchSubmit(uint32_t _x, uint32_t _y, uint32_t _z);
 
   private:
-    vk::raii::Pipeline createPipeline() const override;
+    vk::raii::Pipeline createPipeline() const;
 
     vk::raii::Pipeline pipeline;
 };

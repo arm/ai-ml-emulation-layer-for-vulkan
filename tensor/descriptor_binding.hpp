@@ -55,8 +55,8 @@ substituteTensorWriteDescriptorSet(const Device &dev, uint32_t descriptorWriteCo
 
     // Loop over write descriptors and replace tensor bindings with uniform buffer for tensor description
     for (uint32_t i = 0; i < descriptorWriteCount; i++) {
-        if (!hasTensor(pDescriptorWrites[i])) {
-            const auto &write = pDescriptorWrites[i];
+        const auto &write = pDescriptorWrites[i];
+        if (!hasTensor(write)) {
             if (!write.pImageInfo || write.pImageInfo->imageLayout != VK_IMAGE_LAYOUT_TENSOR_ALIASING_ARM) {
                 writes.emplace_back(write);
                 continue;
@@ -73,8 +73,8 @@ substituteTensorWriteDescriptorSet(const Device &dev, uint32_t descriptorWriteCo
             continue;
         }
 
-        const auto tensorInfo = findType<VkWriteDescriptorSetTensorARM>(
-            pDescriptorWrites[i].pNext, VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_TENSOR_ARM);
+        const auto tensorInfo =
+            findType<VkWriteDescriptorSetTensorARM>(write.pNext, VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_TENSOR_ARM);
         if (tensorInfo == nullptr) {
             throw std::runtime_error("Write descriptor is missing tensor descriptor tensor info");
         }
@@ -89,16 +89,16 @@ substituteTensorWriteDescriptorSet(const Device &dev, uint32_t descriptorWriteCo
             });
 
             writes.emplace_back(VkWriteDescriptorSet{
-                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,   // sType
-                nullptr,                                  // pNext
-                pDescriptorWrites[i].dstSet,              // dstSet
-                pDescriptorWrites[i].dstBinding,          // dstBinding
-                pDescriptorWrites[i].dstArrayElement + j, // dstArrayElement
-                1,                                        // descriptorCount
-                VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,        // descriptorType
-                nullptr,                                  // pImageInfo
-                &bufferInfos.back(),                      // pBufferInfo
-                nullptr                                   // pTexelBufferView
+                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, // sType
+                nullptr,                                // pNext
+                write.dstSet,                           // dstSet
+                write.dstBinding,                       // dstBinding
+                write.dstArrayElement + j,              // dstArrayElement
+                1,                                      // descriptorCount
+                VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,      // descriptorType
+                nullptr,                                // pImageInfo
+                &bufferInfos.back(),                    // pBufferInfo
+                nullptr                                 // pTexelBufferView
             });
         }
     }
