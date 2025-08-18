@@ -17,7 +17,7 @@ namespace mlsdk::el::layer {
 class CompilerTensorAsBuffer : public spirv_cross::CompilerGLSL {
   public:
     explicit CompilerTensorAsBuffer(std::vector<uint32_t> spirv_);
-    bool hasTensors() const { return !tensorVariables.empty(); }
+    bool hasTensors() const { return !tensorVariables.empty() || !tensorArrayVariables.empty(); }
     bool isCompute() const { return get_execution_model() == spv::ExecutionModelGLCompute; }
 
   protected:
@@ -33,6 +33,7 @@ class CompilerTensorAsBuffer : public spirv_cross::CompilerGLSL {
     static const std::string tensorDefines;
     // Used to keep track of SPIRV-Cross variables across `CompilerGLSL` function calls
     std::vector<std::tuple<uint32_t, uint32_t>> tensorVariables;
+    std::vector<uint32_t> tensorArrayVariables;
 
     // Tensor structs use uint64_t to store dimension info (rank, shape and stride)
     // To create the tensor struct SPIRType, we therefore need SPIRTypes for uint64_t and uint64_t arrays

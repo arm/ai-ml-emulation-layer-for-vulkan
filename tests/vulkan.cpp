@@ -1061,6 +1061,64 @@ TEST_F(MLEmulationLayerForVulkan, CreateTensorComputeShader) {
     auto shaderModule = createShaderModule((&(*device)), spirvModule);
 }
 
+TEST_F(MLEmulationLayerForVulkan, TensorArray) {
+    auto device = createDevice();
+
+    const auto spirvModule = mlsdk::el::utils::glslToSpirv(fileToString("tensor_array.comp"));
+    auto shaderModule = createShaderModule((&(*device)), spirvModule);
+    std::vector<std::shared_ptr<Tensor>> inputTensors;
+    std::vector<std::shared_ptr<Tensor>> outputTensors;
+    for ([[maybe_unused]] auto _ : {1, 2, 3, 4}) {
+        auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{4}});
+        inputTensors.push_back(std::move(inputTensor));
+    }
+    for ([[maybe_unused]] auto _ : {1, 2, 3, 4}) {
+        auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{4}});
+        outputTensors.push_back(std::move(outputTensor));
+    }
+
+    const TensorComputePipeline::DescriptorMap descriptorMap = {
+        {
+            // set 0
+            {
+                0,                                                                    // binding
+                {inputTensors[0], inputTensors[1], inputTensors[2], inputTensors[3]}, // tensor
+            },
+            {
+                1,                                                                        // binding
+                {outputTensors[0], outputTensors[1], outputTensors[2], outputTensors[3]}, // tensor
+            },
+        },
+    };
+    auto computePipeline = std::make_shared<TensorComputePipeline>(device, descriptorMap, spirvModule);
+
+    uint8_t start = 17;
+    for (auto &inputTensor : inputTensors) {
+        std::iota(inputTensor->data(), inputTensor->data() + inputTensor->size(), start);
+        start += uint8_t(inputTensor->size());
+    }
+    for (auto &outputTensor : outputTensors) {
+        std::fill(outputTensor->data(), outputTensor->data() + outputTensor->size(), 0xFF);
+    }
+
+    computePipeline->dispatchSubmit(16, 1, 1);
+
+    for (auto &inputTensor : inputTensors) {
+        std::cout << "INPUT" << std::endl;
+        inputTensor->print();
+    }
+    for (auto &outputTensor : outputTensors) {
+        std::cout << "OUTPUT" << std::endl;
+        outputTensor->print();
+    }
+
+    for (auto i : {0U, 1U, 2U, 3U}) {
+        if (!outputTensors[i]->compare(inputTensors[i]->data(), inputTensors[i]->size())) {
+            throw std::runtime_error("Output mismatch");
+        }
+    }
+}
+
 TEST_F(MLEmulationLayerForVulkan, CreateTensorComputePipeline) {
     auto device = createDevice();
 
