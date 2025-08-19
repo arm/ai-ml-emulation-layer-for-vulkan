@@ -35,7 +35,10 @@ extensions = [
 ]
 
 # Disable superfluous warnings
-suppress_warnings = ["sphinx.ext.autosectionlabel.*"]
+suppress_warnings = [
+    "sphinx.ext.autosectionlabel.*",
+    "myst.header",
+]
 
 # Breathe Configuration
 breathe_projects = {"VMEL": "../generated/xml"}
