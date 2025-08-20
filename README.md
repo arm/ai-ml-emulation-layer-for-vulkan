@@ -269,6 +269,56 @@ $ adb shell settings put global gpu_debug_layers \
     VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation
 ```
 
+### Cross compilation for AArch64 on x86-64
+
+The shader pre-compilation step requires a glslang compiler. There are three
+ways to accomplish this when cross-compiling:
+
+1.  Provide a custom glslang executable. You can direct CMake to a custom
+    glslang executable file using the `GLSLANG_EXECUTABLE` option. First, build
+    glslang inside its repo. When the repository is initialized using the repo
+    manifest, the glslang source is checked out in
+    `<repo_root>/dependencies/glslang/` For building glslang, see
+    [Building (CMake)](https://github.com/KhronosGroup/glslang?tab=readme-ov-file#building-cmake).
+
+2.  Install glslang to the system. Under cross compilation, when no custom
+    glslang executable is provided, it will be searched from the system using
+    CMake's `find_package`. On Ubuntu, you can install it with
+    `sudo apt install glslang-tools` or from the source code following the
+    previously mentioned documentation. Note that we require version > 15.4.0,
+    which may not yet be available in Ubuntu’s official package repositories.
+
+3.  Disable the shader pre-compilation. This can be done by adding the CMake
+    option `-DVMEL_DISABLE_PRECOMPILE_SHADERS=ON` to CMake Command. By doing so,
+    the shaders would be compiled at runtime.
+
+An example build flow using the option 1 would be:
+
+First, build the glslang standalone under `<repo_root>/dependencies/glslang/`:
+
+```shell
+$ cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DENABLE_GLSLANG_BINARIES=ON -DENABLE_OPT=OFF -DBUILD_SHARED_LIBS=OFF
+
+$ cmake --build build --target glslang-standalone
+```
+
+After building, the binary will be at
+`<repo_root>/dependencies/glslang/build/StandAlone/glslang`. Then run the
+following under `<repo_root>/sw/emulation-layer/`:
+
+```shell
+$ cmake -B build \
+    -DCMAKE_TOOLCHAIN_FILE=${REPO}/sw/emulation-layer/cmake/toolchain/linux-aarch64-gcc.cmake \
+    -DGLSLANG_PATH=${REPO}/dependencies/glslang \
+    -DSPIRV_CROSS_PATH=${REPO}/dependencies/SPIRV-Cross \
+    -DSPIRV_HEADERS_PATH=${REPO}/dependencies/SPIRV-Headers \
+    -DSPIRV_TOOLS_PATH=${REPO}/dependencies/SPIRV-Tools \
+    -DVULKAN_HEADERS_PATH=${REPO}/dependencies/Vulkan-Headers \
+    -DGLSLANG_EXECUTABLE=${REPO}/dependencies/glslang/build/StandAlone/glslang
+
+$ cmake --build build
+```
+
 ### Vulkan® Layer Documentation
 
 For more information about using layers, see the
