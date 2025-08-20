@@ -59,11 +59,31 @@ macro(mlel_generate_spv_inc)
     add_custom_target(mlel_generate_spv_header DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shaders_spv.hpp.inc)
 endmacro()
 
-# Verify that required dependencies exist
-if(NOT TARGET glslang-standalone OR VMEL_DISABLE_PRECOMPILE_SHADERS)
+if(VMEL_DISABLE_PRECOMPILE_SHADERS)
     # Generate include file with empty shader map
     mlel_generate_spv_inc()
     return()
+endif()
+
+# Verify that required dependencies exist, otherwise throw a warning
+if((CMAKE_CROSSCOMPILING OR NOT TARGET glslang-standalone) AND (NOT GLSLANG_EXECUTABLE))
+    # Attempt to find system glslang
+    find_program(GLSLANG_EXECUTABLE NAMES glslang glslangValidator)
+
+    if(NOT GLSLANG_EXECUTABLE)
+        message(WARNING "Cannot find or build GLSL executable, will skip shader generation")
+        # Generate include file with empty shader map
+        mlel_generate_spv_inc()
+        return()
+    endif()
+endif()
+
+if(GLSLANG_EXECUTABLE)
+    set(GLSLANG_CMD "${GLSLANG_EXECUTABLE}")
+    set(GLSLANG_DEP "")
+else()
+    set(GLSLANG_CMD "$<TARGET_FILE:glslang-standalone>")
+    set(GLSLANG_DEP glslang-standalone)
 endif()
 
 set(WARP1D 64)
@@ -73,17 +93,16 @@ set(WARPZ 1)
 
 function(mlel_generate_glsl)
     cmake_parse_arguments(ARGS "" "INPUT;OUTPUT" "REPLACE" ${ARGN})
-
     # Generate SPV
     add_custom_command(
         OUTPUT ${ARGS_OUTPUT}
         COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/generate_spv.cmake
-            GLSLANG "$<TARGET_FILE:glslang-standalone>"
+            GLSLANG "${GLSLANG_CMD}"
             OUTPUT_FILE "${ARGS_OUTPUT}"
             INPUT_FILE "${ARGS_INPUT}"
             REPLACE ${ARGS_REPLACE}
         DEPENDS
-            glslang-standalone
+            ${GLSLANG_DEP}
             ${CMAKE_CURRENT_SOURCE_DIR}/generate_spv.cmake
             ${ARGS_INPUT})
 endfunction()
