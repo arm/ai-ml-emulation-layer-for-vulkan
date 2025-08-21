@@ -105,10 +105,10 @@ class Tensor {
             auto refOffsetBytes = ref.getElementOffset(idx);
             auto srcPtr = reinterpret_cast<T *>(data() + srcOffsetBytes);
             auto refPtr = reinterpret_cast<U *>(ref.data() + refOffsetBytes);
+            const auto diff = static_cast<double>(*srcPtr) - static_cast<double>(*refPtr);
             if (!isClose(*srcPtr, *refPtr, tolerance)) {
                 std::cout << "Output mismatch at position " << std::dec << idx << std::endl;
-                std::cout << "src=" << +(*srcPtr) << ", ref=" << +(*refPtr) << ", diff=" << fabs(*srcPtr - *refPtr)
-                          << std::endl;
+                std::cout << "src=" << +(*srcPtr) << ", ref=" << +(*refPtr) << ", diff=" << std::abs(diff) << std::endl;
                 return false;
             }
         }

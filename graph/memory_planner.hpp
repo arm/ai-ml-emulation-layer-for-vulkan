@@ -28,6 +28,8 @@ class MemoryPlanner {
   public:
     explicit MemoryPlanner(const std::shared_ptr<GraphPipeline> &_graphPipeline);
 
+    virtual ~MemoryPlanner() = default;
+
     virtual VkMemoryRequirements getGraphPipelineSessionMemoryRequirements() const = 0;
     virtual void bindGraphPipelineSessionMemory(VkDeviceMemory memory, VkDeviceSize offset,
                                                 const ComputeDescriptorSetMap &descriptorSets) = 0;
@@ -46,6 +48,7 @@ class MemoryPlanner {
 class LinearMemoryPlanner : public MemoryPlanner {
   public:
     using MemoryPlanner::MemoryPlanner;
+    ~LinearMemoryPlanner() override = default;
 
     VkMemoryRequirements getGraphPipelineSessionMemoryRequirements() const override;
     void bindGraphPipelineSessionMemory(VkDeviceMemory memory, VkDeviceSize offset,
@@ -61,6 +64,7 @@ using Tensors = std::vector<std::shared_ptr<TensorDescriptor>>;
 class BestFitMemoryPlanner : public MemoryPlanner {
   public:
     explicit BestFitMemoryPlanner(const std::shared_ptr<GraphPipeline> &_graphPipeline);
+    ~BestFitMemoryPlanner() override = default;
 
     VkMemoryRequirements getGraphPipelineSessionMemoryRequirements() const override;
     void bindGraphPipelineSessionMemory(VkDeviceMemory memory, VkDeviceSize offset,
