@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2024 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -28,8 +28,10 @@ void main() {
     uint oy = index[1];
     uint ox = index[2];
 
-    double sumReal = 0.0;
-    double sumImag = 0.0;
+    float sumReal = 0.0;
+    float sumImag = 0.0;
+    precise float errorReal = 0.0;
+    precise float errorImag = 0.0;
 
     for (uint iy = 0; iy < shape[1]; iy++) {
         for (uint ix = 0; ix < shape[2]; ix += 4) {
@@ -42,12 +44,20 @@ void main() {
             tensorReadARM(inputImagData, uint[](on, iy, ix), valueImag);
             vec4 valueImagVec = vec4(valueImag[0], valueImag[1], valueImag[2], valueImag[3]);
 
-            vec4 angles = pushConstants.signValue * 2.0f * PI * (float(iy * oy) / shape[1] + ixs * ox / shape[2]);
-            sumReal += dot(valueRealVec, cos(angles)) + dot(valueImagVec, sin(angles));
-            sumImag += -dot(valueRealVec, sin(angles)) + dot(valueImagVec, cos(angles));
+            vec4 angles = pushConstants.signValue * 2.0 * PI * mod(iy * oy * shape[2] + ixs * ox * shape[1], shape[2] * shape[1]) / (shape[2] * shape[1]);
+
+            float termReal = dot(valueRealVec, cos(angles)) + dot(valueImagVec, sin(angles)) - errorReal;
+            precise float sumNewReal = sumReal + termReal;
+            errorReal = (sumNewReal - sumReal) - termReal;
+            sumReal = sumNewReal;
+
+            float termImag = -dot(valueRealVec, cos(angles)) + dot(valueImagVec, cos(angles)) - errorImag;
+            precise float sumNewImag = sumImag + termImag;
+            errorImag = (sumNewImag - sumReal) - termImag;
+            sumImag = sumNewImag;
         }
     }
 
-    tensorWriteARM(outputRealData, index, float(sumReal));
-    tensorWriteARM(outputImagData, index, float(sumImag));
+    tensorWriteARM(outputRealData, index, sumReal);
+    tensorWriteARM(outputImagData, index, sumImag);
 }
