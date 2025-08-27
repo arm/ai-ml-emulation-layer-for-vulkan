@@ -49,7 +49,7 @@ void main() {
     #if IS_BOOL(TYPE_IN)
         OUT_T outValue = OUT_T(value ? 1 : 0);
     #elif IS_FLOAT(TYPE_IN)
-        OUT_T outValue = OUT_T(clamp(round(double(value)), TYPE_OUT_MIN, TYPE_OUT_MAX));
+        OUT_T outValue = OUT_T(clamp(round(IN_T(value)), TYPE_OUT_MIN, TYPE_OUT_MAX));
     #else
         OUT_T outValue = OUT_T(value);
     #endif
