@@ -53,18 +53,6 @@ class GraphPhysicalDevice : public PhysicalDevice {
         : PhysicalDevice(_instance, _physicalDevice) {}
 };
 
-/*****************************************************************************
- * Device
- *****************************************************************************/
-
-class GraphDevice : public Device {
-  public:
-    explicit GraphDevice(const std::shared_ptr<PhysicalDevice> &_physicalDevice, VkDevice _device,
-                         PFN_vkGetInstanceProcAddr _gipr, PFN_vkGetDeviceProcAddr _gdpr,
-                         const VkAllocationCallbacks *_callbacks)
-        : Device(_physicalDevice, _device, _gipr, _gdpr, _callbacks) {}
-};
-
 /**************************************************************************
  * DataGraphDescriptorSet
  **************************************************************************/
@@ -173,6 +161,23 @@ class TensorView {
 };
 
 /*****************************************************************************
+ * Device
+ *****************************************************************************/
+
+class GraphDevice : public Device {
+  public:
+    explicit GraphDevice(const std::shared_ptr<PhysicalDevice> &_physicalDevice, VkDevice _device,
+                         PFN_vkGetInstanceProcAddr _gipr, PFN_vkGetDeviceProcAddr _gdpr,
+                         const VkAllocationCallbacks *_callbacks)
+        : Device(_physicalDevice, _device, _gipr, _gdpr, _callbacks) {}
+
+    std::map<VkDescriptorSet, std::shared_ptr<DataGraphDescriptorSet>> descriptorSetMap;
+    std::map<VkPipeline, std::shared_ptr<DataGraphPipelineARM>> dataGraphPipelineMap;
+    std::map<VkTensorViewARM, std::shared_ptr<TensorView>> tensorViewMap;
+    std::map<VkShaderModule, std::shared_ptr<ShaderModule>> shaderModuleMap;
+};
+
+/*****************************************************************************
  * Layer
  *****************************************************************************/
 namespace {
@@ -217,7 +222,8 @@ constexpr VkLayerProperties layerProperties = {
     "ML Graph Emulation Layer",
 };
 
-using VulkanLayerImpl = VulkanLayer<layerProperties, extensions, requiredExtensions, Instance, PhysicalDevice, Device>;
+using VulkanLayerImpl =
+    VulkanLayer<layerProperties, extensions, requiredExtensions, Instance, PhysicalDevice, GraphDevice>;
 
 class GraphLayer : public VulkanLayerImpl {
   public:
@@ -341,7 +347,7 @@ class GraphLayer : public VulkanLayerImpl {
                                                              const VkDataGraphPipelineCreateInfoARM *createInfos,
                                                              const VkAllocationCallbacks *callbacks,
                                                              VkPipeline *pipelines) {
-        auto handle = VulkanLayerImpl::getHandle(device);
+        auto deviceHandle = VulkanLayerImpl::getHandle(device);
         auto pipelineCacheHandle = getHandle(pipelineCache);
 
         for (uint32_t i = 0; i < createInfoCount; i++) {
@@ -355,8 +361,8 @@ class GraphLayer : public VulkanLayerImpl {
             }
 
             // Create pipeline handle
-            auto pipeline = std::allocate_shared<DataGraphPipelineARM>(Allocator<GraphPipeline>{callbacks}, handle,
-                                                                       pipelineCacheHandle);
+            auto pipeline = std::allocate_shared<DataGraphPipelineARM>(Allocator<GraphPipeline>{callbacks},
+                                                                       deviceHandle, pipelineCacheHandle);
             pipelines[i] = reinterpret_cast<VkPipeline>(pipeline.get());
             auto graphPipeline = pipeline->graphPipeline;
 
@@ -390,7 +396,7 @@ class GraphLayer : public VulkanLayerImpl {
                 graphPipeline->makeConstTensor(constant.id, *graphPipelineConstantTensor, constant.pConstantData);
             }
 
-            auto shaderModule = getHandle(shaderModuleCreateInfo->module);
+            auto shaderModule = getHandle(deviceHandle, shaderModuleCreateInfo->module);
 
             // Create optimizer
             spvtools::Optimizer optimizer{SPV_ENV_UNIVERSAL_1_6};
@@ -417,7 +423,7 @@ class GraphLayer : public VulkanLayerImpl {
 
             {
                 scopedMutex l(globalMutex);
-                dataGraphPipelineMap[pipelines[i]] = pipeline;
+                deviceHandle->dataGraphPipelineMap[pipelines[i]] = pipeline;
             }
         }
 
@@ -453,7 +459,8 @@ class GraphLayer : public VulkanLayerImpl {
     static void VKAPI_CALL vkDestroyPipeline(VkDevice device, VkPipeline pipeline,
                                              const VkAllocationCallbacks *allocator) {
         auto handle = VulkanLayerImpl::getHandle(device);
-        auto pipelineImpl = getHandle(pipeline);
+        auto deviceHandle = VulkanLayerImpl::getHandle(device);
+        auto pipelineImpl = getHandle(deviceHandle, pipeline);
 
         if (!pipelineImpl) {
             handle->loader->vkDestroyPipeline(device, pipeline, allocator);
@@ -462,18 +469,18 @@ class GraphLayer : public VulkanLayerImpl {
 
         {
             scopedMutex l(globalMutex);
-            dataGraphPipelineMap.erase(pipeline);
+            deviceHandle->dataGraphPipelineMap.erase(pipeline);
         }
     }
 
     static VkResult VKAPI_CALL vkCreateDataGraphPipelineSessionARM(
         VkDevice device, const VkDataGraphPipelineSessionCreateInfoARM *createInfo,
         const VkAllocationCallbacks *callbacks, VkDataGraphPipelineSessionARM *session) {
-        auto handle = VulkanLayerImpl::getHandle(device);
-        auto pipelineImpl = getHandle(createInfo->dataGraphPipeline);
+        auto deviceHandle = VulkanLayerImpl::getHandle(device);
+        auto pipelineImpl = getHandle(deviceHandle, createInfo->dataGraphPipeline);
 
         *session = reinterpret_cast<VkDataGraphPipelineSessionARM>(
-            allocateObject<DataGraphPipelineSessionARM>(callbacks, handle, pipelineImpl));
+            allocateObject<DataGraphPipelineSessionARM>(callbacks, deviceHandle, pipelineImpl));
 
         return VK_SUCCESS;
     }
@@ -550,15 +557,16 @@ class GraphLayer : public VulkanLayerImpl {
     static VkResult VKAPI_CALL vkAllocateDescriptorSets(VkDevice device,
                                                         const VkDescriptorSetAllocateInfo *allocateInfo,
                                                         VkDescriptorSet *descriptorSets) {
-        auto handle = VulkanLayerImpl::getHandle(device);
-        auto res = handle->loader->vkAllocateDescriptorSets(device, allocateInfo, descriptorSets);
+        auto deviceHandle = VulkanLayerImpl::getHandle(device);
+        auto res = deviceHandle->loader->vkAllocateDescriptorSets(device, allocateInfo, descriptorSets);
 
         if (res == VK_SUCCESS) {
             scopedMutex l(globalMutex);
 
             for (uint32_t i = 0; i < allocateInfo->descriptorSetCount; i++) {
                 const auto descriptorSetLayout = VulkanLayerImpl::getHandle(allocateInfo->pSetLayouts[i]);
-                descriptorSetMap[descriptorSets[i]] = std::make_shared<DataGraphDescriptorSet>(descriptorSetLayout);
+                deviceHandle->descriptorSetMap[descriptorSets[i]] =
+                    std::make_shared<DataGraphDescriptorSet>(descriptorSetLayout);
             }
         }
 
@@ -568,21 +576,23 @@ class GraphLayer : public VulkanLayerImpl {
     static VkResult VKAPI_CALL vkFreeDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool,
                                                     uint32_t descriptorSetCount,
                                                     const VkDescriptorSet *descriptorSets) {
-        auto handle = VulkanLayerImpl::getHandle(device);
-        auto res = handle->loader->vkFreeDescriptorSets(device, descriptorPool, descriptorSetCount, descriptorSets);
+        auto deviceHandle = VulkanLayerImpl::getHandle(device);
+        auto res =
+            deviceHandle->loader->vkFreeDescriptorSets(device, descriptorPool, descriptorSetCount, descriptorSets);
 
         while (descriptorSetCount-- > 0) {
             scopedMutex l(globalMutex);
-            descriptorSetMap.erase(descriptorSets[descriptorSetCount]);
+            deviceHandle->descriptorSetMap.erase(descriptorSets[descriptorSetCount]);
         }
 
         return res;
     }
 
-    static void updateDescriptorSet(const std::vector<VkTensorViewARM> &tensorViews, const uint32_t arrayIndex,
+    static void updateDescriptorSet(const std::shared_ptr<GraphDevice> &deviceHandle,
+                                    const std::vector<VkTensorViewARM> &tensorViews, const uint32_t arrayIndex,
                                     const std::shared_ptr<GraphPipeline> &graphPipeline, const uint32_t set,
                                     const uint32_t binding, const ComputeDescriptorSetMap &computeDescriptorSetMap) {
-        const auto tensorView = getHandle(tensorViews[arrayIndex]);
+        const auto tensorView = getHandle(deviceHandle, tensorViews[arrayIndex]);
 
         // Get tensor descriptor associated with this set, binding and array index
         const auto tensorDescriptor = graphPipeline->getTensor(set, binding, arrayIndex);
@@ -600,13 +610,13 @@ class GraphLayer : public VulkanLayerImpl {
                                                   const VkWriteDescriptorSet *descriptorWrites,
                                                   uint32_t descriptorCopyCount,
                                                   const VkCopyDescriptorSet *descriptorCopies) {
-        auto handle = VulkanLayerImpl::getHandle(device);
-        handle->loader->vkUpdateDescriptorSets(device, descriptorWriteCount, descriptorWrites, descriptorCopyCount,
-                                               descriptorCopies);
+        auto deviceHandle = VulkanLayerImpl::getHandle(device);
+        deviceHandle->loader->vkUpdateDescriptorSets(device, descriptorWriteCount, descriptorWrites,
+                                                     descriptorCopyCount, descriptorCopies);
 
         for (uint32_t i = 0; i < descriptorWriteCount; i++) {
             const auto &vkWriteDescriptorSet = descriptorWrites[i];
-            const auto descriptorSet = getHandle(vkWriteDescriptorSet.dstSet);
+            const auto descriptorSet = getHandle(deviceHandle, vkWriteDescriptorSet.dstSet);
             descriptorSet->update(vkWriteDescriptorSet);
 
             for (const auto &[pipelineSet, computeDescriptorSetMap] : descriptorSet->externalDescriptorSets) {
@@ -615,8 +625,8 @@ class GraphLayer : public VulkanLayerImpl {
                 std::shared_ptr<DataGraphPipelineARM> dataGraphPipelineArm;
                 {
                     scopedMutex l(globalMutex);
-                    const auto it = dataGraphPipelineMap.find(vkPipeline);
-                    if (it == dataGraphPipelineMap.end()) {
+                    const auto it = deviceHandle->dataGraphPipelineMap.find(vkPipeline);
+                    if (it == deviceHandle->dataGraphPipelineMap.end()) {
                         continue; // To avoid adding nullptr
                     }
                     dataGraphPipelineArm = it->second;
@@ -625,7 +635,7 @@ class GraphLayer : public VulkanLayerImpl {
                 const auto binding = vkWriteDescriptorSet.dstBinding;
                 const auto arrayIndex = vkWriteDescriptorSet.dstArrayElement;
 
-                updateDescriptorSet(descriptorSet->tensorViews[binding], arrayIndex,
+                updateDescriptorSet(deviceHandle, descriptorSet->tensorViews[binding], arrayIndex,
                                     dataGraphPipelineArm->graphPipeline, set, binding, computeDescriptorSetMap);
             }
         }
@@ -682,6 +692,7 @@ class GraphLayer : public VulkanLayerImpl {
         auto pipeline = session->pipeline;
         auto vkPipeline = reinterpret_cast<VkPipeline>(pipeline.get());
         auto graphPipeline = pipeline->graphPipeline;
+        auto deviceHandle = VulkanLayerImpl::getHandle(handle->device->device);
 
         /*
          * Merge descriptor sets, they can have three different origins:
@@ -692,7 +703,7 @@ class GraphLayer : public VulkanLayerImpl {
         ComputeDescriptorSetMap allDescriptorSetMap;
 
         for (const auto &[set, vkDescriptorSet] : handle->descriptorSets) {
-            auto descriptorSet = getHandle(vkDescriptorSet);
+            auto descriptorSet = getHandle(deviceHandle, vkDescriptorSet);
 
             auto &externalDescriptorSets = descriptorSet->externalDescriptorSets;
             if (externalDescriptorSets.find({vkPipeline, set}) == externalDescriptorSets.end()) {
@@ -723,7 +734,7 @@ class GraphLayer : public VulkanLayerImpl {
                         if (tensorViews[arrayIndex] == nullptr) {
                             continue;
                         }
-                        updateDescriptorSet(tensorViews, arrayIndex, graphPipeline, set, binding,
+                        updateDescriptorSet(deviceHandle, tensorViews, arrayIndex, graphPipeline, set, binding,
                                             computeDescriptorSetMap);
                     }
                 }
@@ -746,12 +757,12 @@ class GraphLayer : public VulkanLayerImpl {
     static VkResult VKAPI_CALL vkCreateTensorViewARM(VkDevice device, const VkTensorViewCreateInfoARM *createInfo,
                                                      const VkAllocationCallbacks *allocator,
                                                      VkTensorViewARM *tensorView) {
-        auto handle = VulkanLayerImpl::getHandle(device);
-        auto res = handle->loader->vkCreateTensorViewARM(device, createInfo, allocator, tensorView);
+        auto deviceHandle = VulkanLayerImpl::getHandle(device);
+        auto res = deviceHandle->loader->vkCreateTensorViewARM(device, createInfo, allocator, tensorView);
 
         if (res == VK_SUCCESS) {
             scopedMutex l(globalMutex);
-            tensorViewMap[*tensorView] = std::make_shared<TensorView>(createInfo);
+            deviceHandle->tensorViewMap[*tensorView] = std::make_shared<TensorView>(createInfo);
         }
 
         return res;
@@ -759,12 +770,12 @@ class GraphLayer : public VulkanLayerImpl {
 
     static void VKAPI_CALL vkDestroyTensorViewARM(VkDevice device, VkTensorViewARM tensorView,
                                                   const VkAllocationCallbacks *allocator) {
-        auto handle = VulkanLayerImpl::getHandle(device);
-        handle->loader->vkDestroyTensorViewARM(device, tensorView, allocator);
+        auto deviceHandle = VulkanLayerImpl::getHandle(device);
+        deviceHandle->loader->vkDestroyTensorViewARM(device, tensorView, allocator);
 
         {
             scopedMutex l(globalMutex);
-            tensorViewMap.erase(tensorView);
+            deviceHandle->tensorViewMap.erase(tensorView);
         }
     }
 
@@ -775,7 +786,7 @@ class GraphLayer : public VulkanLayerImpl {
     static VkResult VKAPI_CALL vkCreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo *pCreateInfo,
                                                     const VkAllocationCallbacks *pAllocator,
                                                     VkShaderModule *pShaderModule) {
-        auto handle = VulkanLayerImpl::getHandle(device);
+        auto deviceHandle = VulkanLayerImpl::getHandle(device);
         std::vector<uint32_t> spirvSource = {pCreateInfo->pCode,
                                              pCreateInfo->pCode + pCreateInfo->codeSize / sizeof(uint32_t)};
         auto isGraph = isGraphSpirv(spirvSource);
@@ -787,22 +798,22 @@ class GraphLayer : public VulkanLayerImpl {
             *pShaderModule = reinterpret_cast<VkShaderModule>(shaderModule.get());
             {
                 scopedMutex l(globalMutex);
-                shaderModuleMap[*pShaderModule] = std::move(shaderModule);
+                deviceHandle->shaderModuleMap[*pShaderModule] = std::move(shaderModule);
             }
             return VK_SUCCESS;
         } else {
-            return handle->loader->vkCreateShaderModule(device, pCreateInfo, pAllocator, pShaderModule);
+            return deviceHandle->loader->vkCreateShaderModule(device, pCreateInfo, pAllocator, pShaderModule);
         }
     }
 
     static void VKAPI_CALL vkDestroyShaderModule(VkDevice device, VkShaderModule shaderModule,
                                                  const VkAllocationCallbacks *allocator) {
-        auto handle = VulkanLayerImpl::getHandle(device);
+        auto deviceHandle = VulkanLayerImpl::getHandle(device);
         scopedMutex l(globalMutex);
-        if (shaderModuleMap.count(shaderModule)) {
-            shaderModuleMap.erase(shaderModule);
+        if (deviceHandle->shaderModuleMap.count(shaderModule)) {
+            deviceHandle->shaderModuleMap.erase(shaderModule);
         } else {
-            handle->loader->vkDestroyShaderModule(device, shaderModule, allocator);
+            deviceHandle->loader->vkDestroyShaderModule(device, shaderModule, allocator);
         }
     }
 
@@ -910,43 +921,55 @@ class GraphLayer : public VulkanLayerImpl {
 
     static VkResult VKAPI_CALL vkSetDebugUtilsObjectNameEXT(VkDevice device,
                                                             const VkDebugUtilsObjectNameInfoEXT *pNameInfo) {
-        auto handle = VulkanLayerImpl::getHandle(device);
+        auto deviceHandle = VulkanLayerImpl::getHandle(device);
 
         switch (pNameInfo->objectType) {
         case VK_OBJECT_TYPE_PIPELINE: {
             auto pipeline = reinterpret_cast<VkPipeline>(pNameInfo->objectHandle);
             scopedMutex l(globalMutex);
-            if (dataGraphPipelineMap.find(pipeline) != dataGraphPipelineMap.end()) {
+            if (deviceHandle->dataGraphPipelineMap.find(pipeline) != deviceHandle->dataGraphPipelineMap.end()) {
                 return VK_SUCCESS;
             }
         } break;
         case VK_OBJECT_TYPE_SHADER_MODULE: {
             auto shaderModule = reinterpret_cast<VkShaderModule>(pNameInfo->objectHandle);
             scopedMutex l(globalMutex);
-            if (shaderModuleMap.find(shaderModule) != shaderModuleMap.end()) {
+            if (deviceHandle->shaderModuleMap.find(shaderModule) != deviceHandle->shaderModuleMap.end()) {
                 return VK_SUCCESS;
             }
         } break;
         default:
             break;
         }
-        return handle->physicalDevice->instance->loader->vkSetDebugUtilsObjectNameEXT(device, pNameInfo);
+        return deviceHandle->physicalDevice->instance->loader->vkSetDebugUtilsObjectNameEXT(device, pNameInfo);
     }
-
     /**************************************************************************
      * Handles
      **************************************************************************/
 
-    static std::shared_ptr<DataGraphDescriptorSet> getHandle(const VkDescriptorSet handle) {
+    static std::shared_ptr<DataGraphDescriptorSet> getHandle(const std::shared_ptr<GraphDevice> &graphDevice,
+                                                             const VkDescriptorSet handle) {
         scopedMutex l(globalMutex);
-        return descriptorSetMap[handle];
+        return graphDevice->descriptorSetMap[handle];
     }
 
-    static std::shared_ptr<DataGraphPipelineARM> getHandle(const VkPipeline handle) {
+    static std::shared_ptr<DataGraphPipelineARM> getHandle(const std::shared_ptr<GraphDevice> &graphDevice,
+                                                           const VkPipeline handle) {
         scopedMutex l(globalMutex);
-        return dataGraphPipelineMap[handle];
+        return graphDevice->dataGraphPipelineMap[handle];
     }
 
+    static std::shared_ptr<TensorView> getHandle(const std::shared_ptr<GraphDevice> &graphDevice,
+                                                 const VkTensorViewARM handle) {
+        scopedMutex l(globalMutex);
+        return graphDevice->tensorViewMap[handle];
+    }
+
+    static std::shared_ptr<ShaderModule> getHandle(const std::shared_ptr<GraphDevice> &graphDevice,
+                                                   const VkShaderModule handle) {
+        scopedMutex l(globalMutex);
+        return graphDevice->shaderModuleMap[handle];
+    }
     static std::shared_ptr<PipelineCache> getHandle(const VkPipelineCache handle) {
         scopedMutex l(globalMutex);
         if (handle != VK_NULL_HANDLE) {
@@ -955,27 +978,7 @@ class GraphLayer : public VulkanLayerImpl {
         // Null handle means no (persistent) pipeline caching
         return std::make_shared<PipelineCache>(nullptr, 0, handle);
     }
-
-    static std::shared_ptr<TensorView> getHandle(const VkTensorViewARM handle) {
-        scopedMutex l(globalMutex);
-        return tensorViewMap[handle];
-    }
-
-    static std::shared_ptr<ShaderModule> getHandle(const VkShaderModule handle) {
-        scopedMutex l(globalMutex);
-        return shaderModuleMap[handle];
-    }
-
-    static std::map<VkDescriptorSet, std::shared_ptr<DataGraphDescriptorSet>> descriptorSetMap;
-    static std::map<VkPipeline, std::shared_ptr<DataGraphPipelineARM>> dataGraphPipelineMap;
-    static std::map<VkTensorViewARM, std::shared_ptr<TensorView>> tensorViewMap;
-    static std::map<VkShaderModule, std::shared_ptr<ShaderModule>> shaderModuleMap;
 };
-
-std::map<VkDescriptorSet, std::shared_ptr<DataGraphDescriptorSet>> GraphLayer::descriptorSetMap;
-std::map<VkPipeline, std::shared_ptr<DataGraphPipelineARM>> GraphLayer::dataGraphPipelineMap;
-std::map<VkTensorViewARM, std::shared_ptr<TensorView>> GraphLayer::tensorViewMap;
-std::map<VkShaderModule, std::shared_ptr<ShaderModule>> GraphLayer::shaderModuleMap;
 
 } // namespace mlsdk::el::layer
 
