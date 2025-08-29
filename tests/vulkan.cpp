@@ -882,6 +882,65 @@ TEST_F(MLEmulationLayerForVulkan, Concat) {
     }
 }
 
+TEST_F(MLEmulationLayerForVulkan, GraphConstantARM) {
+    auto device = createDevice();
+
+    GraphConstants graphConstants;
+
+    graphConstants.makeGraphPipelineConstantTensor(0, Shape{vk::Format::eR32Sint, {1}}, std::vector<int32_t>{2});
+    graphConstants.makeGraphPipelineConstantTensor(1, Shape{vk::Format::eR8Sint, {1}}, std::vector<int8_t>{0});
+
+    graphConstants.makeGraphPipelineConstantTensor(2, Shape{vk::Format::eR32Sint, {1}}, std::vector<int32_t>{3});
+    graphConstants.makeGraphPipelineConstantTensor(3, Shape{vk::Format::eR8Sint, {1}}, std::vector<int8_t>{0});
+
+    graphConstants.makeGraphPipelineConstantTensor(4, Shape{vk::Format::eR32Sint, {1}}, std::vector<int32_t>{4});
+    graphConstants.makeGraphPipelineConstantTensor(5, Shape{vk::Format::eR8Sint, {1}}, std::vector<int8_t>{0});
+
+    auto inputTensor0 = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{5}});
+    auto inputTensor1 = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{5}});
+    auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{5}});
+    const GraphPipeline::DescriptorMap descriptorMap = {
+        {
+            // set 0
+            {
+                0,              // binding
+                {inputTensor0}, // tensor
+            },
+            {
+                1,              // binding
+                {inputTensor1}, // tensor
+            },
+            {
+                2,              // binding
+                {outputTensor}, // tensor
+            },
+        },
+    };
+
+    std::iota(inputTensor0->data(), inputTensor0->data() + inputTensor0->size(), uint8_t{});
+    std::iota(inputTensor1->data(), inputTensor1->data() + inputTensor1->size(), uint8_t{});
+
+    const auto spirv = assembleSpirv(fileToString("graph-constant-arm.spvasm"));
+    auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, graphConstants, spirv);
+
+    graphPipeline->dispatchSubmit();
+
+    std::cout << "INPUT" << std::endl;
+    inputTensor0->print();
+
+    std::cout << "INPUT" << std::endl;
+    inputTensor1->print();
+
+    std::cout << "OUTPUT" << std::endl;
+    outputTensor->print();
+
+    const uint8_t ref[5] = {0, 20, 40, 60, 80};
+
+    if (!outputTensor->compare(&ref[0], sizeof(ref))) {
+        throw std::runtime_error("Output mismatch");
+    }
+}
+
 TEST_F(MLEmulationLayerForVulkan, Maximum) {
     auto device = createDevice();
 
