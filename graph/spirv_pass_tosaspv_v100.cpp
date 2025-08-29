@@ -676,7 +676,7 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
 
     const auto &resultId = opExtInst->result_id();
     const auto &inputId = opExtInst->GetInOperand(2);
-    const auto &padding = makeCompositeTensor(opExtInst->GetInOperand(3).AsId());
+    const auto &padding = getOrMakeCompositeTensor(opExtInst->GetInOperand(3).AsId());
     const auto &padConst = getConstVector<double>(opExtInst->GetInOperand(4));
 
     graphLog(Severity::Info) << "OpExtInst result=" << resultId << "," << debugName << ", padding=" << padding
@@ -698,8 +698,8 @@ void GraphPassTosaSpv100::handleRescale(const Instruction *opExtInst, const std:
     const auto &inputUnsigned = getBoolConstant(opExtInst->GetInOperand(5));
     const auto &outputUnsigned = getBoolConstant(opExtInst->GetInOperand(6));
     const auto &inputId = opExtInst->GetInOperand(7);
-    const auto &multiplier = makeCompositeTensor(opExtInst->GetInOperand(8).AsId());
-    const auto &shift = makeCompositeTensor(opExtInst->GetInOperand(9).AsId());
+    const auto &multiplier = getOrMakeCompositeTensor(opExtInst->GetInOperand(8).AsId());
+    const auto &shift = getOrMakeCompositeTensor(opExtInst->GetInOperand(9).AsId());
     const auto &inputZeroPoint = getConstVector<int32_t>(opExtInst->GetInOperand(10));
     const auto &outputZeroPoint = getConstVector<int32_t>(opExtInst->GetInOperand(11));
 
@@ -878,7 +878,7 @@ void GraphPassTosaSpv100::handleTable(const Instruction *opExtInst, const std::s
 
     const auto &resultId = opExtInst->result_id();
     const auto &inputId = opExtInst->GetInOperand(2);
-    const auto &table = makeCompositeTensor(opExtInst->GetInOperand(3).AsId());
+    const auto &table = getOrMakeCompositeTensor(opExtInst->GetInOperand(3).AsId());
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", input=%" << inputId.AsId()
                              << ", table=" << table << std::endl;
