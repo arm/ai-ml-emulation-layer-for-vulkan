@@ -6,17 +6,11 @@
 #define IN_OUT_T %in_out_t%
 #define TYPE_IN_OUT %in_out_t_type%
 
-#if IN_OUT_T == int8_t
-    #define PUSH_T int16_t
-#else
-    #define PUSH_T IN_OUT_T
-#endif
-
 layout(local_size_x = %warpX%) in;
 
 layout(push_constant) uniform PushConstants {
-    PUSH_T min;
-    PUSH_T max;
+    IN_OUT_T min;
+    IN_OUT_T max;
     uint nanMode;
 } pushConstants;
 
