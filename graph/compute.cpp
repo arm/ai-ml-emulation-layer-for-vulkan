@@ -291,7 +291,7 @@ VkDescriptorPool ComputePipelineLayout::createDescriptorPool() const {
 
     VkDescriptorPool pool;
     if (loader->vkCreateDescriptorPool(device, &descriptorPoolCreateInfo, nullptr, &pool) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to allocated descriptor pool");
+        throw std::runtime_error("Failed to allocate descriptor pool");
     }
 
     return pool;
@@ -324,7 +324,7 @@ VkDescriptorSet ComputePipelineLayout::createDescriptorSet(const VkDescriptorPoo
 
     VkDescriptorSet descriptorSet;
     if (loader->vkAllocateDescriptorSets(device, &descriptorSetAllocInfo, &descriptorSet) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to allocated descriptor set");
+        throw std::runtime_error("Failed to allocate descriptor set");
     }
 
     return descriptorSet;
