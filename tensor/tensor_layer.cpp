@@ -34,8 +34,10 @@ namespace mlsdk::el::layer {
 
 class TensorInstance : public Instance {
   public:
-    TensorInstance(VkInstance instance, PFN_vkGetInstanceProcAddr gipr, const VkAllocationCallbacks *callbacks)
-        : Instance(instance, gipr, callbacks) {}
+    TensorInstance(VkInstance instance, PFN_vkGetInstanceProcAddr gipr, const VkAllocationCallbacks *callbacks,
+                   PFN_vkGetInstanceProcAddr nextGetInstanceProcAddr,
+                   PFN_GetPhysicalDeviceProcAddr nextGetPhysicalDeviceProcAddr)
+        : Instance(instance, gipr, callbacks, nextGetInstanceProcAddr, nextGetPhysicalDeviceProcAddr) {}
 };
 
 /*******************************************************************************
@@ -191,8 +193,7 @@ class TensorLayer : public VulkanLayerImpl {
             {"vkAllocateMemory", PFN_vkVoidFunction(vkAllocateMemory)},
             {"vkFreeMemory", PFN_vkVoidFunction(vkFreeMemory)}};
 
-        auto it = vtable.find(name);
-        if (it != vtable.end()) {
+        if (auto it = vtable.find(name); it != vtable.end()) {
             return it->second;
         }
 
@@ -211,12 +212,28 @@ class TensorLayer : public VulkanLayerImpl {
             // Device functions
             {"vkSetDebugUtilsObjectNameEXT", PFN_vkVoidFunction(vkSetDebugUtilsObjectNameEXT)}};
 
-        auto it = vtable.find(name);
-        if (it != vtable.end()) {
+        if (auto it = vtable.find(name); it != vtable.end()) {
             return it->second;
         }
 
         return VulkanLayerImpl::vkGetInstanceProcAddr(instance, name);
+    }
+
+    static PFN_vkVoidFunction VKAPI_CALL vk_layerGetPhysicalDeviceProcAddr(VkInstance instance, const char *name) {
+        static const vTable vtable = {
+            {"vk_layerGetPhysicalDeviceProcAddr", PFN_vkVoidFunction(vk_layerGetPhysicalDeviceProcAddr)},
+            // PhysicalDevice functions
+            {"vkGetPhysicalDeviceProperties2", PFN_vkVoidFunction(vkGetPhysicalDeviceProperties2)},
+            {"vkGetPhysicalDeviceFormatProperties2", PFN_vkVoidFunction(vkGetPhysicalDeviceFormatProperties2)},
+            {"vkGetPhysicalDeviceFeatures2", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2)},
+            {"vkGetPhysicalDeviceFeatures2KHR", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2KHR)},
+            {"vkCreateDevice", PFN_vkVoidFunction(vkCreateDevice)}};
+
+        if (auto it = vtable.find(name); it != vtable.end()) {
+            return it->second;
+        }
+
+        return VulkanLayerImpl::vk_layerGetPhysicalDeviceProcAddr(instance, name);
     }
 
     static VkResult VKAPI_CALL vkCreateTensorARM(VkDevice device, const VkTensorCreateInfoARM *createInfo,
@@ -847,6 +864,23 @@ LAYER_EXPORT PFN_vkVoidFunction VKAPI_CALL tensorGetDeviceProcAddr(VkDevice devi
     return TensorLayer::vkGetDeviceProcAddr(device, name);
 }
 
+LAYER_EXPORT PFN_vkVoidFunction VKAPI_CALL vk_layerGetPhysicalDeviceProcAddr(VkInstance instance, const char *pName) {
+    return TensorLayer::vk_layerGetPhysicalDeviceProcAddr(instance, pName);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *pVersionStruct) {
+    assert(pVersionStruct != NULL);
+    assert(pVersionStruct->sType == LAYER_NEGOTIATE_INTERFACE_STRUCT);
+
+    if (pVersionStruct->loaderLayerInterfaceVersion >= 2) {
+        pVersionStruct->pfnGetInstanceProcAddr = vkGetInstanceProcAddr;
+        pVersionStruct->pfnGetDeviceProcAddr = vkGetDeviceProcAddr;
+        pVersionStruct->pfnGetPhysicalDeviceProcAddr = vk_layerGetPhysicalDeviceProcAddr;
+    }
+
+    return VK_SUCCESS;
+}
+
 PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char *name) {
     return TensorLayer::vkGetInstanceProcAddr(instance, name);
 }
@@ -862,11 +896,6 @@ VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(uint32_t *pPropertyCount,
 VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(VkPhysicalDevice physicalDevice, uint32_t *pPropertyCount,
                                                      VkLayerProperties *pProperties) {
     return TensorLayer::vkEnumerateDeviceLayerProperties(physicalDevice, pPropertyCount, pProperties);
-}
-
-VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(const char *pLayerName, uint32_t *pPropertyCount,
-                                                           VkExtensionProperties *pProperties) {
-    return TensorLayer::vkEnumerateInstanceExtensionProperties(pLayerName, pPropertyCount, pProperties);
 }
 
 VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice, const char *pLayerName,

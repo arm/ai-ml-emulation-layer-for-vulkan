@@ -204,11 +204,17 @@ class Loader {
 
 class Instance : public Loader {
   public:
-    explicit Instance(VkInstance _instance, PFN_vkGetInstanceProcAddr _gipr, const VkAllocationCallbacks *_callbacks)
-        : Loader(_callbacks, _instance, _gipr), instance{_instance}, callbacks{_callbacks} {}
+    explicit Instance(VkInstance _instance, PFN_vkGetInstanceProcAddr _gipr, const VkAllocationCallbacks *_callbacks,
+                      PFN_vkGetInstanceProcAddr _nextGetInstanceProcAddr,
+                      PFN_GetPhysicalDeviceProcAddr _nextGetPhysicalDeviceProcAddr)
+        : Loader(_callbacks, _instance, _gipr), instance{_instance}, callbacks{_callbacks},
+          nextGetInstanceProcAddr{_nextGetInstanceProcAddr}, nextGetPhysicalDeviceProcAddr{
+                                                                 _nextGetPhysicalDeviceProcAddr} {}
 
     VkInstance instance;
     const VkAllocationCallbacks *callbacks;
+    PFN_vkGetInstanceProcAddr nextGetInstanceProcAddr;
+    PFN_GetPhysicalDeviceProcAddr nextGetPhysicalDeviceProcAddr;
 };
 
 /*****************************************************************************
@@ -402,10 +408,9 @@ class VulkanLayer {
             // PhysicalDevice functions
             {"vkEnumerateDeviceExtensionProperties", PFN_vkVoidFunction(vkEnumerateDeviceExtensionProperties)},
             {"vkCreateDevice", PFN_vkVoidFunction(vkCreateDevice)},
-        };
+            {"vk_layerGetPhysicalDeviceProcAddr", PFN_vkVoidFunction(vk_layerGetPhysicalDeviceProcAddr)}};
 
-        auto it = vtable.find(name);
-        if (it != vtable.end()) {
+        if (auto it = vtable.find(name); it != vtable.end()) {
             return it->second;
         }
 
@@ -437,11 +442,9 @@ class VulkanLayer {
 
             // Command buffers
             {"vkAllocateCommandBuffers", PFN_vkVoidFunction(vkAllocateCommandBuffers)},
-            {"vkFreeCommandBuffers", PFN_vkVoidFunction(vkFreeCommandBuffers)},
-        };
+            {"vkFreeCommandBuffers", PFN_vkVoidFunction(vkFreeCommandBuffers)}};
 
-        auto it = vtable.find(name);
-        if (it != vtable.end()) {
+        if (auto it = vtable.find(name); it != vtable.end()) {
             return it->second;
         }
 
@@ -450,6 +453,44 @@ class VulkanLayer {
             return handle->loader->vkGetDeviceProcAddr(device, name);
         }
 
+        return nullptr;
+    }
+
+    static PFN_vkVoidFunction VKAPI_CALL vk_layerGetPhysicalDeviceProcAddr(VkInstance instance, const char *name) {
+        static const vTable vtable = {
+            {"vk_layerGetPhysicalDeviceProcAddr", PFN_vkVoidFunction(vk_layerGetPhysicalDeviceProcAddr)},
+            // PhysicalDevice functions
+            {"vkCreateDevice", PFN_vkVoidFunction(vkCreateDevice)}};
+
+        if (auto it = vtable.find(name); it != vtable.end()) {
+            return it->second;
+        }
+
+        if (instance == VK_NULL_HANDLE) {
+            return nullptr;
+        }
+
+        if (auto handle = getHandle(instance)) {
+            PFN_vkGetInstanceProcAddr getInstanceProcAddr = nullptr;
+            PFN_GetPhysicalDeviceProcAddr nextPhysicalDeviceProcAddr = nullptr;
+            if (handle)
+                getInstanceProcAddr = handle->nextGetInstanceProcAddr;
+
+            // Default to propagating through Instance Proc Address
+            if (getInstanceProcAddr) {
+                nextPhysicalDeviceProcAddr = reinterpret_cast<PFN_GetPhysicalDeviceProcAddr>(
+                    getInstanceProcAddr(instance, "vk_layerGetPhysicalDeviceProcAddr"));
+            }
+            // Fallback to using stored next physical device proc address
+            if (!nextPhysicalDeviceProcAddr) {
+                nextPhysicalDeviceProcAddr = handle->nextGetPhysicalDeviceProcAddr;
+            }
+
+            // Block against recursive calls
+            if (nextPhysicalDeviceProcAddr && nextPhysicalDeviceProcAddr != vk_layerGetPhysicalDeviceProcAddr) {
+                return nextPhysicalDeviceProcAddr(instance, name);
+            }
+        }
         return nullptr;
     }
 
@@ -470,17 +511,6 @@ class VulkanLayer {
     static VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(VkPhysicalDevice, uint32_t *pPropertyCount,
                                                                 VkLayerProperties *pProperties) {
         return vkEnumerateInstanceLayerProperties(pPropertyCount, pProperties);
-    }
-
-    static VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(const char *pLayerName, uint32_t *pPropertyCount,
-                                                                      VkExtensionProperties *) {
-        if (pLayerName == nullptr || std::string(pLayerName) != layerProperties.layerName) {
-            return VK_ERROR_LAYER_NOT_PRESENT;
-        }
-        if (pPropertyCount) {
-            *pPropertyCount = 0;
-        }
-        return VK_SUCCESS;
     }
 
     static VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice,
@@ -541,6 +571,8 @@ class VulkanLayer {
         }
 
         auto getInstanceProcAddr = layerCreateInfo->u.pLayerInfo->pfnNextGetInstanceProcAddr;
+        auto getNextPhysicalDeviceProcAddr = layerCreateInfo->u.pLayerInfo->pfnNextGetPhysicalDeviceProcAddr;
+
         layerCreateInfo->u.pLayerInfo = layerCreateInfo->u.pLayerInfo->pNext;
 
         auto createInstance = reinterpret_cast<PFN_vkCreateInstance>(getInstanceProcAddr(nullptr, "vkCreateInstance"));
@@ -551,8 +583,9 @@ class VulkanLayer {
 
         {
             scopedMutex l(globalMutex);
-            instanceMap[*instance] = std::allocate_shared<InstanceImpl>(Allocator<InstanceImpl>{allocator}, *instance,
-                                                                        getInstanceProcAddr, allocator);
+            instanceMap[*instance] =
+                std::allocate_shared<InstanceImpl>(Allocator<InstanceImpl>{allocator}, *instance, getInstanceProcAddr,
+                                                   allocator, getInstanceProcAddr, getNextPhysicalDeviceProcAddr);
         }
 
         return VK_SUCCESS;
