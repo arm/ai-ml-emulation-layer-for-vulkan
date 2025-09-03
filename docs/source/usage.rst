@@ -7,7 +7,7 @@ Usage on Linux
 .. include:: ../generated/README.md
     :parser: myst_parser.sphinx_
     :start-after: ### Usage on Linux
-    :end-before: ### Building for Windows®
+    :end-before: ### Usage on Windows®
 
 Usage on Windows®
 -----------------
