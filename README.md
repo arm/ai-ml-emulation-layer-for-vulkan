@@ -90,30 +90,44 @@ The following dependencies are also needed:
 
 For the preferred dependency versions see the manifest file.
 
-### Building for Linux
+<a name="building-with-the-script"></a>
 
-Building the code requires CMake. Also required are Vulkan® and SPIR-V™
-dependencies including the ML extensions for Vulkan®.
+### Building with the script
 
-To build the Emulation Layer, run:
+To make the build configuration options easily discoverable, we provide a python
+build script. When you run the script from a git-repo manifest checkout, the
+script uses default paths and does not require any additional arguments. If you
+do not use the script, you must specify paths to the dependencies.
 
-```shell
-$ cmake -B build                                               \
-   -DGLSLANG_PATH=${REPO}/dependencies/glslang                 \
-   -DSPIRV_CROSS_PATH=${REPO}/dependencies/SPIRV-Cross         \
-   -DSPIRV_HEADERS_PATH=${REPO}/dependencies/SPIRV-Headers     \
-   -DSPIRV_TOOLS_PATH=${REPO}/dependencies/SPIRV-Tools         \
-   -DVULKAN_HEADERS_PATH=${REPO}/dependencies/Vulkan-Headers
+To build on the current platform, for example on Linux or Windows®, run the
+following command:
 
-$ cmake --build build
+```bash
+python3 $SDK_PATH/sw/emulation-layer/scripts/build.py -j $(nproc)
 ```
 
-To build the documentation, add the `-DVMEL_BUILD_DOCS=ON` build flag.
+To cross compile for AArch64 architecture, add the following option:
 
-To install the Emulation Layer into a `deploy` folder, run:
+```bash
+python3 $SDK_PATH/sw/emulation-layer/scripts/build.py -j $(nproc) --target-platform aarch64
+```
 
-```shell
-cmake --install build --prefix deploy
+To enable and run tests, use the `--test` option. To lint the tests, use the
+`--lint` option. To build the documentation, use the `--doc` option. To build
+the documentation, you must have `sphinx` and `doxygen` installed on your
+machine.
+
+You can install the build artifacts for this project into a specified location.
+To install the build artifacts, pass the `--install` option with the required
+path.
+
+To create an archive with the build artifacts option, you must add the
+`--package` option. The archive is stored in the provided location.
+
+For more command line options, see the help output:
+
+```bash
+python3 $SDK_PATH/sw/emulation-layer/scripts/build.py --help
 ```
 
 ### Usage on Linux
@@ -152,39 +166,6 @@ Common severity for both layers can be set using the following command:
 
 ```shell
 export VMEL_COMMON_SEVERITY=debug
-```
-
-### Building for Windows®
-
-To build on Windows®, the machine must have a Vulkan® ICD and Vulkan® Loader
-installed. Vulkan® API 1.3 must also be supported.
-
-The reference environment that the Emulation Layer has been built and tested
-with is:
-
-- OS: Win10
-- Build Tool: Visual Studio 17 2022
-- Compiler: MSVC 19.37.32825.0
-- CMake: 3.27.7
-- Terminal: PowerShell
-
-To build the Emulation Layer, run:
-
-```powershell
-$env:REPO="path\to\repo"
-cmake -B build                                                 `
-   -DGLSLANG_PATH="$env:REPO\dependencies\glslang"             `
-   -DSPIRV_CROSS_PATH="$env:REPO\dependencies\SPIRV-Cross"     `
-   -DSPIRV_HEADERS_PATH="$env:REPO\dependencies\SPIRV-Headers" `
-   -DSPIRV_TOOLS_PATH="$env:REPO\dependencies\SPIRV-Tools"     `
-   -DVULKAN_HEADERS_PATH="$env:REPO\dependencies\Vulkan-Headers"
-cmake --build build --config Release
-```
-
-To install the Emulation Layer into a `deploy` folder, run:
-
-```powershell
-cmake --install build --prefix deploy
 ```
 
 ### Usage on Windows®
