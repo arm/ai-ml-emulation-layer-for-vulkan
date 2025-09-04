@@ -60,9 +60,14 @@ vk::raii::Instance createInstance(vk::raii::Context &ctx, std::vector<const char
         VK_MAKE_API_VERSION(1, 3, 0, 0), // engine version
         VK_MAKE_API_VERSION(1, 3, 0, 0), // api version
     };
+    vk::InstanceCreateFlags flags;
+#ifdef MOLTEN_VK_SUPPORT
+    enabledExtensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+    flags = vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR;
+#endif
 
     const vk::InstanceCreateInfo instanceCreateInfo{
-        {},                                              // flags
+        flags,                                           // flags
         &applicationInfo,                                // application info
         static_cast<uint32_t>(enabledLayers.size()),     // enabled layer count
         enabledLayers.data(),                            // enabled layers
@@ -120,7 +125,9 @@ std::tuple<vk::raii::Device, vk::raii::PhysicalDevice> createDevice(vk::raii::In
         if (queueCreateInfo.size() == 0) {
             continue;
         }
-
+#ifdef MOLTEN_VK_SUPPORT
+        enabledExtensions.push_back(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+#endif
         // Verify that device supports all enabled extensions
         if (!hasExtensionProperties(physicalDevice, enabledExtensions)) {
             continue;

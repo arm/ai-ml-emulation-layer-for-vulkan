@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    add_compile_definitions(MOLTEN_VK_SUPPORT)
+endif()
+
 if(ANDROID)
     set(DEVICE_TEST_DIR "/data/local/tmp/vmel")
     set(SHADER_SOURCE_DIR "${DEVICE_TEST_DIR}/shader")
