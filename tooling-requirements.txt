@@ -10,3 +10,4 @@ myst_parser
 pre-commit
 sphinx
 sphinx_rtd_theme
+sphinxcontrib.plantuml
