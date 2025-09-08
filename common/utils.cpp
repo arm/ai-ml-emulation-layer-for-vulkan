@@ -11,10 +11,10 @@
 #include "mlel/utils.hpp"
 #include "mlel/float.hpp"
 #include "mlel/log.hpp"
+#include <functional>
 #include <glslang/Include/glslang_c_interface.h>
 #include <glslang/Public/resource_limits_c.h>
 #include <limits>
-#include <spirv-tools/libspirv.hpp>
 
 using namespace mlsdk::el::log;
 
@@ -22,59 +22,7 @@ namespace mlsdk::el::utils {
 
 namespace {
 Log layerLog("VMEL_COMMON_SEVERITY", "Layer");
-
-void sprivMessageConsumer(spv_message_level_t level, const char *, const spv_position_t &position,
-                          const char *message) {
-    Severity severity;
-    switch (level) {
-    case SPV_MSG_FATAL:
-        severity = Severity::Error;
-        break;
-    case SPV_MSG_INTERNAL_ERROR:
-        severity = Severity::Error;
-        break;
-    case SPV_MSG_ERROR:
-        severity = Severity::Error;
-        break;
-    case SPV_MSG_WARNING:
-        severity = Severity::Warning;
-        break;
-    case SPV_MSG_INFO:
-        severity = Severity::Info;
-        break;
-    case SPV_MSG_DEBUG:
-        severity = Severity::Debug;
-        break;
-    default:
-        severity = Severity::Error;
-        break;
-    }
-
-    layerLog(severity) << ": message=" << message << ", position=" << position.index << std::endl;
-}
 } // namespace
-
-std::vector<uint32_t> spvasmToSpirv(const std::string &text) {
-    spvtools::SpirvTools tools{SPV_ENV_UNIVERSAL_1_6};
-
-    if (!tools.IsValid()) {
-        throw std::runtime_error("Failed to instantiate SPIR-V tools");
-    }
-
-    tools.SetMessageConsumer(sprivMessageConsumer);
-
-    std::vector<uint32_t> spirvModule;
-
-    if (!tools.Assemble(text, &spirvModule)) {
-        throw std::runtime_error("Failed to assemble SPIR-V module");
-    }
-
-    if (!tools.Validate(spirvModule)) {
-        throw std::runtime_error("Failed to validate SPIR-V module");
-    }
-
-    return spirvModule;
-}
 
 std::vector<uint32_t> glslToSpirv(const std::string &glsl) {
     class Finally {

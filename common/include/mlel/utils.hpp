@@ -24,8 +24,6 @@ template <typename T> inline T roundUp(const T data, size_t multiple) {
 inline uint32_t divideRoundUp(const uint32_t value, const uint32_t divide) { return (value + divide - 1) / divide; }
 } // namespace
 
-std::vector<uint32_t> spvasmToSpirv(const std::string &text);
-
 std::vector<uint32_t> glslToSpirv(const std::string &glsl);
 
 class FormatBase {
