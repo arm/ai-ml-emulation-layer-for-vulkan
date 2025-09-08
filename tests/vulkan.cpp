@@ -126,7 +126,7 @@ std::tuple<vk::raii::Device, vk::raii::PhysicalDevice> createDevice(vk::raii::In
             continue;
         }
 #ifdef MOLTEN_VK_SUPPORT
-        enabledExtensions.push_back(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+        enabledExtensions.push_back("VK_KHR_portability_subset");
 #endif
         // Verify that device supports all enabled extensions
         if (!hasExtensionProperties(physicalDevice, enabledExtensions)) {
