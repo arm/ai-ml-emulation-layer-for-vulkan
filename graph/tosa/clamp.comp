@@ -9,8 +9,8 @@
 layout(local_size_x = %warpX%) in;
 
 layout(push_constant) uniform PushConstants {
-    IN_OUT_T min;
-    IN_OUT_T max;
+    double min;
+    double max;
     uint nanMode;
 } pushConstants;
 
