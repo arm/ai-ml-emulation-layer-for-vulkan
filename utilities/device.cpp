@@ -35,14 +35,19 @@ vk::raii::Instance Instance::createInstance(const std::vector<const char *> &lay
         VK_MAKE_VERSION(1, 3, 0), // engine version
         VK_MAKE_VERSION(1, 3, 0), // api version
     };
-
+    std::vector<const char *> exts = extensions;
+    vk::InstanceCreateFlags flags;
+#ifdef MOLTEN_VK_SUPPORT
+    exts.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+    flags = vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR;
+#endif
     const vk::InstanceCreateInfo instanceCreateInfo{
-        {},                                       // flags
-        &applicationInfo,                         // application info
-        static_cast<uint32_t>(layers.size()),     // enabled layer count
-        layers.data(),                            // enabled layers
-        static_cast<uint32_t>(extensions.size()), // enabled extension count
-        extensions.data(),                        // enabled extensions
+        flags,                                // flags
+        &applicationInfo,                     // application info
+        static_cast<uint32_t>(layers.size()), // enabled layer count
+        layers.data(),                        // enabled layers
+        static_cast<uint32_t>(exts.size()),   // enabled extension count
+        exts.data(),                          // enabled extensions
     };
 
     vk::raii::Instance instance(*context, instanceCreateInfo);
@@ -250,15 +255,18 @@ Device::allocateDeviceMemory(const vk::DeviceSize size, const vk::MemoryProperty
 vk::raii::Device Device::createDevice(const std::vector<const char *> &layers,
                                       const std::vector<const char *> &extensions, const void *deviceFeatures) const {
     auto queueCreateInfo = physicalDevice->getQueueCreateInfo(vk::QueueFlagBits::eCompute);
-
+    std::vector<const char *> exts = extensions;
+#ifdef MOLTEN_VK_SUPPORT
+    exts.push_back("VK_KHR_portability_subset");
+#endif
     const vk::DeviceCreateInfo deviceCreateInfo{
         {},                                            // flags
         static_cast<uint32_t>(queueCreateInfo.size()), // queue create info count
         queueCreateInfo.data(),                        // queue create infos
         static_cast<uint32_t>(layers.size()),          // enabled layer count
         layers.data(),                                 // enabled layers
-        static_cast<uint32_t>(extensions.size()),      // enabled extension count
-        extensions.data(),                             // enabled extensions
+        static_cast<uint32_t>(exts.size()),            // enabled extension count
+        exts.data(),                                   // enabled extensions
         nullptr,                                       // Don't set pEnabledFeatures here!
         deviceFeatures                                 // Attach deviceFeatures via pNext
     };

@@ -19,6 +19,10 @@ if(DEFINED ANDROID_ABI)
     message(WARNING "Building for Android is currently an experimental feature.")
 endif()
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    add_compile_definitions(MOLTEN_VK_SUPPORT)
+endif()
+
 include(CTest)
 configure_file(CTestCustom.cmake CTestCustom.cmake)
 

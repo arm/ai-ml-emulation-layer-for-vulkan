@@ -2,10 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    add_compile_definitions(MOLTEN_VK_SUPPORT)
-endif()
-
 if(ANDROID)
     set(DEVICE_TEST_DIR "/data/local/tmp/vmel")
     set(SHADER_SOURCE_DIR "${DEVICE_TEST_DIR}/shader")
@@ -57,22 +53,37 @@ function(mlel_add_test)
             PROPERTIES ${ARGS_PROPERTIES})
     endif()
 endfunction()
+if(NOT APPLE)
+    mlel_add_test(
+        TARGET mlel_unit_tests
+        SOURCES
+            vulkan.cpp
+        DEFINITIONS
+            SHADER_SOURCE_DIR=${SHADER_SOURCE_DIR}
+        LIBRARIES
+            mlelutilities
+            VkLayer_Common
+        PROPERTIES
+            ENVIRONMENT_MODIFICATION VK_LAYER_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Graph>
+            ENVIRONMENT_MODIFICATION LD_LIBRARY_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Graph>
 
-mlel_add_test(
-    TARGET mlel_unit_tests
-    SOURCES
-        vulkan.cpp
-    DEFINITIONS
-        SHADER_SOURCE_DIR=${SHADER_SOURCE_DIR}
-    LIBRARIES
-        mlelutilities
-        VkLayer_Common
-    PROPERTIES
-        ENVIRONMENT_MODIFICATION VK_LAYER_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Graph>
-        ENVIRONMENT_MODIFICATION LD_LIBRARY_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Graph>
+            ENVIRONMENT_MODIFICATION VK_LAYER_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Tensor>
+            ENVIRONMENT_MODIFICATION LD_LIBRARY_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Tensor>
 
-        ENVIRONMENT_MODIFICATION VK_LAYER_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Tensor>
-        ENVIRONMENT_MODIFICATION LD_LIBRARY_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Tensor>
-
-        ENVIRONMENT_MODIFICATION VK_LAYER_PATH=path_list_append:/usr/share/vulkan/explicit_layer.d
-)
+            ENVIRONMENT_MODIFICATION VK_LAYER_PATH=path_list_append:/usr/share/vulkan/explicit_layer.d
+    )
+else()
+    mlel_add_test(
+        TARGET mlel_unit_tests
+        SOURCES
+            vulkan.cpp
+        DEFINITIONS
+            SHADER_SOURCE_DIR=${SHADER_SOURCE_DIR}
+        LIBRARIES
+            mlelutilities
+            VkLayer_Common
+        PROPERTIES
+            ENVIRONMENT_MODIFICATION VK_LAYER_PATH=path_list_append:$ENV{VK_LAYER_PATH}
+            ENVIRONMENT_MODIFICATION DYLD_LIBRARY_PATH=path_list_append:$ENV{DYLD_LIBRARY_PATH}
+    )
+endif()
