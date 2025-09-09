@@ -4,7 +4,7 @@
 #
 
 # Set warnings as errors and enable all warnings
-set(VMEL_COMPILE_OPTIONS -Werror -Wall -Wextra -Wsign-conversion -Wpedantic) # FIXME: readd -Wconversion
+set(VMEL_COMPILE_OPTIONS -Werror -Wall -Wextra -Wsign-conversion -Wpedantic -fno-strict-aliasing) # FIXME: readd -Wconversion
 
 if(NOT "${VMEL_GCC_SANITIZERS}" STREQUAL "")
     message(STATUS "GCC Sanitizer enabled: ${VMEL_GCC_SANITIZERS}")
