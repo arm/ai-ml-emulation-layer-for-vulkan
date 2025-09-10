@@ -350,8 +350,6 @@ std::shared_ptr<TensorDescriptor> GraphPassBase::makeCompositeTensor(const uint3
     default:
         throw std::runtime_error(std::string("Unsupported composite tensor format: " + std::to_string(format)));
     }
-
-    return nullptr;
 }
 
 VkFormat GraphPassBase::getVkFormat(const analysis::Type *type) const {

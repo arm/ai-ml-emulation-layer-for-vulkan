@@ -22,7 +22,6 @@ class TensorDescriptor {
   public:
     struct DescriptorBuffer {
         VkDeviceAddress address;
-        uint64_t rank;
         AlignAs<int64_t, 16> dimensions[TensorARM::TENSOR_MAX_DIMENSIONS];
         AlignAs<int64_t, 16> strides[TensorARM::TENSOR_MAX_DIMENSIONS];
     };
