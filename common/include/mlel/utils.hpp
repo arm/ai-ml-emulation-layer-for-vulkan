@@ -18,7 +18,7 @@ namespace mlsdk::el::utils {
 
 namespace {
 template <typename T> inline T roundUp(const T data, size_t multiple) {
-    return ((data + multiple - 1) / multiple) * multiple;
+    return static_cast<T>(((data + multiple - 1) / multiple) * multiple);
 }
 
 inline uint32_t divideRoundUp(const uint32_t value, const uint32_t divide) { return (value + divide - 1) / divide; }

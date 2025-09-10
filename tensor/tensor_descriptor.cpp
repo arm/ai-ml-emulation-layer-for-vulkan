@@ -71,7 +71,6 @@ VkBuffer TensorDescriptor::getTensorDescriptorBuffer(const Device &dev, VkTensor
     };
 
     descriptor->address = dev.loader->vkGetBufferDeviceAddress(dev.device, &addressInfo);
-    descriptor->rank = info.dimensions.size();
     std::copy(info.dimensions.begin(), info.dimensions.end(), descriptor->dimensions);
     std::copy(info.strides.begin(), info.strides.end(), descriptor->strides);
 

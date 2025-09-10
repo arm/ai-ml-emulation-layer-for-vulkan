@@ -5,10 +5,12 @@
  */
 
 #include "spirv_glsl_tensor_buffer.hpp"
+#include "mlel/utils.hpp"
 #include <exception>
 #include <set>
 
 using namespace spirv_cross;
+using namespace mlsdk::el::utils;
 
 namespace mlsdk::el::layer {
 
@@ -33,7 +35,6 @@ CompilerTensorAsBuffer::CompilerTensorAsBuffer(std::vector<uint32_t> spirv_) : C
      struct _Tensor_Descriptor_TYPE
      {
         _Tensor_Buffer_TYPE address;
-        uint64_t rank;
         uint64_t shape[6];
         uint64_t stride[6];
      };
@@ -355,29 +356,33 @@ uint32_t CompilerTensorAsBuffer::createTensorBuffer(uint32_t tensorTypeId) {
 
 void CompilerTensorAsBuffer::createTensorStruct(uint32_t tensorTypeId, uint32_t bufferPtrId) {
     // Create uniform struct to replace the tensorARM
-    auto [memberArrayTypeId, memberElementTypeId] = getTensorDimTypeIds();
+    [[maybe_unused]] const auto [memberArrayTypeId, _] = getTensorDimTypeIds();
 
     // Create a SPIRType for the struct
     auto &tensorStruct = set<SPIRType>(tensorTypeId, spv::OpTypeStruct);
     tensorStruct.basetype = SPIRType::Struct;
     tensorStruct.member_types.push_back(bufferPtrId);
-    tensorStruct.member_types.push_back(memberElementTypeId);
     tensorStruct.member_types.push_back(memberArrayTypeId);
     tensorStruct.member_types.push_back(memberArrayTypeId);
 
     // Struct members need to be decorated with byte offsets.
+    // Struct members need to be aligned to the maximum aligement for all members
     // Sum sizes of preceding members to get the offset.
+    auto packing = BufferPackingStd140;
+    uint32_t alignment = 1;
+    for (const auto &memberType : tensorStruct.member_types) {
+        alignment = std::max(alignment, type_to_packed_alignment(get<SPIRType>(memberType), {}, packing));
+    }
     uint32_t offset = 0;
-    for (uint32_t i = 0; i < 4; i++) {
+    for (uint32_t i = 0; i < tensorStruct.member_types.size(); i++) {
         ir.set_member_decoration(tensorStruct.self, i, spv::DecorationOffset, offset);
         const auto &memberType = get<SPIRType>(tensorStruct.member_types[i]);
-        offset += type_to_packed_size(memberType, Bitset{}, BufferPackingStd140);
+        offset += roundUp(type_to_packed_size(memberType, {}, packing), alignment);
     }
 
     ir.set_member_name(tensorStruct.self, 0, "address");
-    ir.set_member_name(tensorStruct.self, 1, "rank");
-    ir.set_member_name(tensorStruct.self, 2, "shape");
-    ir.set_member_name(tensorStruct.self, 3, "stride");
+    ir.set_member_name(tensorStruct.self, 1, "shape");
+    ir.set_member_name(tensorStruct.self, 2, "stride");
 }
 
 void CompilerTensorAsBuffer::createTensorPtr(uint32_t tensorPtrId) {

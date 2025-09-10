@@ -35,8 +35,8 @@ class CompilerTensorAsBuffer : public spirv_cross::CompilerGLSL {
     std::vector<std::tuple<uint32_t, uint32_t>> tensorVariables;
     std::vector<uint32_t> tensorArrayVariables;
 
-    // Tensor structs use uint64_t to store dimension info (rank, shape and stride)
-    // To create the tensor struct SPIRType, we therefore need SPIRTypes for uint64_t and uint64_t arrays
+    // Tensor structs use uint64_t to store tensor description's shape and stride which are both uint64_t arrays
+    // To create the tensor struct SPIRType, we therefore need SPIRTypes for uint64_t arrays
     std::tuple<uint32_t, uint32_t> tensorDimTypeIds;
     std::tuple<uint32_t, uint32_t> getTensorDimTypeIds();
 
