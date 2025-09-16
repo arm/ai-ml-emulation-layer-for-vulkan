@@ -761,6 +761,7 @@ class TensorLayer : public VulkanLayerImpl {
                 queryVulkan12Feature.shaderStorageBufferArrayNonUniformIndexing;
             pTensorFeatures->descriptorBindingStorageTensorUpdateAfterBind =
                 queryVulkan12Feature.descriptorBindingStorageBufferUpdateAfterBind;
+            pTensorFeatures->tensors = VK_TRUE;
         }
     }
 
