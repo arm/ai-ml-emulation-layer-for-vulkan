@@ -24,6 +24,9 @@ TensorARM::TensorInfo::TensorInfo(const VkTensorCreateInfoARM &createInfo) {
     isOptimalTilingAliasing =
         (desc.usage & VK_TENSOR_USAGE_IMAGE_ALIASING_BIT_ARM) && desc.tiling == VK_TENSOR_TILING_OPTIMAL_ARM;
     usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+    usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+#endif
     if (desc.usage & VK_TENSOR_USAGE_SHADER_BIT_ARM) {
         usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     }

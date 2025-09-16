@@ -45,6 +45,11 @@ class CompilerTensorAsBuffer : public spirv_cross::CompilerGLSL {
     void createTensorStruct(uint32_t tensorTypeId, uint32_t bufferPtrId);
     void createTensorPtr(uint32_t tensorPtrId);
     void createTensorInterface(uint32_t tensorVarId);
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+    void createTensorBuffer(const std::pair<uint32_t, uint32_t> &tensorVarAndInterface);
+    static const std::string tensorMVKDefines;
+    std::map<uint32_t, uint32_t> tensorBufferTypeIdMap;
+#endif
 };
 
 } // namespace mlsdk::el::layer

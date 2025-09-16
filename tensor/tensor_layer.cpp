@@ -500,6 +500,35 @@ class TensorLayer : public VulkanLayerImpl {
         const auto bindings =
             descriptor_binding::substituteTensorBinding(pCreateInfo->bindingCount, pCreateInfo->pBindings, bindingInfo);
 
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+        std::vector<VkDescriptorBindingFlags> bindingFlags;
+        if (bindingInfo) {
+            for (uint32_t i = 0; i < pCreateInfo->bindingCount; ++i) {
+                const VkDescriptorBindingFlags bindingFlag =
+                    bindingInfo->pBindingFlags ? bindingInfo->pBindingFlags[i] : 0;
+                bindingFlags.push_back(bindingFlag);
+                bindingFlags.push_back(bindingFlag);
+            }
+        } else {
+            bindingFlags.resize(bindings.size(), 0);
+        }
+
+        const void *pNext = bindingInfo ? bindingInfo->pNext : pCreateInfo->pNext;
+        const VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsCreateInfo{
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
+            const_cast<void *>(pNext),
+            uint32_t(bindingFlags.size()),
+            bindingFlags.data(),
+        };
+
+        const VkDescriptorSetLayoutCreateInfo newCreateInfo{
+            pCreateInfo->sType,                // type
+            (void *)(&bindingFlagsCreateInfo), // next
+            pCreateInfo->flags,                // flags
+            uint32_t(bindings.size()),         // binding count
+            bindings.data(),                   // bindings
+        };
+#else
         const VkDescriptorSetLayoutCreateInfo newCreateInfo{
             pCreateInfo->sType,        // type
             pCreateInfo->pNext,        // next
@@ -507,6 +536,7 @@ class TensorLayer : public VulkanLayerImpl {
             uint32_t(bindings.size()), // binding count
             bindings.data(),           // bindings
         };
+#endif
 
         return handle->loader->vkCreateDescriptorSetLayout(device, &newCreateInfo, pAllocator, pSetLayout);
     }

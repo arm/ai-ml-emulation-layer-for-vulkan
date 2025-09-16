@@ -34,6 +34,9 @@ std::vector<uint32_t> glslToSpirv(const std::string &glsl) {
         std::function<void()> func;
     };
 
+    glslang_initialize_process();
+    Finally f1([]() { glslang_finalize_process(); });
+
     const glslang_input_t input = {
         GLSLANG_SOURCE_GLSL,        // language
         GLSLANG_STAGE_COMPUTE,      // stage
@@ -52,11 +55,12 @@ std::vector<uint32_t> glslToSpirv(const std::string &glsl) {
         {},                         // callbacks ctx
     };
 
-    glslang_initialize_process();
-    Finally f1([]() { glslang_finalize_process(); });
-
     glslang_shader_t *shader = glslang_shader_create(&input);
     Finally f2([&shader]() { glslang_shader_delete(shader); });
+
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+    glslang_shader_set_preamble(shader, "#define EXPERIMENTAL_MOLTEN_VK_SUPPORT\n");
+#endif
 
     if (!glslang_shader_preprocess(shader, &input)) {
         layerLog(Severity::Error) << StringLineNumber(glsl);

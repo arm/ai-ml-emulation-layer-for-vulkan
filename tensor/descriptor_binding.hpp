@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "mlel/utils.hpp"
 #include "tensor_view.hpp"
 
 #include <algorithm>
@@ -28,11 +29,24 @@ substituteTensorBinding(uint32_t bindingCount, const VkDescriptorSetLayoutBindin
                         const VkDescriptorSetLayoutBindingFlagsCreateInfo *bindingInfo) {
     std::vector<VkDescriptorSetLayoutBinding> descriptorSetLayoutBindings{pBindings, pBindings + bindingCount};
 
-    // Loop over bindings and replace tensors bindings with uniform buffer for tensor descriptor
+    // Loop over bindings and replace tensors bindings with uniform buffer for tensor descriptor (plus a storage buffer
+    // for experimental support of MoltenVK)
     for (uint32_t i = 0; i < bindingCount; i++) {
         if (hasTensor(pBindings[i])) {
             // Change binding to uniform buffer
             descriptorSetLayoutBindings[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+            // Declare a storage buffer binding for the raw tensor data at binding +
+            // EXPERIMENTAL_MVK_BUFFER_BINDING_OFFSET
+            descriptorSetLayoutBindings.emplace_back(VkDescriptorSetLayoutBinding{
+                pBindings[i].binding + EXPERIMENTAL_MVK_BUFFER_BINDING_OFFSET, // binding
+                VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,                             // type
+                pBindings[i].descriptorCount,                                  // descriptor count
+                pBindings[i].stageFlags,                                       // stage flags
+                nullptr                                                        // VkSampler
+            });
+#endif
 
             // Remove uniform update after bind
             if (bindingInfo) {
@@ -100,6 +114,27 @@ substituteTensorWriteDescriptorSet(const Device &dev, uint32_t descriptorWriteCo
                 &bufferInfos.back(),                    // pBufferInfo
                 nullptr                                 // pTexelBufferView
             });
+
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+            // Bind the storage buffer for the raw tensor data at binding + EXPERIMENTAL_MVK_BUFFER_BINDING_OFFSET
+            bufferInfos.emplace_back(VkDescriptorBufferInfo{
+                tensorViewARM->getTensorBuffer(), // buffer
+                0,                                // offset
+                VK_WHOLE_SIZE,                    // range
+            });
+            writes.emplace_back(VkWriteDescriptorSet{
+                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,                                           // sType
+                nullptr,                                                                          // pNext
+                write.dstSet,                                                                     // dstSet
+                static_cast<uint32_t>(write.dstBinding + EXPERIMENTAL_MVK_BUFFER_BINDING_OFFSET), // dstBinding
+                write.dstArrayElement + j,                                                        // dstArrayElement
+                1,                                                                                // descriptorCount
+                VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,                                                // descriptorType
+                nullptr,                                                                          // pImageInfo
+                &bufferInfos.back(),                                                              // pBufferInfo
+                nullptr                                                                           // pTexelBufferView
+            });
+#endif
         }
     }
 
@@ -132,6 +167,17 @@ substituteTensorDescriptorPoolSizes(const std::vector<VkDescriptorPoolSize> &poo
         } else {
             desc->descriptorCount += tensorCount;
         }
+
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+        // Allocate storage buffer descriptors for each tensor
+        desc = std::find_if(descriptorPoolSizes.begin(), descriptorPoolSizes.end(),
+                            [](const auto &poolSize) { return poolSize.type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; });
+        if (desc == descriptorPoolSizes.end()) {
+            descriptorPoolSizes.emplace_back(VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, tensorCount});
+        } else {
+            desc->descriptorCount += tensorCount;
+        }
+#endif
     }
 
     return descriptorPoolSizes;
