@@ -5,9 +5,12 @@
 
 argcomplete
 breathe
+build
 debian-inspector
 myst_parser
 pre-commit
+setuptools
 sphinx
 sphinx_rtd_theme
 sphinxcontrib.plantuml
+wheel
