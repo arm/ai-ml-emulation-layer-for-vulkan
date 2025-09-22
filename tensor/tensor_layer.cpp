@@ -703,14 +703,15 @@ class TensorLayer : public VulkanLayerImpl {
                                                    0,
                                                });
         newAllocateFlagInfo.flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+        if (getBufferDeviceAddressCaptureReplayFeat(device) == VK_TRUE)
+            newAllocateFlagInfo.flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT;
         const VkMemoryAllocateInfo newAllocateInfo{
             pAllocateInfo->sType,
             &newAllocateFlagInfo,
             pAllocateInfo->allocationSize,
             pAllocateInfo->memoryTypeIndex,
         };
-        auto result = handle->loader->vkAllocateMemory(device, &newAllocateInfo, pAllocator, pMemory);
-        return result;
+        return handle->loader->vkAllocateMemory(device, &newAllocateInfo, pAllocator, pMemory);
     }
 
     static void vkFreeMemory(VkDevice device, VkDeviceMemory memory, const VkAllocationCallbacks *pAllocator) {
