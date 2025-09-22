@@ -4,8 +4,10 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 import argparse
+import os
 import pathlib
 import platform
+import shutil
 import subprocess
 import sys
 
@@ -44,6 +46,9 @@ class Builder:
         self.spirv_cross_path = args.spirv_cross_path
         self.glslang_path = args.glslang_path
         self.gtest_path = args.gtest_path
+
+        if not self.install and self.package_type == "pip":
+            self.install = "pip_install"
 
     def setup_platform_build(self, cmake_cmd):
         if self.target_platform == "host":
@@ -152,7 +157,7 @@ class Builder:
 
                 subprocess.run(test_cmd, check=True)
 
-            if self.package:
+            if self.package and self.package_type != "pip":
                 package_type = self.package_type or "tgz"
                 cpack_generator = package_type.upper()
 
@@ -170,6 +175,7 @@ class Builder:
                     "CPACK_INCLUDE_TOPLEVEL_DIRECTORY=OFF",
                 ]
                 subprocess.run(cmake_package_cmd, check=True)
+
             if self.package_source:
                 package_type = self.package_type or "tgz"
                 cpack_generator = package_type.upper()
@@ -188,6 +194,44 @@ class Builder:
                     "CPACK_INCLUDE_TOPLEVEL_DIRECTORY=OFF",
                 ]
                 subprocess.run(cmake_package_cmd, check=True)
+
+            if self.package_type == "pip":
+                os.makedirs("pip_package/emulation_layer/deploy/lib/", exist_ok=True)
+                os.makedirs(
+                    "pip_package/emulation_layer/deploy/share/vulkan/explicit_layer.d/",
+                    exist_ok=True,
+                )
+                shutil.copy(
+                    f"{self.install}/lib/libVkLayer_Tensor.so",
+                    "pip_package/emulation_layer/deploy/lib/",
+                )
+                shutil.copy(
+                    f"{self.install}/lib/libVkLayer_Graph.so",
+                    "pip_package/emulation_layer/deploy/lib/",
+                )
+                shutil.copy(
+                    f"{self.install}/share/vulkan/explicit_layer.d/VkLayer_Tensor.json",
+                    "pip_package/emulation_layer/deploy/share/vulkan/explicit_layer.d/",
+                )
+                shutil.copy(
+                    f"{self.install}/share/vulkan/explicit_layer.d/VkLayer_Graph.json",
+                    "pip_package/emulation_layer/deploy/share/vulkan/explicit_layer.d/",
+                )
+                result = subprocess.Popen(
+                    [
+                        "python",
+                        "setup.py",
+                        "bdist_wheel",
+                        "--plat-name",
+                        "manyLinux2014_x86_64",
+                    ],
+                    cwd="pip_package",
+                )
+                result.communicate()
+                if result.returncode != 0:
+                    print("ERROR: Failed to generate pip package")
+                    return 1
+
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             print(f"EmulationLayerBuilder failed with {e}", file=sys.stderr)
             return 1
@@ -254,7 +298,7 @@ def parse_arguments():
     )
     parser.add_argument(
         "--package-type",
-        choices=["zip", "tgz"],
+        choices=["zip", "tgz", "pip"],
         help="Package type",
     )
     parser.add_argument(
