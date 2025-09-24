@@ -41,7 +41,6 @@ else()
 endif()
 
 option(VMEL_TESTS_ENABLE "Enable tests" ON)
-set(VMEL_GCC_SANITIZERS "" CACHE STRING "Sanitizers")
 option(VMEL_ENABLE_LINT "Enable linting using cppcheck" OFF)
 option(VMEL_DISABLE_PRECOMPILE_SHADERS "Disable precompilation of SPIR-V shaders" OFF)
 option(VMEL_BUILD_DOCS "Build documentation" OFF)

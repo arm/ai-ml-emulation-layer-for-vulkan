@@ -30,7 +30,7 @@ class Builder:
         self.run_tests = args.test
         self.build_type = args.build_type
         self.run_linting = args.lint
-        self.enable_gcc_sanitizers = args.enable_gcc_sanitizers
+        self.enable_sanitizers = args.enable_sanitizers
         self.install = args.install
         self.package = args.package
         self.package_type = args.package_type
@@ -115,8 +115,34 @@ class Builder:
         if self.doc:
             cmake_setup_cmd.append("-DVMEL_BUILD_DOCS=ON")
 
-        if self.enable_gcc_sanitizers:
-            cmake_setup_cmd.append("-DVMEL_GCC_SANITIZERS=undefined,address")
+        if self.enable_sanitizers:
+            if self.target_platform != "host":
+                print(
+                    f"ERROR: sanitizer not supported for target platform: {self.target_platform}"
+                )
+                return 1
+
+            system = platform.system()
+            if system == "Linux":
+                gcc_sanitizer_flags = [
+                    "-g",
+                    "-fsanitize=address",
+                    "-fno-sanitize=vptr",
+                    "-fno-sanitize=alignment",
+                    "-fno-sanitize-recover=all",
+                ]
+                cmake_setup_cmd.append(
+                    f"-DCMAKE_CXX_FLAGS={' '.join(gcc_sanitizer_flags)}"
+                )
+                cmake_setup_cmd.append(
+                    "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=undefined,address"
+                )
+            elif system == "Windows":
+                cmake_setup_cmd.append("-DCMAKE_CXX_FLAGS=/Zi /RTC1 /GS")
+                cmake_setup_cmd.append("-DCMAKE_EXE_LINKER_FLAGS=/GS")
+            else:
+                print(f"ERROR: sanitizer is not supported on system: {system}")
+
         if not self.setup_platform_build(cmake_setup_cmd):
             return 1
 
@@ -306,8 +332,8 @@ def parse_arguments():
         help="Create a source code package and store it in a provided location",
     )
     parser.add_argument(
-        "--enable-gcc-sanitizers",
-        help="Enable GCC sanitizers. Default: %(default)s",
+        "--enable-sanitizers",
+        help="Enable sanitizers. Default: %(default)s",
         action="store_true",
         default=False,
     )
