@@ -32,6 +32,7 @@ class Builder:
         self.install = args.install
         self.package = args.package
         self.package_type = args.package_type
+        self.package_source = args.package_source
         self.target_platform = args.target_platform
         self.disable_precompile_shaders = args.disable_precompile_shaders
         self.doc = args.doc
@@ -169,7 +170,24 @@ class Builder:
                     "CPACK_INCLUDE_TOPLEVEL_DIRECTORY=OFF",
                 ]
                 subprocess.run(cmake_package_cmd, check=True)
+            if self.package_source:
+                package_type = self.package_type or "tgz"
+                cpack_generator = package_type.upper()
 
+                cmake_package_cmd = [
+                    "cpack",
+                    "--config",
+                    f"{self.build_dir}/CPackSourceConfig.cmake",
+                    "-C",
+                    self.build_type,
+                    "-G",
+                    cpack_generator,
+                    "-B",
+                    self.package_source,
+                    "-D",
+                    "CPACK_INCLUDE_TOPLEVEL_DIRECTORY=OFF",
+                ]
+                subprocess.run(cmake_package_cmd, check=True)
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             print(f"EmulationLayerBuilder failed with {e}", file=sys.stderr)
             return 1
@@ -212,7 +230,7 @@ def parse_arguments():
     parser.add_argument(
         "--build-type",
         help="Type of build to perform. Default: %(default)s",
-        default=None,
+        default="Release",
     )
     parser.add_argument(
         "--target-platform",
@@ -238,6 +256,10 @@ def parse_arguments():
         "--package-type",
         choices=["zip", "tgz"],
         help="Package type",
+    )
+    parser.add_argument(
+        "--package-source",
+        help="Create a source code package and store it in a provided location",
     )
     parser.add_argument(
         "--enable-gcc-sanitizers",
