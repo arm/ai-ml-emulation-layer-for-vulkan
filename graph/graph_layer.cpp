@@ -265,6 +265,9 @@ class GraphLayer : public VulkanLayerImpl {
              PFN_vkVoidFunction(vkGetDataGraphPipelineSessionMemoryRequirementsARM)},
             {"vkBindDataGraphPipelineSessionMemoryARM", PFN_vkVoidFunction(vkBindDataGraphPipelineSessionMemoryARM)},
             {"vkDestroyDataGraphPipelineSessionARM", PFN_vkVoidFunction(vkDestroyDataGraphPipelineSessionARM)},
+            {"vkGetDataGraphPipelineAvailablePropertiesARM",
+             PFN_vkVoidFunction(vkGetDataGraphPipelineAvailablePropertiesARM)},
+            {"vkGetDataGraphPipelinePropertiesARM", PFN_vkVoidFunction(vkGetDataGraphPipelinePropertiesARM)},
 
             // Pipeline
             {"vkDestroyPipeline", PFN_vkVoidFunction(vkDestroyPipeline)},
@@ -588,6 +591,23 @@ class GraphLayer : public VulkanLayerImpl {
     static void VKAPI_CALL vkDestroyDataGraphPipelineSessionARM(VkDevice, VkDataGraphPipelineSessionARM session,
                                                                 const VkAllocationCallbacks *callbacks) {
         destroyObject(callbacks, reinterpret_cast<DataGraphPipelineSessionARM *>(session));
+    }
+
+    static VkResult VKAPI_CALL vkGetDataGraphPipelineAvailablePropertiesARM(VkDevice,
+                                                                            const VkDataGraphPipelineInfoARM *,
+                                                                            uint32_t *pPropertiesCount,
+                                                                            VkDataGraphPipelinePropertyARM *) {
+        *pPropertiesCount = 0;
+        return VK_SUCCESS;
+    }
+
+    static VkResult VKAPI_CALL vkGetDataGraphPipelinePropertiesARM(VkDevice, const VkDataGraphPipelineInfoARM *,
+                                                                   uint32_t propertiesCount,
+                                                                   VkDataGraphPipelinePropertyQueryResultARM *) {
+        if (propertiesCount == 0) {
+            return VK_SUCCESS;
+        }
+        return VK_ERROR_UNKNOWN;
     }
 
     /**************************************************************************
