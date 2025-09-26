@@ -39,8 +39,9 @@ namespace mlsdk::el::layer {
 class GraphInstance : public Instance {
   public:
     explicit GraphInstance(VkInstance _instance, PFN_vkGetInstanceProcAddr _gipr,
-                           const VkAllocationCallbacks *_callbacks)
-        : Instance(_instance, _gipr, _callbacks) {}
+                           const VkAllocationCallbacks *_callbacks, PFN_vkGetInstanceProcAddr nextGetInstanceProcAddr,
+                           PFN_GetPhysicalDeviceProcAddr nextGetPhysicalDeviceProcAddr)
+        : Instance(_instance, _gipr, _callbacks, nextGetInstanceProcAddr, nextGetPhysicalDeviceProcAddr) {}
 };
 
 /*****************************************************************************
@@ -240,11 +241,9 @@ class GraphLayer : public VulkanLayerImpl {
             {"vkCreateDevice", PFN_vkVoidFunction(vkCreateDevice)},
 
             // Device functions
-            {"vkSetDebugUtilsObjectNameEXT", PFN_vkVoidFunction(vkSetDebugUtilsObjectNameEXT)},
-        };
+            {"vkSetDebugUtilsObjectNameEXT", PFN_vkVoidFunction(vkSetDebugUtilsObjectNameEXT)}};
 
-        auto it = vtable.find(name);
-        if (it != vtable.end()) {
+        if (auto it = vtable.find(name); it != vtable.end()) {
             return it->second;
         }
 
@@ -290,12 +289,32 @@ class GraphLayer : public VulkanLayerImpl {
             // Barrier
             {"vkCmdPipelineBarrier2", PFN_vkVoidFunction(vkCmdPipelineBarrier2)}};
 
-        auto it = vtable.find(name);
-        if (it != vtable.end()) {
+        if (auto it = vtable.find(name); it != vtable.end()) {
             return it->second;
         }
 
         return VulkanLayerImpl::vkGetDeviceProcAddr(device, name);
+    }
+
+    static PFN_vkVoidFunction VKAPI_CALL vk_layerGetPhysicalDeviceProcAddr(VkInstance instance, const char *name) {
+        static const vTable vtable = {
+            {"vk_layerGetPhysicalDeviceProcAddr", PFN_vkVoidFunction(vk_layerGetPhysicalDeviceProcAddr)},
+            // PhysicalDevice functions
+            {"vkGetPhysicalDeviceQueueFamilyProperties", PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyProperties)},
+            {"vkGetPhysicalDeviceQueueFamilyProperties2",
+             PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyProperties2)},
+            {"vkGetPhysicalDeviceFeatures2", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2)},
+            {"vkCreateDevice", PFN_vkVoidFunction(vkCreateDevice)}};
+
+        if (auto it = vtable.find(name); it != vtable.end()) {
+            return it->second;
+        }
+
+        if (instance == VK_NULL_HANDLE) {
+            return nullptr;
+        }
+
+        return VulkanLayerImpl::vk_layerGetPhysicalDeviceProcAddr(instance, name);
     }
 
     /*******************************************************************************
@@ -996,6 +1015,23 @@ LAYER_EXPORT PFN_vkVoidFunction VKAPI_CALL graphGetDeviceProcAddr(VkDevice devic
     return GraphLayer::vkGetDeviceProcAddr(device, name);
 }
 
+LAYER_EXPORT PFN_vkVoidFunction VKAPI_CALL vk_layerGetPhysicalDeviceProcAddr(VkInstance instance, const char *name) {
+    return GraphLayer::vk_layerGetPhysicalDeviceProcAddr(instance, name);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *pVersionStruct) {
+    assert(pVersionStruct != NULL);
+    assert(pVersionStruct->sType == LAYER_NEGOTIATE_INTERFACE_STRUCT);
+
+    if (pVersionStruct->loaderLayerInterfaceVersion >= 2) {
+        pVersionStruct->pfnGetInstanceProcAddr = vkGetInstanceProcAddr;
+        pVersionStruct->pfnGetDeviceProcAddr = vkGetDeviceProcAddr;
+        pVersionStruct->pfnGetPhysicalDeviceProcAddr = vk_layerGetPhysicalDeviceProcAddr;
+    }
+
+    return VK_SUCCESS;
+}
+
 PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char *name) {
     return GraphLayer::vkGetInstanceProcAddr(instance, name);
 }
@@ -1011,11 +1047,6 @@ VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(uint32_t *pPropertyCount,
 VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(VkPhysicalDevice physicalDevice, uint32_t *pPropertyCount,
                                                      VkLayerProperties *pProperties) {
     return GraphLayer::vkEnumerateDeviceLayerProperties(physicalDevice, pPropertyCount, pProperties);
-}
-
-VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(const char *pLayerName, uint32_t *pPropertyCount,
-                                                           VkExtensionProperties *pProperties) {
-    return GraphLayer::vkEnumerateInstanceExtensionProperties(pLayerName, pPropertyCount, pProperties);
 }
 
 VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice, const char *pLayerName,
