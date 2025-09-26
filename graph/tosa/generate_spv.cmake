@@ -62,6 +62,8 @@ endforeach()
 
 file(WRITE ${ARGS_OUTPUT_FILE}.comp "${GLSL}")
 
+set(GLSLANG_FLAGS -V --target-env vulkan1.3)
+
 execute_process(
-    COMMAND ${ARGS_GLSLANG} -V --target-env vulkan1.3 -o ${ARGS_OUTPUT_FILE} ${ARGS_OUTPUT_FILE}.comp
+    COMMAND ${ARGS_GLSLANG} ${GLSLANG_FLAGS} -o ${ARGS_OUTPUT_FILE} ${ARGS_OUTPUT_FILE}.comp
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})

@@ -21,31 +21,36 @@ const std::string CompilerTensorAsBuffer::tensorDefines =
 CompilerTensorAsBuffer::CompilerTensorAsBuffer(std::vector<uint32_t> spirv_) : CompilerGLSL(std::move(spirv_)) {
     /* The CompilerGLSL constructor parses SPIRV to the SPIRV-Cross internal representation
      This constructor finds any tensors in the parsed data and replaces them with structs pointing to uniform buffers
-     The end result is that a TensorARM variable (where TYPE is e.g. uint16_t and 0<RANK<=6)
+     The end result is that a TensorARM variable of the followig forms (where TYPE is e.g. uint16_t and 0<RANK<=6)
+        - Single Tensor:
+            layout (set = SET, binding = BIND) uniform TensorARM<TYPE, RANK> VAR;
+        - Array of Tensors:
+            layout (set = SET, binding = BIND) uniform TensorARM<TYPE, RANK> ARRAY[X];
 
-     layout (set = SET, binding = BIND) uniform TensorARM<TYPE, RANK> VAR;
-     layout (set = SET, binding = BIND) uniform TensorARM<TYPE, RANK> ARRAY[X];
+     Are replaced by a combination of types:
+        - Single Tensor:
+            layout(set = SET, binding = BIND) uniform _Tensor_Interface_VAR
+            {
+                _Tensor_Descriptor_TYPE descriptor;
+            } _tensor_interface_VAR;
 
-     is replaced by a combination of types
+        - Array of Tensors:
+            layout(set = SET, binding = BIND) uniform _Tensor_Interface_ARRAY
+            {
+                _Tensor_Descriptor_TYPE descriptor;
+            } _tensor_interface_ARRAY[X];
 
-     layout(buffer_reference, std430) buffer _Tensor_Buffer_TYPE
-     {
-        TYPE data[];
-     };
-     struct _Tensor_Descriptor_TYPE
-     {
-        _Tensor_Buffer_TYPE address;
-        uint64_t shape[6];
-        uint64_t stride[6];
-     };
-     layout(set = SET, binding = BIND) uniform _Tensor_Interface_VAR
-     {
-        _Tensor_Descriptor_TYPE descriptor;
-     } _tensor_interface_VAR;
-     layout(set = SET, binding = BIND) uniform _Tensor_Interface_ARRAY
-     {
-        _Tensor_Descriptor_TYPE descriptor;
-     } _tensor_interface_ARRAY[X];
+     where:
+        layout(buffer_reference, std430) buffer _Tensor_Buffer_TYPE
+        {
+            TYPE data[];
+        };
+        struct _Tensor_Descriptor_TYPE
+        {
+            _Tensor_Buffer_TYPE address;
+            uint64_t shape[6];
+            uint64_t stride[6];
+        };
 
      Finally, before entering the `main` function, a global variable of name `VAR` and type `_Tensor_Descriptor_TYPE` is
      declared, and can be used wherever the original TensorARM variable was used.
@@ -108,7 +113,7 @@ CompilerTensorAsBuffer::CompilerTensorAsBuffer(std::vector<uint32_t> spirv_) : C
             // Setting `type_alias` tells SPIRV-Cross to only output one instance of this type.
             tensorStructNew.type_alias = tensorStructDoneId;
             // Struct member byte offsets need to be copied separately.
-            ir.meta[tensorTypeId].members = ir.meta[typeMap[elementTypeId]].members;
+            ir.meta[tensorTypeId].members = ir.meta[tensorStructDoneId].members;
             continue;
         }
 
@@ -118,7 +123,7 @@ CompilerTensorAsBuffer::CompilerTensorAsBuffer(std::vector<uint32_t> spirv_) : C
         // Get the GLSL string of the tensor element type
         const std::string elementTypeGlsl = type_to_glsl(get<SPIRType>(elementTypeId));
         // Create storage buffer struct
-        uint32_t bufferPtrId = createTensorBuffer(tensorTypeId);
+        uint32_t bufferPtrId = createTensorBDA(tensorTypeId);
         // Create tensor struct, containing a pointer to the storage buffer
         createTensorStruct(tensorTypeId, bufferPtrId);
 
@@ -302,7 +307,7 @@ std::tuple<uint32_t, uint32_t> CompilerTensorAsBuffer::getTensorDimTypeIds() {
     return tensorDimTypeIds;
 }
 
-uint32_t CompilerTensorAsBuffer::createTensorBuffer(uint32_t tensorTypeId) {
+uint32_t CompilerTensorAsBuffer::createTensorBDA(uint32_t tensorTypeId) {
     const auto &tensorType = get<SPIRType>(tensorTypeId);
 
     // Add new IDs to represent buffer types
