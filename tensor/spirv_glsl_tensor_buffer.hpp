@@ -32,7 +32,7 @@ class CompilerTensorAsBuffer : public spirv_cross::CompilerGLSL {
     // GLSL constanst and macros used to emulate tensor function, loaded from `shaders/tensor.glsl`
     static const std::string tensorDefines;
     // Used to keep track of SPIRV-Cross variables across `CompilerGLSL` function calls
-    std::vector<std::tuple<uint32_t, uint32_t>> tensorVariables;
+    std::vector<std::pair<uint32_t, uint32_t>> tensorVariables;
     std::vector<uint32_t> tensorArrayVariables;
 
     // Tensor structs use uint64_t to store tensor description's shape and stride which are both uint64_t arrays
@@ -41,7 +41,7 @@ class CompilerTensorAsBuffer : public spirv_cross::CompilerGLSL {
     std::tuple<uint32_t, uint32_t> getTensorDimTypeIds();
 
     // Functions to set up SPIRV-Cross internal types and variables for emulating tensors
-    uint32_t createTensorBuffer(uint32_t tensorTypeId);
+    uint32_t createTensorBDA(uint32_t tensorTypeId);
     void createTensorStruct(uint32_t tensorTypeId, uint32_t bufferPtrId);
     void createTensorPtr(uint32_t tensorPtrId);
     void createTensorInterface(uint32_t tensorVarId);
