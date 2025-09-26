@@ -222,26 +222,19 @@ class Builder:
                 subprocess.run(cmake_package_cmd, check=True)
 
             if self.package_type == "pip":
-                os.makedirs("pip_package/emulation_layer/deploy/lib/", exist_ok=True)
-                os.makedirs(
-                    "pip_package/emulation_layer/deploy/share/vulkan/explicit_layer.d/",
-                    exist_ok=True,
-                )
-                shutil.copy(
-                    f"{self.install}/lib/libVkLayer_Tensor.so",
-                    "pip_package/emulation_layer/deploy/lib/",
-                )
-                shutil.copy(
-                    f"{self.install}/lib/libVkLayer_Graph.so",
-                    "pip_package/emulation_layer/deploy/lib/",
-                )
-                shutil.copy(
-                    f"{self.install}/share/vulkan/explicit_layer.d/VkLayer_Tensor.json",
-                    "pip_package/emulation_layer/deploy/share/vulkan/explicit_layer.d/",
-                )
-                shutil.copy(
-                    f"{self.install}/share/vulkan/explicit_layer.d/VkLayer_Graph.json",
-                    "pip_package/emulation_layer/deploy/share/vulkan/explicit_layer.d/",
+                if sys.platform.startswith("win"):
+                    platformName = "win_amd64"
+                elif sys.platform.startswith("linux"):
+                    platformName = "manyLinux2014_x86_64"
+                else:
+                    print(f"ERROR: Unknown platform: {sys.platform}")
+                    return 1
+
+                os.makedirs("pip_package/emulation_layer/deploy/", exist_ok=True)
+                shutil.copytree(
+                    f"{self.install}/",
+                    "pip_package/emulation_layer/deploy/",
+                    dirs_exist_ok=True,
                 )
                 result = subprocess.Popen(
                     [
@@ -249,7 +242,7 @@ class Builder:
                         "setup.py",
                         "bdist_wheel",
                         "--plat-name",
-                        "manyLinux2014_x86_64",
+                        platformName,
                     ],
                     cwd="pip_package",
                 )
