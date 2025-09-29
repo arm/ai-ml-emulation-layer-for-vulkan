@@ -1,0 +1,2 @@
+This file contains a list of people who have made contributions
+to the public version of the ML Emulation Layer for Vulkan®.
