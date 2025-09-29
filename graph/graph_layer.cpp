@@ -417,6 +417,11 @@ class GraphLayer : public VulkanLayerImpl {
 
             auto shaderModule = getHandle(deviceHandle, shaderModuleCreateInfo->module);
 
+            if (!shaderModule) {
+                graphLog(Severity::Error) << "Shader module not recognized by Graph layer" << std::endl;
+                return VK_ERROR_FEATURE_NOT_PRESENT;
+            }
+
             // Create optimizer
             spvtools::Optimizer optimizer{SPV_ENV_UNIVERSAL_1_6};
 
@@ -459,6 +464,7 @@ class GraphLayer : public VulkanLayerImpl {
         if (pDataGraphFeatures) {
             pDataGraphFeatures->dataGraph = VK_TRUE;
             pDataGraphFeatures->dataGraphUpdateAfterBind = VK_TRUE;
+            pDataGraphFeatures->dataGraphShaderModule = VK_TRUE;
         }
     }
 
