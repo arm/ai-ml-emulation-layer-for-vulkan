@@ -14,8 +14,7 @@ setup(
     include_package_data=True,
     package_data={
         "emulation_layer": [
-            "deploy/lib/*.so",
-            "deploy/share/vulkan/explicit_layer.d/*.json",
+            "deploy/**/*",
         ],
     },
     entry_points={
