@@ -14,7 +14,10 @@ setup(
     include_package_data=True,
     package_data={
         "emulation_layer": [
-            "deploy/**/*",
+            "deploy/*",
+            "deploy/*/*",
+            "deploy/*/*/*",
+            "deploy/*/*/*/*",
         ],
     },
     entry_points={
