@@ -243,7 +243,7 @@ class Builder:
 
                 os.makedirs("pip_package/emulation_layer/deploy/", exist_ok=True)
                 shutil.copytree(
-                    f"{self.install}/",
+                    self.install,
                     "pip_package/emulation_layer/deploy/",
                     dirs_exist_ok=True,
                 )
