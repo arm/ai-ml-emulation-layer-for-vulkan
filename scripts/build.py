@@ -66,6 +66,17 @@ class Builder:
                 return True
             print(f"Unsupported host platform {system}", file=sys.stderr)
             return False
+        if self.target_platform == "linux-clang":
+            if system != "Linux":
+                print(
+                    f"ERROR: target {self.target_platform} only supported on Linux. Host platform {system}",
+                    file=sys.stderr,
+                )
+                return False
+            cmake_cmd.append(
+                f"-DCMAKE_TOOLCHAIN_FILE={CMAKE_TOOLCHAIN_PATH / 'clang.cmake'}"
+            )
+            return True
 
         if self.target_platform == "aarch64":
             cmake_cmd.append(
@@ -298,7 +309,7 @@ def parse_arguments():
     parser.add_argument(
         "--target-platform",
         help="Specify the target build platform",
-        choices=["host", "aarch64"],
+        choices=["host", "aarch64", "linux-clang"],
         default="host",
     )
     parser.add_argument(
