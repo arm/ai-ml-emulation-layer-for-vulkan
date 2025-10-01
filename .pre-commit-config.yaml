@@ -58,10 +58,3 @@ repos:
       - id: clang-format
         args: [-i]
         stages: [pre-commit]
-  - repo: https://github.com/rbubley/mirrors-prettier
-    rev: v3.3.3
-    hooks:
-      - id: prettier
-        args: [--prose-wrap=always, --print-width=80]
-        stages: [pre-commit]
-        types: [markdown]
