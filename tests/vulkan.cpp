@@ -1747,3 +1747,121 @@ TEST_F(MLEmulationLayerForVulkan, MultiSessionsOneAtTheTime) {
         }
     }
 }
+
+TEST_F(MLEmulationLayerForVulkan, PipelineCreationFeedback) {
+    auto device = createDevice();
+
+    auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 16, 16, 3}});
+    auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 8, 8, 3}});
+    const GraphPipeline::DescriptorMap descriptorMap = {
+        {
+            // set 0
+            {
+                0,                          // binding
+                {inputTensor, inputTensor}, // tensor
+            },
+            {
+                1,              // binding
+                {outputTensor}, // tensor
+            },
+        },
+    };
+    const auto spirv = assembleSpirv(fileToString("maxpool.spvasm"));
+
+    std::vector<vk::DataGraphPipelineResourceInfoARM> graphPipelineResourceInfos;
+    uint32_t set = 0;
+
+    for (auto &bindingMap : descriptorMap) {
+        for (const auto &[binding, tensors] : bindingMap) {
+            for (uint32_t i = 0; i < tensors.size(); i++) {
+                const auto &tensor = tensors[i];
+
+                graphPipelineResourceInfos.push_back(vk::DataGraphPipelineResourceInfoARM{
+                    set,                            // descriptor set
+                    binding,                        // binding
+                    i,                              // array element
+                    &tensor->getTensorDescription() // next
+                });
+            }
+        }
+        set++;
+    }
+
+    const vk::ShaderModuleCreateInfo info{
+        {},                                                     // flags
+        static_cast<uint32_t>(spirv.size() * sizeof(uint32_t)), // code size
+        spirv.data()                                            // code
+    };
+
+    vk::raii::ShaderModule shaderModule{&(*device), info};
+
+    std::vector<vk::raii::DescriptorSetLayout> descriptorSetLayouts;
+
+    for (auto &bindingMap : descriptorMap) {
+        std::vector<vk::DescriptorSetLayoutBinding> descriptorSetLayoutBindings;
+
+        for (const auto &[binding, tensors] : bindingMap) {
+            descriptorSetLayoutBindings.push_back(vk::DescriptorSetLayoutBinding{
+                binding,                        // binding
+                vk::DescriptorType::eTensorARM, // descriptor type
+                uint32_t(tensors.size()),       // descriptor count
+                vk::ShaderStageFlagBits::eAll,  // flags
+            });
+        }
+
+        std::vector<vk::DescriptorBindingFlags> descriptorBindingFlags(descriptorSetLayoutBindings.size(),
+                                                                       vk::DescriptorBindingFlagBits::eUpdateAfterBind);
+
+        const vk::DescriptorSetLayoutBindingFlagsCreateInfo descriptorSetBindingFlagsCreateInfo{
+            static_cast<uint32_t>(descriptorBindingFlags.size()), // binding count
+            descriptorBindingFlags.data(),                        // binding flags
+        };
+
+        const vk::DescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo{
+            vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool, // flags
+            static_cast<uint32_t>(descriptorSetLayoutBindings.size()),   // binding count
+            descriptorSetLayoutBindings.data(),                          // bindings
+            &descriptorSetBindingFlagsCreateInfo,                        // next
+        };
+
+        descriptorSetLayouts.push_back(vk::raii::DescriptorSetLayout(&(*device), descriptorSetLayoutCreateInfo));
+    }
+
+    std::vector<vk::DescriptorSetLayout> vkDescriptorSetLayouts;
+    std::transform(descriptorSetLayouts.begin(), descriptorSetLayouts.end(), std::back_inserter(vkDescriptorSetLayouts),
+                   [](const auto &layout) { return *layout; });
+
+    const vk::PipelineLayoutCreateInfo pipelineLayoutCreateInfo{
+        {},                                                   // flags
+        static_cast<uint32_t>(vkDescriptorSetLayouts.size()), // descriptor set layout count
+        vkDescriptorSetLayouts.data()                         // descriptor set layouts
+    };
+
+    vk::raii::PipelineLayout pipelineLayout{&(*device), pipelineLayoutCreateInfo};
+
+    vk::PipelineCreationFeedback creationFeedback{};
+
+    const vk::PipelineCreationFeedbackCreateInfo feedbackCreateInfo{&creationFeedback, 0, nullptr, nullptr};
+
+    const vk::DataGraphPipelineShaderModuleCreateInfoARM shaderModuleCreateInfo{
+        *shaderModule,       // shader module
+        "Graph Pipeline",    // name
+        nullptr,             // specialization info
+        0,                   // constant count
+        nullptr,             // constants
+        &feedbackCreateInfo, // next
+    };
+
+    const vk::DataGraphPipelineCreateInfoARM graphPipelineCreateInfo{
+        {},                                          // flags
+        *pipelineLayout,                             // pipeline layout
+        uint32_t(graphPipelineResourceInfos.size()), // resource info count
+        graphPipelineResourceInfos.data(),           // resource infos
+        &shaderModuleCreateInfo,                     // next
+    };
+
+    vk::raii::Pipeline pipeline{&(*device), nullptr, nullptr, graphPipelineCreateInfo};
+
+    ASSERT_TRUE(creationFeedback.flags & vk::PipelineCreationFeedbackFlagBits::eValid);
+    ASSERT_GT(creationFeedback.duration, 0);
+}

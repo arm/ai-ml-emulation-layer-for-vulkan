@@ -20,6 +20,7 @@
 #include "spirv_pass.hpp"
 #include "spirv_pass_tosaspv_v100.hpp"
 
+#include <chrono>
 #include <optional>
 #include <regex>
 
@@ -372,6 +373,13 @@ class GraphLayer : public VulkanLayerImpl {
         for (uint32_t i = 0; i < createInfoCount; i++) {
             const auto &createInfo = createInfos[i];
 
+            const auto *creationFeedbackInfo = findType<VkPipelineCreationFeedbackCreateInfo>(
+                createInfo.pNext, VK_STRUCTURE_TYPE_PIPELINE_CREATION_FEEDBACK_CREATE_INFO);
+            std::chrono::time_point<std::chrono::high_resolution_clock> startTime;
+            if (creationFeedbackInfo != nullptr) {
+                startTime = std::chrono::high_resolution_clock::now();
+            }
+
             const auto *shaderModuleCreateInfo = findType<VkDataGraphPipelineShaderModuleCreateInfoARM>(
                 createInfo.pNext, VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SHADER_MODULE_CREATE_INFO_ARM);
             if (shaderModuleCreateInfo == nullptr) {
@@ -448,6 +456,13 @@ class GraphLayer : public VulkanLayerImpl {
             {
                 scopedMutex l(globalMutex);
                 deviceHandle->dataGraphPipelineMap[pipelines[i]] = pipeline;
+            }
+
+            if (creationFeedbackInfo != nullptr) {
+                auto endTime = std::chrono::high_resolution_clock::now();
+                creationFeedbackInfo->pPipelineCreationFeedback->flags |= VK_PIPELINE_CREATION_FEEDBACK_VALID_BIT;
+                creationFeedbackInfo->pPipelineCreationFeedback->duration = static_cast<uint64_t>(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(endTime - startTime).count());
             }
         }
 
