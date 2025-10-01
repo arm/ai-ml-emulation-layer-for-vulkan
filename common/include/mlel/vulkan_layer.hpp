@@ -670,29 +670,31 @@ class VulkanLayer {
             }
         }
 
-        // check layer required extensions and add to device create info.
-        uint32_t count = 0;
-        handle->loader->vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &count, nullptr);
-        std::vector<VkExtensionProperties> supportedExtensions(count);
-        handle->loader->vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &count,
-                                                             supportedExtensions.data());
+        if constexpr (requiredExtensions.size() > 0) {
+            // check layer required extensions and add to device create info.
+            uint32_t count = 0;
+            handle->loader->vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &count, nullptr);
+            std::vector<VkExtensionProperties> supportedExtensions(count);
+            handle->loader->vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &count,
+                                                                 supportedExtensions.data());
 
-        /* coverity[dead_error_begin] */
-        for (const auto &requiredExt : requiredExtensions) {
-            auto it = std::find_if(supportedExtensions.begin(), supportedExtensions.end(),
-                                   [&requiredExt](const auto &supportExt) {
-                                       return std::strcmp(supportExt.extensionName, requiredExt.extensionName) == 0;
-                                   });
-            if (it == supportedExtensions.end()) {
-                layerLog(mlsdk::el::log::Severity::Error)
-                    << "ML Emulation Layer for Vulkan requires extension: " << requiredExt.extensionName << std::endl;
-                return VK_ERROR_FEATURE_NOT_PRESENT;
-            }
-            auto it2 =
-                std::find_if(deviceExtensions.begin(), deviceExtensions.end(),
-                             [&requiredExt](const std::string &ext) { return ext == requiredExt.extensionName; });
-            if (it2 == deviceExtensions.end()) {
-                deviceExtensions.emplace_back(requiredExt.extensionName);
+            for (const auto &requiredExt : requiredExtensions) {
+                auto it = std::find_if(supportedExtensions.begin(), supportedExtensions.end(),
+                                       [&requiredExt](const auto &supportExt) {
+                                           return std::strcmp(supportExt.extensionName, requiredExt.extensionName) == 0;
+                                       });
+                if (it == supportedExtensions.end()) {
+                    layerLog(mlsdk::el::log::Severity::Error)
+                        << "ML Emulation Layer for Vulkan requires extension: " << requiredExt.extensionName
+                        << std::endl;
+                    return VK_ERROR_FEATURE_NOT_PRESENT;
+                }
+                auto it2 =
+                    std::find_if(deviceExtensions.begin(), deviceExtensions.end(),
+                                 [&requiredExt](const std::string &ext) { return ext == requiredExt.extensionName; });
+                if (it2 == deviceExtensions.end()) {
+                    deviceExtensions.emplace_back(requiredExt.extensionName);
+                }
             }
         }
 
