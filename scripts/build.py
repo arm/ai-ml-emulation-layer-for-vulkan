@@ -10,6 +10,7 @@ import platform
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 
 try:
     import argcomplete
@@ -35,6 +36,7 @@ class Builder:
         self.package = args.package
         self.package_type = args.package_type
         self.package_source = args.package_source
+        self.package_version = args.package_version
         self.target_platform = args.target_platform
         self.disable_precompile_shaders = args.disable_precompile_shaders
         self.doc = args.doc
@@ -247,10 +249,22 @@ class Builder:
                     "pip_package/emulation_layer/deploy/",
                     dirs_exist_ok=True,
                 )
+
+                with open("pip_package/setup.py.template", "r") as templateFile:
+                    inputData = templateFile.read()
+
+                outputData = inputData.replace(
+                    "{VERSION_NUMBER}",
+                    f'"{self.package_version}"',
+                )
+
+                with open(f"{self.build_dir}/setup.py", "w") as outputFile:
+                    outputFile.write(outputData)
+
                 result = subprocess.Popen(
                     [
                         "python",
-                        "setup.py",
+                        f"{self.build_dir}/setup.py",
                         "bdist_wheel",
                         "--plat-name",
                         platformName,
@@ -330,6 +344,11 @@ def parse_arguments():
         "--package-type",
         choices=["zip", "tgz", "pip"],
         help="Package type",
+    )
+    parser.add_argument(
+        "--package-version",
+        help="Manually specify pip package version number",
+        default=datetime.today().strftime("%m.%d"),
     )
     parser.add_argument(
         "--package-source",

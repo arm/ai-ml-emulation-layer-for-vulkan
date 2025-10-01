@@ -2,14 +2,12 @@
 # SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: Apache-2.0
 #
-from datetime import datetime
-
 from setuptools import find_packages
 from setuptools import setup
 
 setup(
     name="ai_ml_emulation_layer_for_vulkan",
-    version=datetime.today().strftime("%m.%d"),
+    version={VERSION_NUMBER},
     packages=find_packages(),
     include_package_data=True,
     package_data={
