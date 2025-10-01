@@ -470,11 +470,9 @@ class VulkanLayer {
             return nullptr;
         }
 
-        if (auto handle = getHandle(instance)) {
-            PFN_vkGetInstanceProcAddr getInstanceProcAddr = nullptr;
+        if (auto handle = getHandle(instance); handle) {
+            PFN_vkGetInstanceProcAddr getInstanceProcAddr = handle->nextGetInstanceProcAddr;
             PFN_GetPhysicalDeviceProcAddr nextPhysicalDeviceProcAddr = nullptr;
-            if (handle)
-                getInstanceProcAddr = handle->nextGetInstanceProcAddr;
 
             // Default to propagating through Instance Proc Address
             if (getInstanceProcAddr) {
