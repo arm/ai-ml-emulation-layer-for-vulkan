@@ -8,7 +8,7 @@ from setuptools import find_packages
 from setuptools import setup
 
 setup(
-    name="ai_ml_sdk_emulation_layer",
+    name="ai_ml_emulation_layer_for_vulkan",
     version=datetime.today().strftime("%m.%d"),
     packages=find_packages(),
     include_package_data=True,
