@@ -300,7 +300,7 @@ VkDescriptorPool ComputePipelineLayout::createDescriptorPool() const {
 void ComputePipelineLayout::makeDescriptorSets(ComputeDescriptorSetMap &mapping,
                                                const TensorDescriptorMap &filter) const {
     for (uint32_t set = 0; set < descriptorMap.size(); set++) {
-        const auto &[direction, tensorDescriptor] = descriptorMap[set];
+        [[maybe_unused]] const auto &[_, tensorDescriptor] = descriptorMap[set];
 
         // Compare if tensor descriptor from descriptor map and argument are matching
         if (auto it = filter.find(tensorDescriptor); it != filter.end()) {

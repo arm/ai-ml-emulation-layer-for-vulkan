@@ -115,7 +115,7 @@ class DataGraphPipelineARM : public Loader {
 
     void makeConstantsDescriptorSets() {
         constantsDescriptorSets = graphPipeline->makeConstantsDescriptorSets();
-        for (auto &[key, descriptorSet] : constantsDescriptorSets) {
+        for ([[maybe_unused]] const auto &[_, descriptorSet] : constantsDescriptorSets) {
             descriptorSet->updateDescriptorSet();
         }
     }
@@ -571,7 +571,7 @@ class GraphLayer : public VulkanLayerImpl {
                 session->memoryPlanner->bindGraphPipelineSessionMemory(bindInfos[i].memory, bindInfos[i].memoryOffset,
                                                                        session->sessionRamDescriptorSets);
 
-                for (auto &[key, descriptorSet] : session->sessionRamDescriptorSets) {
+                for ([[maybe_unused]] const auto &[_, descriptorSet] : session->sessionRamDescriptorSets) {
                     descriptorSet->updateDescriptorSet();
                 }
 
@@ -638,7 +638,7 @@ class GraphLayer : public VulkanLayerImpl {
         const auto tensorDescriptor = graphPipeline->getTensor(set, binding, arrayIndex);
 
         // Find and update all descriptor sets with matching tensor descriptor
-        for (const auto &[key, descSet] : computeDescriptorSetMap) {
+        for ([[maybe_unused]] const auto &[_, descSet] : computeDescriptorSetMap) {
             if (descSet->getTensor()->getTensorDescriptor() == tensorDescriptor) {
                 // Store tensor and tensor view and update descriptor set
                 descSet->updateDescriptorSet(tensorView->info.tensor, tensorViews[arrayIndex]);
@@ -660,7 +660,7 @@ class GraphLayer : public VulkanLayerImpl {
             descriptorSet->update(vkWriteDescriptorSet);
 
             for (const auto &[pipelineSet, computeDescriptorSetMap] : descriptorSet->externalDescriptorSets) {
-                auto &[vkPipeline, set] = pipelineSet;
+                const auto &[vkPipeline, set] = pipelineSet;
 
                 std::shared_ptr<DataGraphPipelineARM> dataGraphPipelineArm;
                 {

@@ -173,7 +173,7 @@ vk::raii::TensorARM createTensor(vk::raii::Device &device, const std::vector<int
     return {device, tensorCreateInfo};
 }
 
-vk::MemoryRequirements2 getTensorMemoryRequirements(vk::raii::Device &device, vk::raii::TensorARM &tensor) {
+vk::MemoryRequirements2 getTensorMemoryRequirements(vk::raii::Device &device, const vk::raii::TensorARM &tensor) {
     const vk::TensorMemoryRequirementsInfoARM requirementsInfo{
         *tensor,
     };
@@ -183,7 +183,7 @@ vk::MemoryRequirements2 getTensorMemoryRequirements(vk::raii::Device &device, vk
 }
 
 vk::raii::DeviceMemory allocateTensorMemory(vk::raii::Device &device, vk::raii::PhysicalDevice &physicalDevice,
-                                            vk::raii::TensorARM &tensor) {
+                                            const vk::raii::TensorARM &tensor) {
     const auto requirements = getTensorMemoryRequirements(device, tensor);
     const auto memoryProperties = physicalDevice.getMemoryProperties();
 
@@ -207,7 +207,7 @@ vk::raii::DeviceMemory allocateTensorMemory(vk::raii::Device &device, vk::raii::
     return deviceMemory;
 }
 
-void bindTensor(vk::raii::Device &device, vk::raii::TensorARM &tensor, vk::raii::DeviceMemory &memory) {
+void bindTensor(vk::raii::Device &device, const vk::raii::TensorARM &tensor, const vk::raii::DeviceMemory &memory) {
     const vk::BindTensorMemoryInfoARM bindInfo{
         *tensor, // tensor
         *memory, // device memory
@@ -217,7 +217,8 @@ void bindTensor(vk::raii::Device &device, vk::raii::TensorARM &tensor, vk::raii:
     device.bindTensorMemoryARM(bindInfo);
 }
 
-vk::raii::TensorViewARM createTensorView(vk::raii::Device &device, vk::raii::TensorARM &tensor, vk::Format format) {
+vk::raii::TensorViewARM createTensorView(vk::raii::Device &device, const vk::raii::TensorARM &tensor,
+                                         vk::Format format) {
     const vk::TensorViewCreateInfoARM tensorViewCreateInfo{
         {},      // flags
         *tensor, // tensor
@@ -350,7 +351,7 @@ TEST_F(MLEmulationLayerForVulkan, EnumerateInstanceExtensions) {
 
 TEST_F(MLEmulationLayerForVulkan, CreateInstance) {
     vk::raii::Context ctx{};
-    auto instance = createInstance(ctx, {"VK_LAYER_ML_Tensor_Emulation"});
+    [[maybe_unused]] auto instance = createInstance(ctx, {"VK_LAYER_ML_Tensor_Emulation"});
 }
 
 TEST_F(MLEmulationLayerForVulkan, EnumeratePhysicalDevices) {
@@ -392,7 +393,7 @@ TEST_F(MLEmulationLayerForVulkan, CheckTensorFeature) {
     auto instance = createInstance(ctx, {"VK_LAYER_ML_Tensor_Emulation"});
     auto [device, physicalDevice] = createDevice(instance, {"VK_LAYER_ML_Tensor_Emulation"});
     auto features = physicalDevice.getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceTensorFeaturesARM>();
-    auto &tensorFeature = features.template get<vk::PhysicalDeviceTensorFeaturesARM>();
+    const auto &tensorFeature = features.template get<vk::PhysicalDeviceTensorFeaturesARM>();
     if (!tensorFeature.shaderTensorAccess) {
         throw std::runtime_error("shaderTensorAccess not supported!");
     }
@@ -408,7 +409,7 @@ TEST_F(MLEmulationLayerForVulkan, CreateTensor) {
     vk::raii::DeviceMemory memory = allocateTensorMemory(device, physicalDevice, tensor);
     bindTensor(device, tensor, memory);
 
-    auto tensorView = createTensorView(device, tensor, vk::Format::eR8Sint);
+    [[maybe_unused]] auto tensorView = createTensorView(device, tensor, vk::Format::eR8Sint);
 }
 
 TEST_F(MLEmulationLayerForVulkan, MaxPool2D) {
@@ -1124,14 +1125,14 @@ TEST_F(MLEmulationLayerForVulkan, CreateTensorComputeShader) {
     auto device = createDevice();
 
     const auto spirvModule = mlsdk::el::utils::glslToSpirv(fileToString("tensor_all_access.comp"));
-    auto shaderModule = createShaderModule((&(*device)), spirvModule);
+    [[maybe_unused]] const auto shaderModule = createShaderModule((&(*device)), spirvModule);
 }
 
 TEST_F(MLEmulationLayerForVulkan, TensorArray) {
     auto device = createDevice();
 
     const auto spirvModule = mlsdk::el::utils::glslToSpirv(fileToString("tensor_array.comp"));
-    auto shaderModule = createShaderModule((&(*device)), spirvModule);
+    [[maybe_unused]] const auto shaderModule = createShaderModule((&(*device)), spirvModule);
     std::vector<std::shared_ptr<Tensor>> inputTensors;
     std::vector<std::shared_ptr<Tensor>> outputTensors;
     for ([[maybe_unused]] auto _ : {1, 2, 3, 4}) {

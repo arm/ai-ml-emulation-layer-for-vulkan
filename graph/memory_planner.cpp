@@ -76,7 +76,7 @@ void LinearMemoryPlanner::bindGraphPipelineSessionMemory(VkDeviceMemory memory, 
     const auto [alignment, memoryTypeBits] = memoryRequirements;
 
     std::set<VkTensorARM> tensorSet;
-    for (const auto &[key, descriptorSet] : descriptorSetsMapping) {
+    for ([[maybe_unused]] const auto &[_, descriptorSet] : descriptorSetsMapping) {
         const auto &tensorARM = descriptorSet->getVkTensorARM();
         if (tensorSet.find(tensorARM) != tensorSet.end()) {
             continue;
@@ -118,7 +118,7 @@ VkMemoryRequirements BestFitMemoryPlanner::getGraphPipelineSessionMemoryRequirem
 void BestFitMemoryPlanner::bindGraphPipelineSessionMemory(VkDeviceMemory memory, VkDeviceSize offset,
                                                           const ComputeDescriptorSetMap &descriptorSetsMapping) {
     std::set<VkTensorARM> tensorSet;
-    for (const auto &[key, descriptorSet] : descriptorSetsMapping) {
+    for ([[maybe_unused]] const auto &[_, descriptorSet] : descriptorSetsMapping) {
         const auto &tensorARM = descriptorSet->getVkTensorARM();
         if (tensorSet.find(tensorARM) != tensorSet.end()) {
             continue;

@@ -356,12 +356,12 @@ void GraphPipeline::dispatchUpdateSubmit() {
 }
 
 void GraphPipeline::printGraphPipelineSessionMemory() const {
-    int i = 0;
+    int index = 0;
     for (const auto &session : sessions) {
         if (session.pointer == nullptr) {
             continue;
         }
-        std::cout << "Session: " << i++ << " at address: " << session.pointer << '\n';
+        std::cout << "Session: " << index++ << " at address: " << session.pointer << '\n';
         const auto p = static_cast<const uint8_t *>(session.pointer);
         std::ios_base::fmtflags coutFlags(std::cout.flags());
         std::cout << std::hex << std::setfill('0');
