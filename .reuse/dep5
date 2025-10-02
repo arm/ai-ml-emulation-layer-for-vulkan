@@ -1,5 +1,5 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: ml-sdk-emulation-layer
+Upstream-Name: ai-ml-emulation-layer-for-vulkan
 
 Files: *.md
 Copyright: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>

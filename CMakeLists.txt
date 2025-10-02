@@ -32,12 +32,12 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 # Options for ML Emulation Layer for Vulkan
 ###############################################################################
 if(ML_SDK_GENERATE_CPACK)
-    set(ML_SDK_EL_PACKAGE_NAME "ml-sdk")
-    set(ML_SDK_EL_NAMESPACE "ml-sdk")
+    set(ML_SDK_EL_PACKAGE_NAME "ai_ml_sdk_for_vulkan")
+    set(ML_SDK_EL_NAMESPACE "ai_ml_sdk_for_vulkan")
 else()
     set(ML_SDK_EL_PACKAGE_NAME ${PROJECT_NAME})
     set(ML_SDK_EL_NAMESPACE ${PROJECT_NAME})
-    set(CPACK_PACKAGE_NAME "ml-emulation-layer")
+    set(CPACK_PACKAGE_NAME "ai_ml_emulation_layer_for_vulkan")
 endif()
 
 option(VMEL_TESTS_ENABLE "Enable tests" ON)
