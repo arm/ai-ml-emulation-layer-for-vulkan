@@ -869,14 +869,17 @@ LAYER_EXPORT PFN_vkVoidFunction VKAPI_CALL vk_layerGetPhysicalDeviceProcAddr(VkI
     return TensorLayer::vk_layerGetPhysicalDeviceProcAddr(instance, pName);
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *pVersionStruct) {
-    assert(pVersionStruct != NULL);
-    assert(pVersionStruct->sType == LAYER_NEGOTIATE_INTERFACE_STRUCT);
+VKAPI_ATTR VkResult VKAPI_CALL
+vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *pNegotiateLayerInterface) {
 
-    if (pVersionStruct->loaderLayerInterfaceVersion >= 2) {
-        pVersionStruct->pfnGetInstanceProcAddr = vkGetInstanceProcAddr;
-        pVersionStruct->pfnGetDeviceProcAddr = vkGetDeviceProcAddr;
-        pVersionStruct->pfnGetPhysicalDeviceProcAddr = vk_layerGetPhysicalDeviceProcAddr;
+    if (!pNegotiateLayerInterface || pNegotiateLayerInterface->sType != LAYER_NEGOTIATE_INTERFACE_STRUCT) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (pNegotiateLayerInterface->loaderLayerInterfaceVersion >= 2) {
+        pNegotiateLayerInterface->pfnGetInstanceProcAddr = vkGetInstanceProcAddr;
+        pNegotiateLayerInterface->pfnGetDeviceProcAddr = vkGetDeviceProcAddr;
+        pNegotiateLayerInterface->pfnGetPhysicalDeviceProcAddr = vk_layerGetPhysicalDeviceProcAddr;
     }
 
     return VK_SUCCESS;
