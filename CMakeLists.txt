@@ -70,13 +70,16 @@ if(VMEL_ENABLE_LINT)
         -j${NCORES}
         --std=c++17
         --force
-        --enable=performance,portability,information # reenable style
+        --enable=information,performance,portability,style
         --quiet
         --inline-suppr
         --error-exitcode=1
-        --suppress=unreadVariable
-        --suppress=unmatchedSuppression
+        --suppress=missingInclude
+        --suppress=missingIncludeSystem
         --suppress=noValidConfiguration
+        --suppress=unassignedVariable # False positive for structured bindings
+        --suppress=unmatchedSuppression
+        --suppress=useStlAlgorithm
         --suppress=*:${CMAKE_BINARY_DIR}*
         )
 

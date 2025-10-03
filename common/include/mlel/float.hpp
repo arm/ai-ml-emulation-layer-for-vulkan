@@ -127,6 +127,7 @@ template <std::size_t EXPONENT, std::size_t MANTISSA> class FloatingPoint {
         }
     }
 
+    // cppcheck-suppress noExplicitConstructor
     template <typename T> FloatingPoint(const T v) : FloatingPoint(double(v)) {}
 
     operator double() const {
