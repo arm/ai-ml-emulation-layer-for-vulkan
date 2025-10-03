@@ -51,8 +51,8 @@ class Builder:
             self.install = "pip_install"
 
     def setup_platform_build(self, cmake_cmd):
+        system = platform.system()
         if self.target_platform == "host":
-            system = platform.system()
             if system == "Linux":
                 cmake_cmd.append(
                     f"-DCMAKE_TOOLCHAIN_FILE={CMAKE_TOOLCHAIN_PATH / 'gcc.cmake'}"
