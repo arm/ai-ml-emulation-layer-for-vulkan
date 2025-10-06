@@ -15,14 +15,14 @@ Usage on Windows®
 .. include:: ../generated/README.md
     :parser: myst_parser.sphinx_
     :start-after: ### Usage on Windows®
-    :end-before: ### Building for Android
+    :end-before: ### Building for Android™ (Experimental)
 
-Usage on Android
-----------------
+Usage on Android™
+-----------------
 
 .. include:: ../generated/README.md
     :parser: myst_parser.sphinx_
-    :start-after: ### Usage on Android
+    :start-after: ### Usage on Android™ (Experimental)
     :end-before: ### Vulkan® Layer Documentation
 
 Vulkan® Layer Documentation

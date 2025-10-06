@@ -32,3 +32,12 @@ native ML extension support.
   SPIRV-Tools, and SPIRV-Cross integration
 - **Runtime Shader Compilation**: Supports both pre-compiled and runtime shader
   compilation modes for flexible deployment scenarios
+
+## Platform Support
+
+The following platform combinations are supported:
+
+- Linux - X86-64
+- Windows® - X86-64
+
+---
