@@ -24,7 +24,7 @@ CMAKE_TOOLCHAIN_PATH = EMULATION_LAYER_DIR / "cmake" / "toolchain"
 
 class Builder:
     def __init__(self, args):
-        self.build_dir = args.build_dir
+        self.build_dir = str(pathlib.Path(args.build_dir).resolve())
         self.prefix_path = args.prefix_path
         self.test_dir = pathlib.Path(self.build_dir) / "tests"
         self.threads = args.threads
