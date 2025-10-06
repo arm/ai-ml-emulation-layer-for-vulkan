@@ -215,10 +215,10 @@ $env:VMEL_GRAPH_SEVERITY="debug"
 $env:VMEL_TENSOR_SEVERITY="info"
 ```
 
-### Building for Android (Experimental)
+### Building for Android™ (Experimental)
 
-The Android NDK toolset is required to build the Emulation layer for an Android
-device. The Android device must have Vulkan® API 1.3 support.
+The Android™ NDK toolset is required to build the Emulation layer for an Android™
+device. The Android™ device must have Vulkan® API 1.3 support.
 
 To build the Emulation Layer, run:
 
@@ -235,10 +235,10 @@ $ cmake -B build
 $ cmake --build build
 ```
 
-### Usage on Android
+### Usage on Android™ (Experimental)
 
 You can pack the graph and tensor layer libraries into the Application Package
-Kit (APK) or push to the `/data/local/debug/vulkan` directory for Android to
+Kit (APK) or push to the `/data/local/debug/vulkan` directory for Android™ to
 discover the Emulation Layer. Applications can enable the layers during Vulkan
 instance creation or you can enable the layers without modifying the application
 by using following commands:
@@ -250,7 +250,7 @@ $ adb shell settings put global gpu_debug_layers \
     VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation
 ```
 
-### Cross compilation for AArch64 on x86-64
+### Cross compilation for AArch64 on x86-64 (Experimental)
 
 The shader pre-compilation step requires a glslang compiler. There are three
 ways to accomplish this when cross-compiling:
