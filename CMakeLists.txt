@@ -41,7 +41,6 @@ else()
 endif()
 
 option(VMEL_TESTS_ENABLE "Enable tests" ON)
-option(VMEL_ENABLE_LINT "Enable linting using cppcheck" OFF)
 option(VMEL_DISABLE_PRECOMPILE_SHADERS "Disable precompilation of SPIR-V shaders" OFF)
 option(VMEL_BUILD_DOCS "Build documentation" OFF)
 
@@ -59,53 +58,6 @@ include(glslang)
 if(NOT EXISTS ${SPIRV_TOOLS_PATH}/CMakeLists.txt)
     message(FATAL_ERROR "ML Emulation Layer for Vulkan only supports building SPIR-V Tools from source")
 endif()
-
-# Enable Cppcheck
-if(VMEL_ENABLE_LINT)
-    message(STATUS "Cppcheck is enabled.")
-    find_program(CPPCHECK_EXECUTABLE NAMES cppcheck)
-    include(ProcessorCount)
-    ProcessorCount(NCORES)
-    set(CMAKE_CXX_CPPCHECK_OPTIONS
-        -j${NCORES}
-        --std=c++17
-        --force
-        --enable=information,performance,portability,style
-        --quiet
-        --inline-suppr
-        --error-exitcode=1
-        --suppress=missingInclude
-        --suppress=missingIncludeSystem
-        --suppress=noValidConfiguration
-        --suppress=unassignedVariable # False positive for structured bindings
-        --suppress=unmatchedSuppression
-        --suppress=useStlAlgorithm
-        --suppress=*:${CMAKE_BINARY_DIR}*
-        )
-
-        if(EXISTS ${VULKAN_HEADERS_PATH})
-            list(APPEND CMAKE_CXX_CPPCHECK_OPTIONS --suppress=*:*${VULKAN_HEADERS_PATH}*)
-        endif()
-
-        if(EXISTS ${SPIRV_CROSS_PATH})
-            list(APPEND CMAKE_CXX_CPPCHECK_OPTIONS --suppress=*:*${SPIRV_CROSS_PATH}*)
-        endif()
-
-        if(EXISTS ${SPIRV_TOOLS_PATH})
-            list(APPEND CMAKE_CXX_CPPCHECK_OPTIONS --suppress=*:*${SPIRV_TOOLS_PATH}*)
-        endif()
-
-        if(EXISTS ${SPIRV_HEADERS_PATH})
-            list(APPEND CMAKE_CXX_CPPCHECK_OPTIONS --suppress=*:*${SPIRV_HEADERS_PATH}*)
-        endif()
-
-        if(EXISTS ${GLSLANG_PATH})
-            list(APPEND CMAKE_CXX_CPPCHECK_OPTIONS --suppress=*:*${GLSLANG_PATH}*)
-        endif()
-
-    set(CMAKE_CXX_CPPCHECK "${CPPCHECK_EXECUTABLE}" "${CMAKE_CXX_CPPCHECK_OPTIONS}")
-endif()
-unset(VMEL_ENABLE_LINT CACHE)
 
 ###############################################################################
 # ML Emulation Layer for Vulkan

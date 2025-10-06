@@ -30,7 +30,7 @@ class Builder:
         self.threads = args.threads
         self.run_tests = args.test
         self.build_type = args.build_type
-        self.run_linting = args.lint
+        self.lint = args.lint
         self.enable_sanitizers = args.enable_sanitizers
         self.install = args.install
         self.package = args.package
@@ -127,8 +127,8 @@ class Builder:
             cmake_setup_cmd.append(f"-DGTEST_PATH={self.gtest_path}")
 
         # Extra options
-        if self.run_linting:
-            cmake_setup_cmd.append("-DVMEL_ENABLE_LINT=ON")
+        if self.lint:
+            cmake_setup_cmd.append("-DCMAKE_EXPORT_COMPILE_COMMANDS=ON")
         if self.disable_precompile_shaders:
             cmake_setup_cmd.append("-DVMEL_DISABLE_PRECOMPILE_SHADERS=ON")
         if self.doc:
@@ -179,6 +179,31 @@ class Builder:
         try:
             subprocess.run(cmake_setup_cmd, check=True)
             subprocess.run(cmake_build_cmd, check=True)
+
+            if self.lint:
+                lint_cmd = [
+                    "cppcheck",
+                    f"-j{str(self.threads)}",
+                    "--std=c++17",
+                    "--error-exitcode=1",
+                    "--inline-suppr",
+                    f"--project={self.build_dir}/compile_commands.json",
+                    f"--cppcheck-build-dir={self.build_dir}/cppcheck",
+                    "--enable=information,performance,portability,style",
+                    f"-i={DEPENDENCY_DIR}",
+                    f"--suppress=noValidConfiguration",
+                    f"--suppress=unassignedVariable",
+                    f"--suppress=unmatchedSuppression",
+                    f"--suppress=useStlAlgorithm",
+                    f"--suppress=*:MachineIndependent*",
+                    f"--suppress=*:{self.vulkan_headers_path}*",
+                    f"--suppress=*:{self.spirv_cross_path}*",
+                    f"--suppress=*:{self.spirv_tools_path}*",
+                    f"--suppress=*:{self.spirv_headers_path}*",
+                    f"--suppress=*:{self.glslang_path}*",
+                    f"--suppress=*:{self.gtest_path}*",
+                ]
+                subprocess.run(lint_cmd, check=True)
 
             if self.install:
                 cmake_install_cmd = [
