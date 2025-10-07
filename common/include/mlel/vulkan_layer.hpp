@@ -830,10 +830,12 @@ class VulkanLayer {
      *******************************************************************************/
 
     static void VKAPI_CALL vkDestroyDevice(VkDevice device, const VkAllocationCallbacks *allocator) {
-        auto handle = getHandle(device);
-        handle->loader->vkDestroyDevice(device, allocator);
+        std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> loader;
 
         {
+            // declare handle here to ensure no references to DeviceImpl escape this scope
+            auto handle = getHandle(device);
+            loader = handle->loader;
             scopedMutex l(globalMutex);
 
             // Erase device map
@@ -848,6 +850,8 @@ class VulkanLayer {
                 }
             }
         }
+
+        loader->vkDestroyDevice(device, allocator);
     }
 
     /*******************************************************************************
