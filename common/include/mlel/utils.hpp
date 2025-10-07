@@ -14,6 +14,12 @@
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+namespace mlsdk::el {
+constexpr int EXPERIMENTAL_MVK_BUFFER_BINDING_OFFSET = 1000;
+}
+#endif
+
 namespace mlsdk::el::utils {
 
 namespace {

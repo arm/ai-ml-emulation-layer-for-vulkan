@@ -15,8 +15,13 @@ using namespace mlsdk::el::utils;
 namespace mlsdk::el::layer {
 
 const std::string CompilerTensorAsBuffer::tensorDefines =
-#include "shaders/tensor.glsl"
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+#    include "shaders/tensor_mvk.glsl"
     ;
+#else
+#    include "shaders/tensor.glsl"
+    ;
+#endif
 
 CompilerTensorAsBuffer::CompilerTensorAsBuffer(std::vector<uint32_t> spirv_) : CompilerGLSL(std::move(spirv_)) {
     /* The CompilerGLSL constructor parses SPIRV to the SPIRV-Cross internal representation
@@ -51,6 +56,13 @@ CompilerTensorAsBuffer::CompilerTensorAsBuffer(std::vector<uint32_t> spirv_) : C
             uint64_t shape[6];
             uint64_t stride[6];
         };
+
+    Note that due to limited support of VK_KHR_buffer_device_address in MoltenVK, for each tensor descriptor there will
+    be a buffer of the following form which is alias of _Tensor_Buffer_TYPE BDA.
+        layout(set = SET, binding = BIND + EXPERIMENTAL_MVK_BUFFER_BINDING_OFFSET, std430) buffer _TensorDataVAR
+        {
+            TYPE data[];
+        } _tensorDataVAR;
 
      Finally, before entering the `main` function, a global variable of name `VAR` and type `_Tensor_Descriptor_TYPE` is
      declared, and can be used wherever the original TensorARM variable was used.
@@ -114,6 +126,9 @@ CompilerTensorAsBuffer::CompilerTensorAsBuffer(std::vector<uint32_t> spirv_) : C
             tensorStructNew.type_alias = tensorStructDoneId;
             // Struct member byte offsets need to be copied separately.
             ir.meta[tensorTypeId].members = ir.meta[tensorStructDoneId].members;
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+            tensorBufferTypeIdMap[tensorTypeId] = tensorBufferTypeIdMap[tensorStructDoneId];
+#endif
             continue;
         }
 
@@ -147,6 +162,11 @@ CompilerTensorAsBuffer::CompilerTensorAsBuffer(std::vector<uint32_t> spirv_) : C
             createTensorInterface(tensorVarId);
         }
     }
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+    for (const auto &tensorVariable : tensorVariables) {
+        createTensorBuffer(tensorVariable);
+    }
+#endif
 }
 
 void CompilerTensorAsBuffer::emit_header() {
@@ -356,6 +376,10 @@ uint32_t CompilerTensorAsBuffer::createTensorBDA(uint32_t tensorTypeId) {
     bufferPtr.storage = spv::StorageClassPhysicalStorageBuffer;
     bufferPtr.parent_type = bufferStructId;
 
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+    tensorBufferTypeIdMap[tensorTypeId] = bufferDataId;
+#endif
+
     return bufferPtrId;
 }
 
@@ -480,5 +504,67 @@ void CompilerTensorAsBuffer::createTensorInterface(uint32_t tensorVarId) {
         tensorVariables.push_back({tensorVarId, tensorInterfaceVarId});
     }
 }
+
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+void CompilerTensorAsBuffer::createTensorBuffer(const std::pair<uint32_t, uint32_t> &tensorVarAndInterface) {
+    // Add a buffer variable for each tensor. This buffer will contain a data member which is aliased by the
+    // buffer_reference address member of tensor descriptor
+    const auto &[tensorVarId, tensorInterfaceVarId] = tensorVarAndInterface;
+
+    // Retrieve data about the original variable
+    const auto &varName = ir.get_name(tensorVarId);
+    const auto &tensorType = get_type_from_variable(tensorVarId);
+
+    // Add IDs for the new types and variable
+    uint32_t tensorBufferId = ir.increase_bound_by(3);
+    uint32_t tensorBufferPtrId = tensorBufferId + 1;
+    uint32_t tensorBufferVarId = tensorBufferPtrId + 1;
+
+    auto &tensorBuffer = set<SPIRType>(tensorBufferId, spv::OpTypeStruct);
+    tensorBuffer.basetype = SPIRType::Struct;
+
+    auto tensorBufferType = get<SPIRType>(tensorBufferTypeIdMap.at(tensorType.self));
+    auto elementType = get<SPIRType>(tensorBufferType.parent_type);
+    if (elementType.op == spv::OpTypeInt && elementType.width == 8) {
+        require_extension("GL_EXT_shader_explicit_arithmetic_types_int8");
+    }
+    if (elementType.op == spv::OpTypeInt && elementType.width == 16) {
+        require_extension("GL_EXT_shader_explicit_arithmetic_types_int16");
+    }
+    if (elementType.op == spv::OpTypeFloat && elementType.width == 16) {
+        require_extension("GL_EXT_shader_explicit_arithmetic_types_float16");
+    }
+
+    tensorBuffer.member_types.push_back(tensorBufferTypeIdMap.at(tensorType.self));
+    ir.set_member_decoration(tensorBuffer.self, 0, spv::DecorationOffset, 0);
+    ir.set_member_name(tensorBuffer.self, 0, "data");
+    ir.set_decoration(tensorBufferId, spv::DecorationBlock);
+    ir.set_name(tensorBufferId, join("_TensorData", varName));
+
+    // Create a SPIRType for a pointer-to-struct
+    auto &tensorBufferPtr = set<SPIRType>(tensorBufferPtrId, spv::OpTypePointer);
+    tensorBufferPtr = tensorBuffer;
+    tensorBufferPtr.op = spv::OpTypePointer;
+    tensorBufferPtr.pointer = true;
+    tensorBufferPtr.pointer_depth++;
+    tensorBufferPtr.storage = spv::StorageClassStorageBuffer;
+    tensorBufferPtr.parent_type = tensorBufferId;
+
+    // Create a new variable to represent the tensor buffer
+    set<SPIRVariable>(tensorBufferVarId, tensorBufferPtrId, spv::StorageClassStorageBuffer);
+    ir.set_name(tensorBufferVarId, join("_tensorData", varName));
+    auto &execution = get_entry_point();
+    execution.interface_variables.push_back(tensorBufferVarId);
+
+    // Retrieve binding and descriptor set from original variable and bind new buffer at binding +
+    // EXPERIMENTAL_MVK_BUFFER_BINDING_OFFSET
+    uint32_t binding =
+        ir.get_decoration(tensorInterfaceVarId, spv::DecorationBinding) + EXPERIMENTAL_MVK_BUFFER_BINDING_OFFSET;
+    uint32_t descriptorSet = ir.get_decoration(tensorInterfaceVarId, spv::DecorationDescriptorSet);
+    ir.set_decoration(tensorBufferVarId, spv::DecorationBlock);
+    ir.set_decoration(tensorBufferVarId, spv::DecorationBinding, binding);
+    ir.set_decoration(tensorBufferVarId, spv::DecorationDescriptorSet, descriptorSet);
+}
+#endif
 
 } // namespace mlsdk::el::layer

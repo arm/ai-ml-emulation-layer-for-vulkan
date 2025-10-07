@@ -20,7 +20,7 @@ if(DEFINED ANDROID_ABI)
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    add_compile_definitions(MOLTEN_VK_SUPPORT)
+    add_compile_definitions(EXPERIMENTAL_MOLTEN_VK_SUPPORT)
 endif()
 
 include(CTest)

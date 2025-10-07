@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2024 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -43,5 +43,10 @@ void main() {
     IN_T value;
     tensorReadARM(inputData, index, value);
 
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+    OUT_T outValue = OUT_T(lookup(value));
+    tensorWriteARM(outputData, index, outValue);
+#else
     tensorWriteARM(outputData, index, OUT_T(lookup(value)));
+#endif
 }

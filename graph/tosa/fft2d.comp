@@ -28,8 +28,8 @@ void main() {
     uint oy = index[1];
     uint ox = index[2];
 
-    double sumReal = 0.0;
-    double sumImag = 0.0;
+    FLOAT sumReal = 0.0;
+    FLOAT sumImag = 0.0;
 
     for (uint iy = 0; iy < shape[1]; iy++) {
         for (uint ix = 0; ix < shape[2]; ix += 4) {

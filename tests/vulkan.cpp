@@ -61,7 +61,7 @@ vk::raii::Instance createInstance(vk::raii::Context &ctx, std::vector<const char
         VK_MAKE_API_VERSION(1, 3, 0, 0), // api version
     };
     vk::InstanceCreateFlags flags;
-#ifdef MOLTEN_VK_SUPPORT
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
     enabledExtensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
     flags = vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR;
 #endif
@@ -125,7 +125,7 @@ std::tuple<vk::raii::Device, vk::raii::PhysicalDevice> createDevice(vk::raii::In
         if (queueCreateInfo.size() == 0) {
             continue;
         }
-#ifdef MOLTEN_VK_SUPPORT
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
         enabledExtensions.push_back("VK_KHR_portability_subset");
 #endif
         // Verify that device supports all enabled extensions
@@ -288,16 +288,6 @@ std::vector<uint32_t> assembleSpirv(const std::string &text) {
     }
 
     return spirvModule;
-}
-
-vk::raii::ShaderModule createShaderModule(const vk::raii::Device &device, const std::vector<uint32_t> &code) {
-    const vk::ShaderModuleCreateInfo info{
-        {},                                                    // flags
-        static_cast<uint32_t>(code.size() * sizeof(uint32_t)), // code size
-        code.data()                                            // code
-    };
-
-    return vk::raii::ShaderModule(device, info);
 }
 
 std::shared_ptr<Device> createDevice() {
@@ -890,133 +880,6 @@ TEST_F(MLEmulationLayerForVulkan, Concat) {
     }
 }
 
-TEST_F(MLEmulationLayerForVulkan, GraphConstantARM) {
-    auto device = createDevice();
-
-    GraphConstants graphConstants;
-
-    graphConstants.makeGraphPipelineConstantTensor(0, Shape{vk::Format::eR32Sint, {1}}, std::vector<int32_t>{2});
-    graphConstants.makeGraphPipelineConstantTensor(1, Shape{vk::Format::eR8Sint, {1}}, std::vector<int8_t>{0});
-
-    graphConstants.makeGraphPipelineConstantTensor(2, Shape{vk::Format::eR32Sint, {1}}, std::vector<int32_t>{3});
-    graphConstants.makeGraphPipelineConstantTensor(3, Shape{vk::Format::eR8Sint, {1}}, std::vector<int8_t>{0});
-
-    graphConstants.makeGraphPipelineConstantTensor(4, Shape{vk::Format::eR32Sint, {1}}, std::vector<int32_t>{4});
-    graphConstants.makeGraphPipelineConstantTensor(5, Shape{vk::Format::eR8Sint, {1}}, std::vector<int8_t>{0});
-
-    auto inputTensor0 = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{5}});
-    auto inputTensor1 = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{5}});
-    auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{5}});
-    const GraphPipeline::DescriptorMap descriptorMap = {
-        {
-            // set 0
-            {
-                0,              // binding
-                {inputTensor0}, // tensor
-            },
-            {
-                1,              // binding
-                {inputTensor1}, // tensor
-            },
-            {
-                2,              // binding
-                {outputTensor}, // tensor
-            },
-        },
-    };
-
-    std::iota(inputTensor0->data(), inputTensor0->data() + inputTensor0->size(), uint8_t{});
-    std::iota(inputTensor1->data(), inputTensor1->data() + inputTensor1->size(), uint8_t{});
-
-    const auto spirv = assembleSpirv(fileToString("graph-constant-arm.spvasm"));
-    auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, graphConstants, spirv);
-
-    graphPipeline->dispatchSubmit();
-
-    std::cout << "INPUT" << std::endl;
-    inputTensor0->print();
-
-    std::cout << "INPUT" << std::endl;
-    inputTensor1->print();
-
-    std::cout << "OUTPUT" << std::endl;
-    outputTensor->print();
-
-    const uint8_t ref[5] = {0, 20, 40, 60, 80};
-
-    if (!outputTensor->compare(&ref[0], sizeof(ref))) {
-        throw std::runtime_error("Output mismatch");
-    }
-}
-
-TEST_F(MLEmulationLayerForVulkan, Maximum) {
-    auto device = createDevice();
-
-    auto inputTensor0 = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sint, std::vector<int64_t>{1, 2, 2, 2}});
-    auto inputTensor1 = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sint, std::vector<int64_t>{1, 2, 2, 2}});
-    auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sint, std::vector<int64_t>{1, 2, 2, 2}});
-    const GraphPipeline::DescriptorMap descriptorMap = {
-        {
-            // set 0
-            {
-                0,              // binding
-                {inputTensor0}, // tensor
-            },
-            {
-                1,              // binding
-                {inputTensor1}, // tensor
-            },
-            {
-                2,              // binding
-                {outputTensor}, // tensor
-            },
-        },
-    };
-
-    for (size_t i = 0; i < (inputTensor0->size() / sizeof(int32_t)); i++) {
-        *(reinterpret_cast<uint32_t *>(inputTensor0->data()) + i) = uint32_t(i);
-    }
-
-    for (size_t i = 0; i < (inputTensor1->size() / sizeof(int32_t)); i++) {
-        *(reinterpret_cast<uint32_t *>(inputTensor1->data()) + i) = static_cast<uint32_t>(-16) + uint32_t(i * 4);
-    }
-
-    const auto spirv = assembleSpirv(fileToString("maximum.spvasm"));
-    auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, GraphConstants{}, spirv);
-
-    graphPipeline->dispatchSubmit();
-
-    std::cout << "INPUT" << std::endl;
-    inputTensor0->print();
-
-    std::cout << "INPUT" << std::endl;
-    inputTensor1->print();
-
-    std::cout << "OUTPUT" << std::endl;
-    outputTensor->print();
-
-    const int32_t ref[1][2][2][2] = {
-        // batch
-        {
-            // height
-            {
-                // width
-                {0x00, 0x01}, // channel
-                {0x02, 0x03}, // channel
-            },
-            {
-                // width
-                {0x04, 0x05}, // channel
-                {0x08, 0x0c}, // channel
-            },
-        },
-    };
-
-    if (!outputTensor->compare(&ref[0][0][0][0], sizeof(ref))) {
-        throw std::runtime_error("Output mismatch");
-    }
-}
-
 TEST_F(MLEmulationLayerForVulkan, Slice) {
     auto device = createDevice();
 
@@ -1071,223 +934,8 @@ TEST_F(MLEmulationLayerForVulkan, Slice) {
     }
 }
 
-TEST_F(MLEmulationLayerForVulkan, FFT2D) {
-    auto device = createDevice();
-
-    auto inputTensor0 =
-        std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{1, 4, 4096}});
-    auto inputTensor1 =
-        std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{1, 4, 4096}});
-    auto outputTensor0 =
-        std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{1, 4, 4096}});
-    auto outputTensor1 =
-        std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{1, 4, 4096}});
-    const GraphPipeline::DescriptorMap descriptorMap = {
-        {
-            // set 0
-            {
-                0,              // binding
-                {inputTensor0}, // tensor
-            },
-            {
-                1,              // binding
-                {inputTensor1}, // tensor
-            },
-            {
-                2,               // binding
-                {outputTensor0}, // tensor
-            },
-            {
-                3,               // binding
-                {outputTensor1}, // tensor
-            },
-        },
-    };
-    const auto spirv = assembleSpirv(fileToString("fft2d.spvasm"));
-    auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, GraphConstants{}, spirv);
-
-    graphPipeline->dispatchSubmit();
-
-    std::cout << "INPUT 0" << std::endl;
-    inputTensor0->print();
-
-    std::cout << "INPUT 1" << std::endl;
-    inputTensor1->print();
-
-    std::cout << "OUTPUT 0" << std::endl;
-    outputTensor0->print();
-
-    std::cout << "OUTPUT 1" << std::endl;
-    outputTensor1->print();
-}
-
-TEST_F(MLEmulationLayerForVulkan, CreateTensorComputeShader) {
-    auto device = createDevice();
-
-    const auto spirvModule = mlsdk::el::utils::glslToSpirv(fileToString("tensor_all_access.comp"));
-    [[maybe_unused]] const auto shaderModule = createShaderModule((&(*device)), spirvModule);
-}
-
-TEST_F(MLEmulationLayerForVulkan, TensorArray) {
-    auto device = createDevice();
-
-    const auto spirvModule = mlsdk::el::utils::glslToSpirv(fileToString("tensor_array.comp"));
-    [[maybe_unused]] const auto shaderModule = createShaderModule((&(*device)), spirvModule);
-    std::vector<std::shared_ptr<Tensor>> inputTensors;
-    std::vector<std::shared_ptr<Tensor>> outputTensors;
-    for ([[maybe_unused]] auto _ : {1, 2, 3, 4}) {
-        auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{4}});
-        inputTensors.push_back(std::move(inputTensor));
-    }
-    for ([[maybe_unused]] auto _ : {1, 2, 3, 4}) {
-        auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{4}});
-        outputTensors.push_back(std::move(outputTensor));
-    }
-
-    const TensorComputePipeline::DescriptorMap descriptorMap = {
-        {
-            // set 0
-            {
-                0,                                                                    // binding
-                {inputTensors[0], inputTensors[1], inputTensors[2], inputTensors[3]}, // tensor
-            },
-            {
-                1,                                                                        // binding
-                {outputTensors[0], outputTensors[1], outputTensors[2], outputTensors[3]}, // tensor
-            },
-        },
-    };
-    auto computePipeline = std::make_shared<TensorComputePipeline>(device, descriptorMap, spirvModule);
-
-    uint8_t start = 17;
-    for (auto &inputTensor : inputTensors) {
-        std::iota(inputTensor->data(), inputTensor->data() + inputTensor->size(), start);
-        start += uint8_t(inputTensor->size());
-    }
-    for (auto &outputTensor : outputTensors) {
-        std::fill(outputTensor->data(), outputTensor->data() + outputTensor->size(), 0xFF);
-    }
-
-    computePipeline->dispatchSubmit(16, 1, 1);
-
-    for (auto &inputTensor : inputTensors) {
-        std::cout << "INPUT" << std::endl;
-        inputTensor->print();
-    }
-    for (auto &outputTensor : outputTensors) {
-        std::cout << "OUTPUT" << std::endl;
-        outputTensor->print();
-    }
-
-    for (auto i : {0U, 1U, 2U, 3U}) {
-        if (!outputTensors[i]->compare(inputTensors[i]->data(), inputTensors[i]->size())) {
-            throw std::runtime_error("Output mismatch");
-        }
-    }
-}
-
-TEST_F(MLEmulationLayerForVulkan, CreateTensorComputePipeline) {
-    auto device = createDevice();
-
-    const auto spirv = mlsdk::el::utils::glslToSpirv(fileToString("tensor.comp"));
-    auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 2, 2, 2}});
-    auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 2, 2, 2}});
-    const TensorComputePipeline::DescriptorMap descriptorMap = {
-        {
-            // set 0
-            {
-                0,             // binding
-                {inputTensor}, // tensor
-            },
-            {
-                1,              // binding
-                {outputTensor}, // tensor
-            },
-        },
-    };
-    auto computePipeline = std::make_shared<TensorComputePipeline>(device, descriptorMap, spirv);
-
-    std::iota(inputTensor->data(), inputTensor->data() + inputTensor->size(), uint8_t{});
-    computePipeline->dispatchSubmit(16, 16, 3);
-
-    std::cout << "INPUT" << std::endl;
-    inputTensor->print();
-
-    std::cout << "OUTPUT" << std::endl;
-    outputTensor->print();
-
-    const uint8_t ref[1][2][2][2] = {
-        // batch
-        {// height
-         {
-             // width
-             {0x00, 0x01}, // channel
-             {0x02, 0x03}, // channel
-         },
-         {
-             // width
-             {0x04, 0x05}, // channel
-             {0x06, 0x07}, // channel
-         }},
-    };
-
-    if (!outputTensor->compare(&ref[0][0][0][0], sizeof(ref))) {
-        throw std::runtime_error("Output mismatch");
-    }
-}
-
-TEST_F(MLEmulationLayerForVulkan, LoggerDefaultLogLevelHighSeverity) {
-    using namespace mlsdk::el::log;
-    Log testLog("VMEL_TEST_SEVERITY", "TestLog");
-
-    testLog(Severity::Debug) << "Serverity is Debug(3)\n";
-}
-
-TEST_F(MLEmulationLayerForVulkan, LoggerDefaultLogLevelLowSeverity) {
-    using namespace mlsdk::el::log;
-    Log testLog("VMEL_TEST_SEVERITY", "TestLog");
-
-    testLog(Severity::Error) << "Serverity is Error(0)\n";
-}
-
-TEST_F(MLEmulationLayerForVulkan, LoggerStdFunctions) {
-    using namespace mlsdk::el::log;
-    Log testLog("VMEL_TEST_SEVERITY", "TestLog");
-
-    testLog(Severity::Error) << "Serverity is Error(0)" << std::endl;
-    testLog(Severity::Info) << "Serverity is Info(2)" << std::endl;
-    testLog(Severity::Error) << "Serverity is Error(0)" << std::endl;
-}
-
-TEST_F(MLEmulationLayerForVulkan, LoggerVectors) {
-    using namespace mlsdk::el::log;
-    Log testLog("VMEL_TEST_SEVERITY", "TestLog");
-    const std::vector<std::string> strVector{"Hello", "World", "!"};
-    const std::vector<int> intVector{1, 2, 3, 4, 5};
-
-    testLog(Severity::Error) << strVector << "\n";
-    testLog(Severity::Error) << intVector << "\n";
-}
-
-TEST_F(MLEmulationLayerForVulkan, LoggerLineNumbers) {
-    using namespace mlsdk::el::log;
-    Log testLog("VMEL_TEST_SEVERITY", "TestLog");
-    const std::string str("Hello world\nThis is line 2\nFinal line");
-
-    testLog(Severity::Error) << StringLineNumber(str) << std::endl;
-}
-
-TEST_F(MLEmulationLayerForVulkan, LoggerHexDump) {
-    using namespace mlsdk::el::log;
-    Log testLog("VMEL_TEST_SEVERITY", "TestLog");
-    const uint8_t testchar[]{"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor "
-                             "incididunt ut labore et dolore magna "
-                             "aliqua."};
-    const auto *charPointer{testchar};
-
-    testLog(Severity::Error) << HexDump(charPointer, sizeof(testchar));
-}
-
+#ifndef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+// FIXME: Temporarily disabled in Darwin due to segfault during glslang pre-process of shader
 TEST_F(MLEmulationLayerForVulkan, NOPOutputs) {
     auto device = createDevice();
 
@@ -1378,6 +1026,367 @@ TEST_F(MLEmulationLayerForVulkan, NOPOutputs) {
                                  graphConstants[0].size())) {
         throw std::runtime_error("Output mismatch in OUTPUT_2");
     }
+}
+
+// FIXME: Temporarily disabled in Darwin due to segfault during glslang pre-process of shader
+TEST_F(MLEmulationLayerForVulkan, GraphConstantARM) {
+    auto device = createDevice();
+
+    GraphConstants graphConstants;
+
+    graphConstants.makeGraphPipelineConstantTensor(0, Shape{vk::Format::eR32Sint, {1}}, std::vector<int32_t>{2});
+    graphConstants.makeGraphPipelineConstantTensor(1, Shape{vk::Format::eR8Sint, {1}}, std::vector<int8_t>{0});
+
+    graphConstants.makeGraphPipelineConstantTensor(2, Shape{vk::Format::eR32Sint, {1}}, std::vector<int32_t>{3});
+    graphConstants.makeGraphPipelineConstantTensor(3, Shape{vk::Format::eR8Sint, {1}}, std::vector<int8_t>{0});
+
+    graphConstants.makeGraphPipelineConstantTensor(4, Shape{vk::Format::eR32Sint, {1}}, std::vector<int32_t>{4});
+    graphConstants.makeGraphPipelineConstantTensor(5, Shape{vk::Format::eR8Sint, {1}}, std::vector<int8_t>{0});
+
+    auto inputTensor0 = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{5}});
+    auto inputTensor1 = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{5}});
+    auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{5}});
+    const GraphPipeline::DescriptorMap descriptorMap = {
+        {
+            // set 0
+            {
+                0,              // binding
+                {inputTensor0}, // tensor
+            },
+            {
+                1,              // binding
+                {inputTensor1}, // tensor
+            },
+            {
+                2,              // binding
+                {outputTensor}, // tensor
+            },
+        },
+    };
+
+    std::iota(inputTensor0->data(), inputTensor0->data() + inputTensor0->size(), uint8_t{});
+    std::iota(inputTensor1->data(), inputTensor1->data() + inputTensor1->size(), uint8_t{});
+
+    const auto spirv = assembleSpirv(fileToString("graph-constant-arm.spvasm"));
+    auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, graphConstants, spirv);
+
+    graphPipeline->dispatchSubmit();
+
+    std::cout << "INPUT" << std::endl;
+    inputTensor0->print();
+
+    std::cout << "INPUT" << std::endl;
+    inputTensor1->print();
+
+    std::cout << "OUTPUT" << std::endl;
+    outputTensor->print();
+
+    const uint8_t ref[5] = {0, 20, 40, 60, 80};
+
+    if (!outputTensor->compare(&ref[0], sizeof(ref))) {
+        throw std::runtime_error("Output mismatch");
+    }
+}
+
+// FIXME: Temporarily disabled in Darwin due to segfault during glslang pre-process of shader
+TEST_F(MLEmulationLayerForVulkan, Maximum) {
+    auto device = createDevice();
+
+    auto inputTensor0 = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sint, std::vector<int64_t>{1, 2, 2, 2}});
+    auto inputTensor1 = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sint, std::vector<int64_t>{1, 2, 2, 2}});
+    auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sint, std::vector<int64_t>{1, 2, 2, 2}});
+    const GraphPipeline::DescriptorMap descriptorMap = {
+        {
+            // set 0
+            {
+                0,              // binding
+                {inputTensor0}, // tensor
+            },
+            {
+                1,              // binding
+                {inputTensor1}, // tensor
+            },
+            {
+                2,              // binding
+                {outputTensor}, // tensor
+            },
+        },
+    };
+
+    for (size_t i = 0; i < (inputTensor0->size() / sizeof(int32_t)); i++) {
+        *(reinterpret_cast<uint32_t *>(inputTensor0->data()) + i) = uint32_t(i);
+    }
+
+    for (size_t i = 0; i < (inputTensor1->size() / sizeof(int32_t)); i++) {
+        *(reinterpret_cast<uint32_t *>(inputTensor1->data()) + i) = static_cast<uint32_t>(-16) + uint32_t(i * 4);
+    }
+
+    const auto spirv = assembleSpirv(fileToString("maximum.spvasm"));
+    auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, GraphConstants{}, spirv);
+
+    graphPipeline->dispatchSubmit();
+
+    std::cout << "INPUT" << std::endl;
+    inputTensor0->print();
+
+    std::cout << "INPUT" << std::endl;
+    inputTensor1->print();
+
+    std::cout << "OUTPUT" << std::endl;
+    outputTensor->print();
+
+    const int32_t ref[1][2][2][2] = {
+        // batch
+        {
+            // height
+            {
+                // width
+                {0x00, 0x01}, // channel
+                {0x02, 0x03}, // channel
+            },
+            {
+                // width
+                {0x04, 0x05}, // channel
+                {0x08, 0x0c}, // channel
+            },
+        },
+    };
+
+    if (!outputTensor->compare(&ref[0][0][0][0], sizeof(ref))) {
+        throw std::runtime_error("Output mismatch");
+    }
+}
+
+// FIXME: Temporarily disabled in Darwin due to segfault during glslang pre-process of shader
+TEST_F(MLEmulationLayerForVulkan, FFT2D) {
+    auto device = createDevice();
+
+    auto inputTensor0 =
+        std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{1, 4, 4096}});
+    auto inputTensor1 =
+        std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{1, 4, 4096}});
+    auto outputTensor0 =
+        std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{1, 4, 4096}});
+    auto outputTensor1 =
+        std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{1, 4, 4096}});
+    const GraphPipeline::DescriptorMap descriptorMap = {
+        {
+            // set 0
+            {
+                0,              // binding
+                {inputTensor0}, // tensor
+            },
+            {
+                1,              // binding
+                {inputTensor1}, // tensor
+            },
+            {
+                2,               // binding
+                {outputTensor0}, // tensor
+            },
+            {
+                3,               // binding
+                {outputTensor1}, // tensor
+            },
+        },
+    };
+    const auto spirv = assembleSpirv(fileToString("fft2d.spvasm"));
+    auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, GraphConstants{}, spirv);
+
+    graphPipeline->dispatchSubmit();
+
+    std::cout << "INPUT 0" << std::endl;
+    inputTensor0->print();
+
+    std::cout << "INPUT 1" << std::endl;
+    inputTensor1->print();
+
+    std::cout << "OUTPUT 0" << std::endl;
+    outputTensor0->print();
+
+    std::cout << "OUTPUT 1" << std::endl;
+    outputTensor1->print();
+}
+
+vk::raii::ShaderModule createShaderModule(const vk::raii::Device &device, const std::vector<uint32_t> &code) {
+    const vk::ShaderModuleCreateInfo info{
+        {},                                                    // flags
+        static_cast<uint32_t>(code.size() * sizeof(uint32_t)), // code size
+        code.data()                                            // code
+    };
+
+    return vk::raii::ShaderModule(device, info);
+}
+
+// FIXME: Temporarily disabled in Darwin due to not being able to pass SSBO's to functions
+TEST_F(MLEmulationLayerForVulkan, CreateTensorComputeShader) {
+    auto device = createDevice();
+
+    const auto spirvModule = mlsdk::el::utils::glslToSpirv(fileToString("tensor_all_access.comp"));
+    [[maybe_unused]] const auto shaderModule = createShaderModule((&(*device)), spirvModule);
+}
+
+// FIXME: Temporarily disabled in Darwin due to not being able to pass SSBO's to functions
+TEST_F(MLEmulationLayerForVulkan, TensorArray) {
+    auto device = createDevice();
+
+    const auto spirvModule = mlsdk::el::utils::glslToSpirv(fileToString("tensor_array.comp"));
+    [[maybe_unused]] const auto shaderModule = createShaderModule((&(*device)), spirvModule);
+    std::vector<std::shared_ptr<Tensor>> inputTensors;
+    std::vector<std::shared_ptr<Tensor>> outputTensors;
+    for ([[maybe_unused]] auto _ : {1, 2, 3, 4}) {
+        auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{4}});
+        inputTensors.push_back(std::move(inputTensor));
+    }
+    for ([[maybe_unused]] auto _ : {1, 2, 3, 4}) {
+        auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{4}});
+        outputTensors.push_back(std::move(outputTensor));
+    }
+
+    const TensorComputePipeline::DescriptorMap descriptorMap = {
+        {
+            // set 0
+            {
+                0,                                                                    // binding
+                {inputTensors[0], inputTensors[1], inputTensors[2], inputTensors[3]}, // tensor
+            },
+            {
+                1,                                                                        // binding
+                {outputTensors[0], outputTensors[1], outputTensors[2], outputTensors[3]}, // tensor
+            },
+        },
+    };
+    auto computePipeline = std::make_shared<TensorComputePipeline>(device, descriptorMap, spirvModule);
+
+    uint8_t start = 17;
+    for (auto &inputTensor : inputTensors) {
+        std::iota(inputTensor->data(), inputTensor->data() + inputTensor->size(), start);
+        start += uint8_t(inputTensor->size());
+    }
+    for (auto &outputTensor : outputTensors) {
+        std::fill(outputTensor->data(), outputTensor->data() + outputTensor->size(), 0xFF);
+    }
+
+    computePipeline->dispatchSubmit(16, 1, 1);
+
+    for (auto &inputTensor : inputTensors) {
+        std::cout << "INPUT" << std::endl;
+        inputTensor->print();
+    }
+    for (auto &outputTensor : outputTensors) {
+        std::cout << "OUTPUT" << std::endl;
+        outputTensor->print();
+    }
+
+    for (auto i : {0U, 1U, 2U, 3U}) {
+        if (!outputTensors[i]->compare(inputTensors[i]->data(), inputTensors[i]->size())) {
+            throw std::runtime_error("Output mismatch");
+        }
+    }
+}
+
+// FIXME: Temporarily disabled in Darwin due to not being able to pass SSBO's to functions
+TEST_F(MLEmulationLayerForVulkan, CreateTensorComputePipeline) {
+    auto device = createDevice();
+
+    const auto spirv = mlsdk::el::utils::glslToSpirv(fileToString("tensor.comp"));
+    auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 2, 2, 2}});
+    auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 2, 2, 2}});
+    const TensorComputePipeline::DescriptorMap descriptorMap = {
+        {
+            // set 0
+            {
+                0,             // binding
+                {inputTensor}, // tensor
+            },
+            {
+                1,              // binding
+                {outputTensor}, // tensor
+            },
+        },
+    };
+    auto computePipeline = std::make_shared<TensorComputePipeline>(device, descriptorMap, spirv);
+
+    std::iota(inputTensor->data(), inputTensor->data() + inputTensor->size(), uint8_t{});
+    computePipeline->dispatchSubmit(16, 16, 3);
+
+    std::cout << "INPUT" << std::endl;
+    inputTensor->print();
+
+    std::cout << "OUTPUT" << std::endl;
+    outputTensor->print();
+
+    const uint8_t ref[1][2][2][2] = {
+        // batch
+        {// height
+         {
+             // width
+             {0x00, 0x01}, // channel
+             {0x02, 0x03}, // channel
+         },
+         {
+             // width
+             {0x04, 0x05}, // channel
+             {0x06, 0x07}, // channel
+         }},
+    };
+
+    if (!outputTensor->compare(&ref[0][0][0][0], sizeof(ref))) {
+        throw std::runtime_error("Output mismatch");
+    }
+}
+#endif
+
+TEST_F(MLEmulationLayerForVulkan, LoggerDefaultLogLevelHighSeverity) {
+    using namespace mlsdk::el::log;
+    Log testLog("VMEL_TEST_SEVERITY", "TestLog");
+
+    testLog(Severity::Debug) << "Serverity is Debug(3)\n";
+}
+
+TEST_F(MLEmulationLayerForVulkan, LoggerDefaultLogLevelLowSeverity) {
+    using namespace mlsdk::el::log;
+    Log testLog("VMEL_TEST_SEVERITY", "TestLog");
+
+    testLog(Severity::Error) << "Serverity is Error(0)\n";
+}
+
+TEST_F(MLEmulationLayerForVulkan, LoggerStdFunctions) {
+    using namespace mlsdk::el::log;
+    Log testLog("VMEL_TEST_SEVERITY", "TestLog");
+
+    testLog(Severity::Error) << "Serverity is Error(0)" << std::endl;
+    testLog(Severity::Info) << "Serverity is Info(2)" << std::endl;
+    testLog(Severity::Error) << "Serverity is Error(0)" << std::endl;
+}
+
+TEST_F(MLEmulationLayerForVulkan, LoggerVectors) {
+    using namespace mlsdk::el::log;
+    Log testLog("VMEL_TEST_SEVERITY", "TestLog");
+    const std::vector<std::string> strVector{"Hello", "World", "!"};
+    const std::vector<int> intVector{1, 2, 3, 4, 5};
+
+    testLog(Severity::Error) << strVector << "\n";
+    testLog(Severity::Error) << intVector << "\n";
+}
+
+TEST_F(MLEmulationLayerForVulkan, LoggerLineNumbers) {
+    using namespace mlsdk::el::log;
+    Log testLog("VMEL_TEST_SEVERITY", "TestLog");
+    const std::string str("Hello world\nThis is line 2\nFinal line");
+
+    testLog(Severity::Error) << StringLineNumber(str) << std::endl;
+}
+
+TEST_F(MLEmulationLayerForVulkan, LoggerHexDump) {
+    using namespace mlsdk::el::log;
+    Log testLog("VMEL_TEST_SEVERITY", "TestLog");
+    const uint8_t testchar[]{"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor "
+                             "incididunt ut labore et dolore magna "
+                             "aliqua."};
+    const auto *charPointer{testchar};
+
+    testLog(Severity::Error) << HexDump(charPointer, sizeof(testchar));
 }
 
 TEST_F(MLEmulationLayerForVulkan, CopyLargeNonPackedTensor) {
