@@ -795,19 +795,22 @@ class TensorLayer : public VulkanLayerImpl {
 
         handle->loader->vkGetPhysicalDeviceProperties2(physicalDevice, pProperties);
 
+        const auto &limits = pProperties->properties.limits;
+
         if (tensorProps.current) {
             tensorProps.current->maxTensorDimensionCount = TensorARM::TENSOR_MAX_DIMENSIONS;
-            tensorProps.current->maxTensorElements = pProperties->properties.limits.maxStorageBufferRange;
-            tensorProps.current->maxTensorStride = pProperties->properties.limits.maxStorageBufferRange;
-            tensorProps.current->maxDescriptorSetStorageTensors = std::numeric_limits<uint32_t>::max();
-            tensorProps.current->maxPerStageDescriptorSetStorageTensors = std::numeric_limits<uint32_t>::max();
-            tensorProps.current->maxDescriptorSetUpdateAfterBindStorageTensors = std::numeric_limits<uint32_t>::max();
+            tensorProps.current->maxTensorElements = limits.maxStorageBufferRange;
+            tensorProps.current->maxTensorStride = limits.maxStorageBufferRange;
+            tensorProps.current->maxTensorShaderAccessArrayLength = std::numeric_limits<uint8_t>::max();
+            tensorProps.current->maxTensorShaderAccessSize = limits.maxStorageBufferRange;
+            tensorProps.current->maxDescriptorSetStorageTensors = limits.maxDescriptorSetUniformBuffers;
+            tensorProps.current->maxDescriptorSetUpdateAfterBindStorageTensors = limits.maxDescriptorSetUniformBuffers;
+            tensorProps.current->maxPerStageDescriptorSetStorageTensors = limits.maxPerStageDescriptorUniformBuffers;
             tensorProps.current->maxPerStageDescriptorUpdateAfterBindStorageTensors =
-                std::numeric_limits<uint32_t>::max();
+                limits.maxPerStageDescriptorUniformBuffers;
             tensorProps.current->shaderStorageTensorArrayNonUniformIndexingNative = false;
             tensorProps.current->shaderTensorSupportedStages =
                 VkShaderStageFlagBits::VK_SHADER_STAGE_COMPUTE_BIT; // EL only supports tensors in compute shaders
-
             insertType(tensorProps);
         }
     }
