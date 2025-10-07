@@ -48,6 +48,8 @@
                     "vkGetDeviceQueue",
                     "vkGetDeviceQueue2",
                     "vkGetPhysicalDeviceFeatures2",
+                    "vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM",
+                    "vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM",
                     "vkGetPhysicalDeviceQueueFamilyProperties",
                     "vkSetDebugUtilsObjectNameEXT",
                     "vkUpdateDescriptorSets"
