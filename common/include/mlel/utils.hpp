@@ -22,13 +22,11 @@ constexpr int EXPERIMENTAL_MVK_BUFFER_BINDING_OFFSET = 1000;
 
 namespace mlsdk::el::utils {
 
-namespace {
-template <typename T> inline T roundUp(const T data, size_t multiple) {
+template <typename T> T roundUp(const T data, size_t multiple) {
     return static_cast<T>(((data + multiple - 1) / multiple) * multiple);
 }
 
 inline uint32_t divideRoundUp(const uint32_t value, const uint32_t divide) { return (value + divide - 1) / divide; }
-} // namespace
 
 std::vector<uint32_t> glslToSpirv(const std::string &glsl);
 

@@ -257,17 +257,17 @@ class GraphLayer : public VulkanLayerImpl {
             {"vkGetDeviceProcAddr", PFN_vkVoidFunction(vkGetDeviceProcAddr)},
 
             // Graph extension
+            {"vkBindDataGraphPipelineSessionMemoryARM", PFN_vkVoidFunction(vkBindDataGraphPipelineSessionMemoryARM)},
             {"vkCreateDataGraphPipelinesARM", PFN_vkVoidFunction(vkCreateDataGraphPipelinesARM)},
             {"vkCreateDataGraphPipelineSessionARM", PFN_vkVoidFunction(vkCreateDataGraphPipelineSessionARM)},
-            {"vkGetDataGraphPipelineSessionBindPointRequirementsARM",
-             PFN_vkVoidFunction(vkGetDataGraphPipelineSessionBindPointRequirementsARM)},
-            {"vkGetDataGraphPipelineSessionMemoryRequirementsARM",
-             PFN_vkVoidFunction(vkGetDataGraphPipelineSessionMemoryRequirementsARM)},
-            {"vkBindDataGraphPipelineSessionMemoryARM", PFN_vkVoidFunction(vkBindDataGraphPipelineSessionMemoryARM)},
             {"vkDestroyDataGraphPipelineSessionARM", PFN_vkVoidFunction(vkDestroyDataGraphPipelineSessionARM)},
             {"vkGetDataGraphPipelineAvailablePropertiesARM",
              PFN_vkVoidFunction(vkGetDataGraphPipelineAvailablePropertiesARM)},
             {"vkGetDataGraphPipelinePropertiesARM", PFN_vkVoidFunction(vkGetDataGraphPipelinePropertiesARM)},
+            {"vkGetDataGraphPipelineSessionBindPointRequirementsARM",
+             PFN_vkVoidFunction(vkGetDataGraphPipelineSessionBindPointRequirementsARM)},
+            {"vkGetDataGraphPipelineSessionMemoryRequirementsARM",
+             PFN_vkVoidFunction(vkGetDataGraphPipelineSessionMemoryRequirementsARM)},
 
             // Pipeline
             {"vkDestroyPipeline", PFN_vkVoidFunction(vkDestroyPipeline)},

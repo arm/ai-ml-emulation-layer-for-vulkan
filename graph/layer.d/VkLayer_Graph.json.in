@@ -43,6 +43,8 @@
                     "vkEnumeratePhysicalDevices",
                     "vkFreeCommandBuffers",
                     "vkFreeDescriptorSets",
+                    "vkGetDataGraphPipelineAvailablePropertiesARM",
+                    "vkGetDataGraphPipelinePropertiesARM",
                     "vkGetDeviceQueue",
                     "vkGetDeviceQueue2",
                     "vkGetPhysicalDeviceFeatures2",
