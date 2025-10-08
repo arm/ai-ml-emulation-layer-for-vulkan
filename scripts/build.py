@@ -66,6 +66,12 @@ class Builder:
                 )
                 cmake_cmd.append("-DMSVC=ON")
                 return True
+            # Support for macOS is experimental
+            if system == "Darwin":
+                cmake_cmd.append(
+                    f"-DCMAKE_TOOLCHAIN_FILE={CMAKE_TOOLCHAIN_PATH / 'clang.cmake'}"
+                )
+                return True
             print(f"Unsupported host platform {system}", file=sys.stderr)
             return False
         if self.target_platform == "linux-clang":
