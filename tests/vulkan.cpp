@@ -1875,3 +1875,21 @@ TEST_F(MLEmulationLayerForVulkan, PipelineCreationFeedback) {
     ASSERT_TRUE(creationFeedback.flags & vk::PipelineCreationFeedbackFlagBits::eValid);
     ASSERT_GT(creationFeedback.duration, 0);
 }
+
+TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelineAvailablePropertiesARM) {
+    const auto device = createDevice();
+    const auto &vkDevice = &(*device);
+
+    vk::DataGraphPipelineInfoARM info;
+    const auto result = vkDevice.getDataGraphPipelineAvailablePropertiesARM(info);
+    ASSERT_TRUE(result.empty());
+}
+
+TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelinePropertiesARM) {
+    const auto device = createDevice();
+    const auto &vkDevice = &(*device);
+
+    vk::DataGraphPipelineInfoARM info;
+    const auto result = vkDevice.getDataGraphPipelinePropertiesARM(&info, 0, nullptr);
+    ASSERT_EQ(result, vk::Result::eSuccess);
+}

@@ -30,16 +30,13 @@
 
 namespace mlsdk::el::layer {
 
-namespace {
-
 #if defined(_WIN64) || defined(_WIN32)
 #    define LAYER_EXPORT _declspec(dllexport)
 #else
 #    define LAYER_EXPORT
 #endif
 
-mlsdk::el::log::Log layerLog("VMEL_COMMON_SEVERITY", "Layer");
-} // namespace
+static inline mlsdk::el::log::Log layerLog("VMEL_COMMON_SEVERITY", "Layer");
 
 template <typename T> struct LinkedType {
     LinkedType() : parent(nullptr), current(nullptr) {}

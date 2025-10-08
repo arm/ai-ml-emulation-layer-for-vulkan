@@ -20,8 +20,7 @@ namespace mlsdk::el::utilities {
  * Defines
  *******************************************************************************/
 
-namespace {
-void VK_ASSERT(const bool result, const std::string &message = "") {
+inline void VK_ASSERT(const bool result, const std::string &message = "") {
     if (!result) {
         throw std::runtime_error(message);
     }
@@ -42,6 +41,5 @@ template <typename T, typename U> void VK_ASSERT_GE(const T &left, const U &righ
 template <typename T, typename U> void VK_ASSERT_GT(const T &left, const U &right, const std::string &message = "") {
     VK_ASSERT(left > right, message);
 }
-} // namespace
 
 } // namespace mlsdk::el::utilities
