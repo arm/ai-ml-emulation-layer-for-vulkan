@@ -475,14 +475,22 @@ class GraphLayer : public VulkanLayerImpl {
     static void VKAPI_CALL vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
                                                         VkPhysicalDeviceFeatures2 *pFeatures) {
         auto handle = VulkanLayerImpl::getHandle(physicalDevice);
+        handle->loader->vkGetPhysicalDeviceFeatures2(physicalDevice, pFeatures);
+
         auto pDataGraphFeatures =
             const_cast<VkPhysicalDeviceDataGraphFeaturesARM *>(findType<VkPhysicalDeviceDataGraphFeaturesARM>(
                 pFeatures->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM));
-        handle->loader->vkGetPhysicalDeviceFeatures2(physicalDevice, pFeatures);
         if (pDataGraphFeatures) {
             pDataGraphFeatures->dataGraph = VK_TRUE;
             pDataGraphFeatures->dataGraphUpdateAfterBind = VK_TRUE;
             pDataGraphFeatures->dataGraphShaderModule = VK_TRUE;
+        }
+        auto pPipelineCreationCacheControlFeatures = const_cast<VkPhysicalDevicePipelineCreationCacheControlFeatures *>(
+            findType<VkPhysicalDevicePipelineCreationCacheControlFeatures>(
+                pFeatures->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_CREATION_CACHE_CONTROL_FEATURES));
+        // Pipeline caching is currently not supported
+        if (pPipelineCreationCacheControlFeatures) {
+            pPipelineCreationCacheControlFeatures->pipelineCreationCacheControl = VK_FALSE;
         }
     }
 
