@@ -383,9 +383,10 @@ class GraphLayer : public VulkanLayerImpl {
                 startTime = std::chrono::high_resolution_clock::now();
             }
 
-            const auto *shaderModuleCreateInfo = findType<VkDataGraphPipelineShaderModuleCreateInfoARM>(
-                createInfo.pNext, VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SHADER_MODULE_CREATE_INFO_ARM);
-            if (shaderModuleCreateInfo == nullptr) {
+            const auto *dataGraphPipelineShaderModuleCreateInfo =
+                findType<VkDataGraphPipelineShaderModuleCreateInfoARM>(
+                    createInfo.pNext, VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SHADER_MODULE_CREATE_INFO_ARM);
+            if (dataGraphPipelineShaderModuleCreateInfo == nullptr) {
                 graphLog(Severity::Error) << "Missing shader module create info" << std::endl;
                 return VK_ERROR_UNKNOWN;
             }
@@ -412,8 +413,8 @@ class GraphLayer : public VulkanLayerImpl {
             }
 
             // Constants
-            for (uint32_t j = 0; j < shaderModuleCreateInfo->constantCount; j++) {
-                const auto &constant = shaderModuleCreateInfo->pConstants[j];
+            for (uint32_t j = 0; j < dataGraphPipelineShaderModuleCreateInfo->constantCount; j++) {
+                const auto &constant = dataGraphPipelineShaderModuleCreateInfo->pConstants[j];
 
                 const auto *graphPipelineConstantTensor =
                     findType<VkTensorDescriptionARM>(constant.pNext, VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM);
@@ -425,8 +426,31 @@ class GraphLayer : public VulkanLayerImpl {
 
                 graphPipeline->makeConstTensor(constant.id, *graphPipelineConstantTensor, constant.pConstantData);
             }
+            std::shared_ptr<ShaderModule> shaderModule;
+            if (dataGraphPipelineShaderModuleCreateInfo->module == VK_NULL_HANDLE) {
+                auto shaderModuleCreateInfo =
+                    findType<VkShaderModuleCreateInfo>(createInfo.pNext, VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);
+                if (shaderModuleCreateInfo == nullptr) {
+                    graphLog(Severity::Error) << "Missing both shader handle and shader create info" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
 
-            auto shaderModule = getHandle(deviceHandle, shaderModuleCreateInfo->module);
+                std::vector<uint32_t> spirvSource = {shaderModuleCreateInfo->pCode,
+                                                     shaderModuleCreateInfo->pCode +
+                                                         shaderModuleCreateInfo->codeSize / sizeof(uint32_t)};
+                auto isGraph = isGraphSpirv(spirvSource);
+                if (!isGraph.has_value()) {
+                    graphLog(Severity::Error) << "Failed to compile spirv code." << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                } else if (isGraph.value()) {
+                    shaderModule = std::make_shared<ShaderModule>(shaderModuleCreateInfo);
+                } else {
+                    graphLog(Severity::Error) << "spirv code does not contain graph." << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+            } else {
+                shaderModule = getHandle(deviceHandle, dataGraphPipelineShaderModuleCreateInfo->module);
+            }
 
             if (!shaderModule) {
                 graphLog(Severity::Error) << "Shader module not recognized by Graph layer" << std::endl;
