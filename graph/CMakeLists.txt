@@ -12,6 +12,11 @@ add_library(VkLayer_Graph SHARED)
 
 add_library(${ML_SDK_EL_NAMESPACE}::VkLayer_Graph ALIAS VkLayer_Graph)
 
+if(WIN32)
+  # Ensure the Windows DLL exports the exact Vulkan loader entry points
+  target_sources(VkLayer_Graph PRIVATE VkLayer_Graph.def)
+endif()
+
 target_compile_options(VkLayer_Graph PRIVATE ${VMEL_COMPILE_OPTIONS})
 
 target_sources(VkLayer_Graph PRIVATE

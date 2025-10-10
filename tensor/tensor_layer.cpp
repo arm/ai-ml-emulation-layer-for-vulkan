@@ -890,15 +890,15 @@ class TensorLayer : public VulkanLayerImpl {
 extern "C" {
 using namespace mlsdk::el::layer;
 
-LAYER_EXPORT PFN_vkVoidFunction VKAPI_CALL tensorGetInstanceProcAddr(VkInstance instance, const char *name) {
+PFN_vkVoidFunction VKAPI_CALL tensorGetInstanceProcAddr(VkInstance instance, const char *name) {
     return TensorLayer::vkGetInstanceProcAddr(instance, name);
 }
 
-LAYER_EXPORT PFN_vkVoidFunction VKAPI_CALL tensorGetDeviceProcAddr(VkDevice device, const char *name) {
+PFN_vkVoidFunction VKAPI_CALL tensorGetDeviceProcAddr(VkDevice device, const char *name) {
     return TensorLayer::vkGetDeviceProcAddr(device, name);
 }
 
-LAYER_EXPORT PFN_vkVoidFunction VKAPI_CALL vk_layerGetPhysicalDeviceProcAddr(VkInstance instance, const char *pName) {
+PFN_vkVoidFunction VKAPI_CALL vk_layerGetPhysicalDeviceProcAddr(VkInstance instance, const char *pName) {
     return TensorLayer::vk_layerGetPhysicalDeviceProcAddr(instance, pName);
 }
 
