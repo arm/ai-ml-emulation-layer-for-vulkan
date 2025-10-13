@@ -4,11 +4,12 @@
 #
 Checks: >
     -*,
-    modernize-use-nullptr,
     modernize-deprecated-headers,
+    modernize-make-unique,
+    modernize-use-nullptr,
     modernize-use-override,
-    modernize-use-using,
-    modernize-make-unique
+    modernize-use-using
+
 WarningsAsErrors: '*'
-HeaderFilterRegex: ''
+HeaderFilterRegex: '.*'
 FormatStyle: file

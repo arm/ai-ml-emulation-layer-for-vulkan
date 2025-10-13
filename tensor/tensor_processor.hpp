@@ -7,8 +7,8 @@
 #pragma once
 #include "spirv_glsl_tensor_buffer.hpp"
 
+#include <cstdint>
 #include <memory>
-#include <stdint.h>
 #include <vector>
 
 namespace mlsdk::el::layer {
