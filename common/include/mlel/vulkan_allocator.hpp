@@ -19,7 +19,7 @@
 namespace mlsdk::el::layer {
 
 template <class T> struct Allocator {
-    typedef T value_type;
+    using value_type = T;
 
     template <class U> constexpr explicit Allocator(const Allocator<U> &) noexcept {}
 

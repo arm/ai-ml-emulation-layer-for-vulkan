@@ -35,10 +35,10 @@ class GraphPassBase : public Pass {
   public:
     GraphPassBase(mlsdk::el::compute::GraphPipeline &_graphPipeline) : graphPipeline{_graphPipeline} {}
 
-    virtual ~GraphPassBase() = default;
+    ~GraphPassBase() override = default;
 
   protected:
-    Status Process();
+    Status Process() override;
     virtual void handleGraph(const Graph *graph) = 0;
 
     void handleGraphConstants();
