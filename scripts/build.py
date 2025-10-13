@@ -38,6 +38,7 @@ class Builder:
         self.package_source = args.package_source
         self.package_version = args.package_version
         self.target_platform = args.target_platform
+        self.cmake_toolchain_for_android = args.cmake_toolchain_for_android
         self.disable_precompile_shaders = args.disable_precompile_shaders
         self.doc = args.doc
 
@@ -90,6 +91,27 @@ class Builder:
             cmake_cmd.append(
                 f"-DCMAKE_TOOLCHAIN_FILE={CMAKE_TOOLCHAIN_PATH / 'linux-aarch64-gcc.cmake'}"
             )
+            return True
+
+        if self.target_platform == "android":
+            print(
+                "WARNING: Cross-compiling Emulation Layer for Android is currently an experimental feature."
+            )
+            if not self.cmake_toolchain_for_android:
+                print(
+                    "No toolchain path specified for Android cross-compilation",
+                    file=sys.stderr,
+                )
+                return False
+
+            cmake_cmd.append(
+                f"-DCMAKE_TOOLCHAIN_FILE={self.cmake_toolchain_for_android}"
+            )
+            cmake_cmd.append("-DCMAKE_FIND_ROOT_PATH=/")
+            cmake_cmd.append("-DANDROID_ABI=arm64-v8a")
+            cmake_cmd.append("-DANDROID_PLATFORM=android-21")
+            cmake_cmd.append("-DANDROID_ALLOW_UNDEFINED_SYMBOLS=ON")
+            cmake_cmd.append("-DANDROID_PIE=ON")
             return True
 
         print(
@@ -356,8 +378,13 @@ def parse_arguments():
     parser.add_argument(
         "--target-platform",
         help="Specify the target build platform",
-        choices=["host", "aarch64", "linux-clang"],
+        choices=["host", "android", "aarch64", "linux-clang"],
         default="host",
+    )
+    parser.add_argument(
+        "--cmake-toolchain-for-android",
+        help="Path to the cmake compiler toolchain. Default: %(default)s",
+        default="",
     )
     parser.add_argument(
         "--doc",
