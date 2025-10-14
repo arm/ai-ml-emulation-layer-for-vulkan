@@ -934,8 +934,6 @@ TEST_F(MLEmulationLayerForVulkan, Slice) {
     }
 }
 
-#ifndef EXPERIMENTAL_MOLTEN_VK_SUPPORT
-// FIXME: Temporarily disabled in Darwin due to segfault during glslang pre-process of shader
 TEST_F(MLEmulationLayerForVulkan, NOPOutputs) {
     auto device = createDevice();
 
@@ -1028,7 +1026,6 @@ TEST_F(MLEmulationLayerForVulkan, NOPOutputs) {
     }
 }
 
-// FIXME: Temporarily disabled in Darwin due to segfault during glslang pre-process of shader
 TEST_F(MLEmulationLayerForVulkan, GraphConstantARM) {
     auto device = createDevice();
 
@@ -1088,7 +1085,6 @@ TEST_F(MLEmulationLayerForVulkan, GraphConstantARM) {
     }
 }
 
-// FIXME: Temporarily disabled in Darwin due to segfault during glslang pre-process of shader
 TEST_F(MLEmulationLayerForVulkan, Maximum) {
     auto device = createDevice();
 
@@ -1157,7 +1153,6 @@ TEST_F(MLEmulationLayerForVulkan, Maximum) {
     }
 }
 
-// FIXME: Temporarily disabled in Darwin due to segfault during glslang pre-process of shader
 TEST_F(MLEmulationLayerForVulkan, FFT2D) {
     auto device = createDevice();
 
@@ -1208,6 +1203,7 @@ TEST_F(MLEmulationLayerForVulkan, FFT2D) {
     outputTensor1->print();
 }
 
+#ifndef EXPERIMENTAL_MOLTEN_VK_SUPPORT
 vk::raii::ShaderModule createShaderModule(const vk::raii::Device &device, const std::vector<uint32_t> &code) {
     const vk::ShaderModuleCreateInfo info{
         {},                                                    // flags
