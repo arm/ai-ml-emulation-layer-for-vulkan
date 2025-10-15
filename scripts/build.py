@@ -17,8 +17,10 @@ try:
 except:
     argcomplete = None
 
-EMULATION_LAYER_DIR = pathlib.Path(__file__).resolve().parent / ".."
+EMULATION_LAYER_DIR = pathlib.Path(__file__).parent / ".."
+EMULATION_LAYER_DIR = EMULATION_LAYER_DIR.resolve()
 DEPENDENCY_DIR = EMULATION_LAYER_DIR / ".." / ".." / "dependencies"
+DEPENDENCY_DIR = DEPENDENCY_DIR.resolve()
 CMAKE_TOOLCHAIN_PATH = EMULATION_LAYER_DIR / "cmake" / "toolchain"
 
 
@@ -41,6 +43,7 @@ class Builder:
         self.cmake_toolchain_for_android = args.cmake_toolchain_for_android
         self.disable_precompile_shaders = args.disable_precompile_shaders
         self.doc = args.doc
+        self.clang_tidy_fix = args.clang_tidy_fix
 
         # Dependencies
         self.vulkan_headers_path = args.vulkan_headers_path
@@ -204,6 +207,11 @@ class Builder:
             subprocess.run(cmake_setup_cmd, check=True)
             subprocess.run(cmake_build_cmd, check=True)
 
+            if self.clang_tidy_fix and not self.lint:
+                print(
+                    "WARNING: --clang-tidy-fix requires --lint to be enabled, argument ignored."
+                )
+
             if self.lint:
                 lint_cmd = [
                     "cppcheck",
@@ -228,6 +236,22 @@ class Builder:
                     f"--suppress=*:{self.gtest_path}*",
                 ]
                 subprocess.run(lint_cmd, check=True)
+
+                clang_tidy_cmd = [
+                    "run-clang-tidy",
+                    f"-j{self.threads}",
+                    f"-p{self.build_dir}",
+                    f"{EMULATION_LAYER_DIR / 'common'}",
+                    f"{EMULATION_LAYER_DIR / 'graph'}",
+                    f"{EMULATION_LAYER_DIR / 'tensor'}",
+                    f"{EMULATION_LAYER_DIR / 'tests'}",
+                    f"{EMULATION_LAYER_DIR / 'utilities'}",
+                ]
+
+                if self.clang_tidy_fix:
+                    clang_tidy_cmd.append("-fix")
+
+                subprocess.run(clang_tidy_cmd, check=True)
 
             if self.install:
                 cmake_install_cmd = [
@@ -419,6 +443,12 @@ def parse_arguments():
     parser.add_argument(
         "--enable-sanitizers",
         help="Enable sanitizers. Default: %(default)s",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--clang-tidy-fix",
+        help="Enable clang-tidy fix (requires --lint). Default: %(default)s",
         action="store_true",
         default=False,
     )
