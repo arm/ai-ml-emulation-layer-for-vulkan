@@ -146,6 +146,49 @@ float log_guarded(float x) {
     return x < 0.0 ? NAN : log(x);
 }
 
+#define HALF_PI    1.570796326794896619231321691639751442099
+#define TWO_PI     6.283185307179586476925286766559005768394
+#define INV_TWO_PI 0.159154943091895335768883763372514362034
+
+// Reduce angle -> reducedAngle in [-pi/2, pi/2] and track sin sign
+precise void reduce_to_half_pi(in float angle, out float reducedAngle, out float sign) {
+     // Nearest integer multiple of 2*pi
+    float nearestTwoPiMultiple = round(angle * INV_TWO_PI);
+
+    // Bring angle into principal range ~[-pi, pi]
+    float principalAngle = angle - nearestTwoPiMultiple * TWO_PI;
+
+    // Map to [-pi/2, pi/2] and determine sign of sin based on quadrant
+    sign = 1.0;
+    if (principalAngle >  HALF_PI) { // Quadrant II
+        reducedAngle =  PI - principalAngle;
+        sign =  1.0;
+    } else if (principalAngle < -HALF_PI) { // Quadrant III
+        reducedAngle = -PI - principalAngle;
+        sign = -1.0;
+    } else { // Quadrant I/IV
+        reducedAngle = principalAngle;
+        sign = 1.0;
+    }
+}
+
+
+// Split pi/2 so (pi/2 - reducedAngle) forms with less cancellation in float
+#define HALF_PI_HI 1.57079625129699707031
+#define HALF_PI_LO 7.54978941586159635335e-08
+
+precise float sin_to_cos(float angle) {
+    float reducedAngle, sign;
+    reduce_to_half_pi(angle, reducedAngle, sign);
+
+    // Well-conditioned shift: cosInput ~= (PI/2 − reducedAngle)
+    float cosInput = (HALF_PI_HI - reducedAngle) + HALF_PI_LO;
+
+    float value = cos(cosInput);
+    return sign * value;
+}
+
+
 void main() {
     uint[RANK] index;
     getIndex(outputData, index);

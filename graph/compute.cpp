@@ -2785,8 +2785,8 @@ void GraphPipeline::makeSigmoid(const std::shared_ptr<TensorDescriptor> &input,
 
 void GraphPipeline::makeSin(const std::shared_ptr<TensorDescriptor> &input1,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline =
-        std::make_shared<ElementwiseUnary>(loader, device, pipelineCache, input1, output, debugName, "sin(value1)");
+    auto pipeline = std::make_shared<ElementwiseUnary>(loader, device, pipelineCache, input1, output, debugName,
+                                                       "sin_to_cos(value1)");
     pipelines.emplace_back(pipeline);
 }
 
