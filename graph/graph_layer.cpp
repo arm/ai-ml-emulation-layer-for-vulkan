@@ -1080,15 +1080,15 @@ class GraphLayer : public VulkanLayerImpl {
 extern "C" {
 using namespace mlsdk::el::layer;
 
-LAYER_EXPORT PFN_vkVoidFunction VKAPI_CALL graphGetInstanceProcAddr(VkInstance instance, const char *name) {
+PFN_vkVoidFunction VKAPI_CALL graphGetInstanceProcAddr(VkInstance instance, const char *name) {
     return GraphLayer::vkGetInstanceProcAddr(instance, name);
 }
 
-LAYER_EXPORT PFN_vkVoidFunction VKAPI_CALL graphGetDeviceProcAddr(VkDevice device, const char *name) {
+PFN_vkVoidFunction VKAPI_CALL graphGetDeviceProcAddr(VkDevice device, const char *name) {
     return GraphLayer::vkGetDeviceProcAddr(device, name);
 }
 
-LAYER_EXPORT PFN_vkVoidFunction VKAPI_CALL vk_layerGetPhysicalDeviceProcAddr(VkInstance instance, const char *name) {
+PFN_vkVoidFunction VKAPI_CALL vk_layerGetPhysicalDeviceProcAddr(VkInstance instance, const char *name) {
     return GraphLayer::vk_layerGetPhysicalDeviceProcAddr(instance, name);
 }
 

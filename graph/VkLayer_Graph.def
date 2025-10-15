@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+#
+
+LIBRARY VkLayer_Graph
+EXPORTS
+    vkNegotiateLoaderLayerInterfaceVersion
+    vkGetInstanceProcAddr = graphGetInstanceProcAddr
+    vkGetDeviceProcAddr   = graphGetDeviceProcAddr
+    vk_layerGetPhysicalDeviceProcAddr
