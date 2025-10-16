@@ -32,6 +32,9 @@ using namespace mlsdk::el::log;
  *****************************************************************************/
 
 namespace mlsdk::el::layer {
+namespace {
+constexpr char graphPipelineCreatedLog[] = "Graph pipeline created";
+}
 
 /*****************************************************************************
  * Instance
@@ -235,6 +238,10 @@ class GraphLayer : public VulkanLayerImpl {
             {"vkGetInstanceProcAddr", PFN_vkVoidFunction(vkGetInstanceProcAddr)},
 
             // PhysicalDevice functions
+            {"vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM",
+             PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM)},
+            {"vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM",
+             PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM)},
             {"vkGetPhysicalDeviceQueueFamilyProperties", PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyProperties)},
             {"vkGetPhysicalDeviceQueueFamilyProperties2",
              PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyProperties2)},
@@ -304,6 +311,10 @@ class GraphLayer : public VulkanLayerImpl {
         static const vTable vtable = {
             {"vk_layerGetPhysicalDeviceProcAddr", PFN_vkVoidFunction(vk_layerGetPhysicalDeviceProcAddr)},
             // PhysicalDevice functions
+            {"vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM",
+             PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM)},
+            {"vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM",
+             PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM)},
             {"vkGetPhysicalDeviceQueueFamilyProperties", PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyProperties)},
             {"vkGetPhysicalDeviceQueueFamilyProperties2",
              PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyProperties2)},
@@ -396,6 +407,7 @@ class GraphLayer : public VulkanLayerImpl {
                                                                        deviceHandle, pipelineCacheHandle);
             pipelines[i] = reinterpret_cast<VkPipeline>(pipeline.get());
             auto graphPipeline = pipeline->graphPipeline;
+            graphLog(Severity::Info) << graphPipelineCreatedLog << std::endl;
 
             // Copy tensor resources to pipeline
             for (uint32_t j = 0; j < createInfo.resourceInfoCount; j++) {
@@ -625,21 +637,74 @@ class GraphLayer : public VulkanLayerImpl {
         destroyObject(callbacks, reinterpret_cast<DataGraphPipelineSessionARM *>(session));
     }
 
-    static VkResult VKAPI_CALL vkGetDataGraphPipelineAvailablePropertiesARM(VkDevice,
-                                                                            const VkDataGraphPipelineInfoARM *,
-                                                                            uint32_t *pPropertiesCount,
-                                                                            VkDataGraphPipelinePropertyARM *) {
-        *pPropertiesCount = 0;
+    static VkResult VKAPI_CALL vkGetDataGraphPipelineAvailablePropertiesARM(
+        VkDevice, const VkDataGraphPipelineInfoARM *, uint32_t *pPropertiesCount,
+        VkDataGraphPipelinePropertyARM *pProperties) {
+        if (!pProperties) {
+            // This property is always available
+            *pPropertiesCount = 1;
+            return VK_SUCCESS;
+        }
+
+        if (*pPropertiesCount == 0) {
+            return VK_INCOMPLETE;
+        }
+
+        *pProperties = VK_DATA_GRAPH_PIPELINE_PROPERTY_CREATION_LOG_ARM;
+        *pPropertiesCount = 1;
+
         return VK_SUCCESS;
     }
 
-    static VkResult VKAPI_CALL vkGetDataGraphPipelinePropertiesARM(VkDevice, const VkDataGraphPipelineInfoARM *,
-                                                                   uint32_t propertiesCount,
-                                                                   VkDataGraphPipelinePropertyQueryResultARM *) {
+    static VkResult VKAPI_CALL
+    vkGetDataGraphPipelinePropertiesARM(VkDevice, const VkDataGraphPipelineInfoARM *, uint32_t propertiesCount,
+                                        VkDataGraphPipelinePropertyQueryResultARM *pProperties) {
         if (propertiesCount == 0) {
             return VK_SUCCESS;
         }
-        return VK_ERROR_UNKNOWN;
+        if (!pProperties->pData) {
+            pProperties->dataSize = sizeof(graphPipelineCreatedLog);
+            return VK_SUCCESS;
+        }
+        pProperties->property = VK_DATA_GRAPH_PIPELINE_PROPERTY_CREATION_LOG_ARM;
+        pProperties->isText = VK_TRUE;
+        const auto dataSize = std::min(pProperties->dataSize, sizeof(graphPipelineCreatedLog));
+        pProperties->dataSize = dataSize;
+        std::memcpy(pProperties->pData, &graphPipelineCreatedLog[0], dataSize);
+        return (dataSize < sizeof(graphPipelineCreatedLog)) ? VK_INCOMPLETE : VK_SUCCESS;
+    }
+
+    static void VKAPI_CALL vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM(
+        VkPhysicalDevice /*physicalDevice*/,
+        const VkPhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM
+            * /*pQueueFamilyDataGraphProcessingEngineInfo*/,
+        VkQueueFamilyDataGraphProcessingEnginePropertiesARM * /*pQueueFamilyDataGraphProcessingEngineProperties*/) {
+        // No properties available
+    }
+
+    static VkResult VKAPI_CALL vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
+        VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, uint32_t *pQueueFamilyDataGraphPropertyCount,
+        VkQueueFamilyDataGraphPropertiesARM *pQueueFamilyDataGraphProperties) {
+        auto handle = VulkanLayerImpl::getHandle(physicalDevice);
+        uint32_t familyCount = 0;
+        handle->loader->vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &familyCount, nullptr);
+        if (queueFamilyIndex >= familyCount) {
+            return VK_ERROR_UNKNOWN;
+        }
+
+        if (!pQueueFamilyDataGraphProperties) {
+            *pQueueFamilyDataGraphPropertyCount = 1;
+            return VK_SUCCESS;
+        }
+
+        if (*pQueueFamilyDataGraphPropertyCount == 0) {
+            return VK_INCOMPLETE;
+        }
+
+        *pQueueFamilyDataGraphProperties = VkQueueFamilyDataGraphPropertiesARM{};
+        *pQueueFamilyDataGraphPropertyCount = 1;
+
+        return VK_SUCCESS;
     }
 
     /**************************************************************************

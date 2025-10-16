@@ -1882,14 +1882,42 @@ TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelineAvailablePropertiesARM) {
 
     vk::DataGraphPipelineInfoARM info;
     const auto result = vkDevice.getDataGraphPipelineAvailablePropertiesARM(info);
-    ASSERT_TRUE(result.empty());
+    ASSERT_FALSE(result.empty());
+    ASSERT_EQ(result[0], vk::DataGraphPipelinePropertyARM{});
 }
 
 TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelinePropertiesARM) {
     const auto device = createDevice();
     const auto &vkDevice = &(*device);
 
-    vk::DataGraphPipelineInfoARM info;
-    const auto result = vkDevice.getDataGraphPipelinePropertiesARM(&info, 0, nullptr);
+    vk::DataGraphPipelinePropertyQueryResultARM queryResult;
+    auto result = vkDevice.getDataGraphPipelinePropertiesARM(nullptr, 1, &queryResult);
     ASSERT_EQ(result, vk::Result::eSuccess);
+    std::vector<char> data(queryResult.dataSize);
+    queryResult.pData = data.data();
+    queryResult.dataSize = static_cast<uint32_t>(data.size());
+    result = vkDevice.getDataGraphPipelinePropertiesARM(nullptr, 1, &queryResult);
+    ASSERT_EQ(result, vk::Result::eSuccess);
+    ASSERT_EQ(queryResult.isText, VK_TRUE);
+    ASSERT_EQ(queryResult.dataSize, data.size());
+}
+
+TEST_F(MLEmulationLayerForVulkan, GetQueueFamilyDataGraphProcessingEnginePropertiesARM) {
+    const auto device = createDevice();
+    const auto &physicalDevice = device->getPhysicalDevice();
+    const auto &vkPhysicalDevice = &(*physicalDevice);
+
+    vk::PhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM info;
+    const auto result = vkPhysicalDevice.getQueueFamilyDataGraphProcessingEnginePropertiesARM(info);
+    ASSERT_FALSE(result.foreignSemaphoreHandleTypes);
+}
+
+TEST_F(MLEmulationLayerForVulkan, GetQueueFamilyDataGraphPropertiesARM) {
+    const auto device = createDevice();
+    const auto &physicalDevice = device->getPhysicalDevice();
+    const auto &vkPhysicalDevice = &(*physicalDevice);
+
+    uint32_t queueFamilyIndex = physicalDevice->getComputeFamilyIndex();
+    const auto result = vkPhysicalDevice.getQueueFamilyDataGraphPropertiesARM(queueFamilyIndex);
+    ASSERT_FALSE(result.empty());
 }
