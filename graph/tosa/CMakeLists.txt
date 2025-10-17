@@ -281,7 +281,7 @@ mlel_spv_elementwise(elementwise_unary log "log(value1)" float16_t float)
 mlel_spv_elementwise(elementwise_unary logical_not "!value1" bool)
 mlel_spv_elementwise(elementwise_unary reciprocal "1.0 / value1" float16_t float)
 mlel_spv_elementwise(elementwise_unary rsqrt "inversesqrt(value1)" float16_t float)
-mlel_spv_elementwise(elementwise_unary sin "sin_to_cos(value1)" float16_t float)
+mlel_spv_elementwise(elementwise_unary sin "sin(value1)" float16_t float)
 
 # Comparison
 mlel_spv_elementwise(elementwise_binary equal "value1 == value2" int float16_t float)
