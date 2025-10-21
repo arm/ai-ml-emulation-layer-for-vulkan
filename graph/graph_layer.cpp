@@ -195,18 +195,14 @@ inline std::optional<bool> isGraphSpirv(const std::vector<uint32_t> &spirv) {
     return ir->module()->graphs().size() > 0;
 }
 
-std::optional<std::string> tryGetTosaVersion(const uint32_t *spirvCode, const size_t spirvSize) {
+std::optional<std::string> tryGetExtInstVersion(const uint32_t *spirvCode, const size_t spirvSize,
+                                                const std::regex &pattern) {
     auto ir = spvtools::BuildModule(SPV_ENV_UNIVERSAL_1_6, nullptr, spirvCode, spirvSize);
-    const auto importInsts = ir->module()->ext_inst_imports();
-
-    const auto &it = std::find_if(importInsts.begin(), importInsts.end(), [&](const spvtools::opt::Instruction &inst) {
-        return std::regex_search(inst.GetInOperand(0).AsString(), std::regex("^TOSA\\.\\d{6}\\.\\d"));
-    });
-
-    if (it != importInsts.end()) {
-        return it->GetInOperand(0).AsString();
+    for (const auto &inst : ir->module()->ext_inst_imports()) {
+        const auto name = inst.GetInOperand(0).AsString();
+        if (std::regex_search(name, pattern))
+            return name;
     }
-
     return std::nullopt;
 }
 
@@ -473,13 +469,25 @@ class GraphLayer : public VulkanLayerImpl {
             spvtools::Optimizer optimizer{SPV_ENV_UNIVERSAL_1_6};
 
             // Register passes
-            auto tosaVersion = tryGetTosaVersion(shaderModule->code.data(), shaderModule->code.size());
-            if (!tosaVersion.has_value() || tosaVersion == tosaSpv100) {
-                optimizer.RegisterPass(spvtools::CreateGraphPass<spvtools::opt::GraphPassTosaSpv100>(*graphPipeline));
-            } else {
-                graphLog(Severity::Error) << "Unsupported Tosa version" << std::endl;
+            const auto tosaVersion = tryGetExtInstVersion(shaderModule->code.data(), shaderModule->code.size(),
+                                                          std::regex("^TOSA\\.\\d{6}\\.\\d"));
+            const auto motionEngineVersion = tryGetExtInstVersion(shaderModule->code.data(), shaderModule->code.size(),
+                                                                  std::regex("^Arm\\.MotionEngine\\.\\d{3}"));
+
+            const bool isTosaVersionUnsupported = tosaVersion.has_value() && tosaVersion != tosaSpv100;
+            if (isTosaVersionUnsupported) {
+                graphLog(Severity::Error) << "Unsupported Tosa version provided." << std::endl;
                 return VK_ERROR_UNKNOWN;
             }
+
+            const bool isMotionEngineVersionUnsupported =
+                motionEngineVersion.has_value() && motionEngineVersion != motionEngine100;
+            if (isMotionEngineVersionUnsupported) {
+                graphLog(Severity::Error) << "Unsupported MotionEngine version provided." << std::endl;
+                return VK_ERROR_UNKNOWN;
+            }
+
+            optimizer.RegisterPass(spvtools::CreateGraphPass<spvtools::opt::GraphPassTosaSpv100>(*graphPipeline));
 
             // Run passes
             std::vector<uint32_t> optimizedModule;

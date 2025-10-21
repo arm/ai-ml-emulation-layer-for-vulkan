@@ -14,6 +14,7 @@
 #include "spirv_pass.hpp"
 
 static constexpr std::string_view tosaSpv100 = "TOSA.001000.1";
+static constexpr std::string_view motionEngine100 = "Arm.MotionEngine.100";
 
 /*******************************************************************************
  * GraphPass TosaSpv100
@@ -28,6 +29,9 @@ class GraphPassTosaSpv100 final : public GraphPassBase {
 
   private:
     void handleGraph(const Graph *graph) override;
+    void handleTosaInst(const Instruction *opExtInst);
+    void handleMotionEngineInst(const Instruction *opExtInst);
+
     void handleArgmax(const Instruction *opExtInst, const std::string &debugName);
     void handleArithmeticRightShift(const Instruction *opExtInst, const std::string &debugName);
     void handleAvgPool2D(const Instruction *opExtInst, const std::string &debugName);
@@ -79,6 +83,10 @@ class GraphPassTosaSpv100 final : public GraphPassBase {
     void handleTile(const Instruction *opExtInst, const std::string &debugName);
     void handleTranspose(const Instruction *opExtInst, const std::string &debugName);
     void handleTransposeConv2D(const Instruction *opExtInst, const std::string &debugName);
+
+    void handleMinSad(const Instruction *opExtInst, const std::string &debugName);
+    void handleMinSadCost(const Instruction *opExtInst, const std::string &debugName);
+    void handleRawSad(const Instruction *opExtInst, const std::string &debugName);
 };
 
 } // namespace spvtools::opt

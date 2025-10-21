@@ -1,0 +1,215 @@
+/*
+ * SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* constants */
+#define MIN_SAD      0
+#define MIN_SAD_COST 1
+#define RAW_SAD      2
+#define SEARCH_TYPE  %search_type%
+
+#define RASTER 0
+#define SPIRAL 1
+
+#define MACRO_BLOCK      5u
+#define MAX_SEARCH_RANGE 3
+#define MAX_SEARCH_H     MAX_SEARCH_RANGE * 2 + 1
+#define MAX_SEARCH_W     MAX_SEARCH_H
+
+/* descriptors */
+layout(set = 0, binding = 0) uniform tensorARM<uint8_t,  4>  in_template;
+layout(set = 1, binding = 0) uniform tensorARM<uint8_t,  4>  in_search;
+
+#if SEARCH_TYPE == MIN_SAD || SEARCH_TYPE == MIN_SAD_COST
+layout(set = 2, binding = 0) writeonly uniform tensorARM<int8_t,   4>  out_flow;
+#endif
+#if SEARCH_TYPE == RAW_SAD
+layout(set = 2, binding = 0) writeonly uniform tensorARM<uint16_t, 4>  out_cost;
+#endif
+#if SEARCH_TYPE == MIN_SAD_COST
+layout(set = 3, binding = 0) writeonly uniform tensorARM<uint16_t, 4>  out_cost;
+#endif
+
+/* spec constants */
+layout(constant_id = 0)  const uint kernel_h          = MACRO_BLOCK;
+layout(constant_id = 1)  const uint kernel_w          = MACRO_BLOCK;
+
+layout(constant_id = 2)  const uint search_h          = MAX_SEARCH_H;
+layout(constant_id = 3)  const uint search_w          = MAX_SEARCH_W;
+
+layout(constant_id = 4)  const uint input_stride_y    = 1u;
+layout(constant_id = 5)  const uint input_stride_x    = 1u;
+
+layout(constant_id = 6)  const uint window_stride_y   = 1u;
+layout(constant_id = 7)  const uint window_stride_x   = 1u;
+
+layout(constant_id = 8)  const uint window_offset_y   = 0u;
+layout(constant_id = 9)  const uint window_offset_x   = 0u;
+
+layout(constant_id = 10) const uint pad_top           = 0u;
+layout(constant_id = 11) const uint pad_left          = 0u;
+
+layout(constant_id = 12) const int search_pattern     = SPIRAL;
+
+uint calculate_sad(int x, int y, int base_x, int base_y, uint n, uint ch) {
+    uint sad = 0u;
+    for (int oy = 0; oy < int(kernel_h); ++oy) {
+        int ty = base_y + oy;
+        for (int ox = 0; ox < int(kernel_w); ++ox) {
+            int tx = base_x + ox;
+
+            uint8_t tval = uint8_t(0);
+            {
+                uint IN_H_ = tensorSizeARM(in_template, 2);
+                uint IN_W_ = tensorSizeARM(in_template, 3);
+                if (ty >= 0 && tx >= 0 && ty < int(IN_H_) && tx < int(IN_W_)) {
+                    uint t_idx[4] = uint[4](uint(n), uint(ch), uint(ty), uint(tx));
+                    tensorReadARM(in_template, t_idx, tval);
+                }
+            }
+
+            // displaced search read with zero-padding outside bounds
+            int sx = base_x + ox + x * int(window_stride_x);
+            int sy = base_y + oy + y * int(window_stride_y);
+
+            uint8_t sval = uint8_t(0);
+            {
+                uint S_H_ = tensorSizeARM(in_search, 2);
+                uint S_W_ = tensorSizeARM(in_search, 3);
+                if (sy >= 0 && sx >= 0 && sy < int(S_H_) && sx < int(S_W_)) {
+                    uint s_idx[4] = uint[4](uint(n), uint(ch), uint(sy), uint(sx));
+                    tensorReadARM(in_search, s_idx, sval);
+                }
+            }
+
+            sad += uint(abs(int(sval) - int(tval)));
+        }
+    }
+    return sad;
+}
+
+layout(local_size_x = %warpX%, local_size_y = %warpY%, local_size_z = 1) in;
+
+void main() {
+    uint px = gl_GlobalInvocationID.x;
+    uint py = gl_GlobalInvocationID.y;
+
+    uint IN_H  = tensorSizeARM(in_template, 2);
+    uint IN_W  = tensorSizeARM(in_template, 3);
+
+    uint OUT_W = IN_W / input_stride_x;
+    uint OUT_H = IN_H / input_stride_y;
+
+    if (px >= OUT_W || py >= OUT_H) return;
+
+    int base_x = int(px) * int(input_stride_x) - int(pad_left);
+    int base_y = int(py) * int(input_stride_y) - int(pad_top);
+
+    uint batches = tensorSizeARM(in_template, 0);
+    uint channels = tensorSizeARM(in_template, 1);
+
+    // For RAW_SAD, output channels = channels * search window size.
+    // For SPIRAL, window is square with radius = window_offset_y.
+    uint SEARCH_SIZE = (search_pattern == SPIRAL)
+        ? (2u * window_offset_y + 1u) * (2u * window_offset_y + 1u)
+        : (search_h * search_w);
+
+    for (uint n = 0; n < batches; ++n) {
+        for (uint ch = 0u; ch < channels; ++ch) {
+            uint min_sad = 0xFFFFFFFFu;
+            ivec2 best_flow = ivec2(0);
+
+            int wi = 0;
+
+            if (search_pattern == SPIRAL) {
+                int radius   = int(window_offset_y);
+                int dy_start = 0;
+                int dy_end   = radius + 1;
+
+                for (int dy = dy_start; dy < dy_end; ++dy) {
+                    for (int dir = 0; dir < 4; ++dir) {
+                        int dx_start = -dy;
+                        int limit    = (dir == 0 && dy == 0) ? 1 : dy;
+                        int dx_end   = limit;
+
+                        for (int dx = dx_start; dx < dx_end; ++dx) {
+                            int wx_b, wy_b;
+                            if (dir == 0) {
+                                wx_b = radius + dx; wy_b = radius + dy;
+                            } else if (dir == 1) {
+                                wx_b = radius + dy; wy_b = radius - dx;
+                            } else if (dir == 2) {
+                                wx_b = radius - dx; wy_b = radius - dy;
+                            } else {
+                                wx_b = radius - dy; wy_b = radius + dx;
+                            }
+
+                            // Convert to displacement space (s_coord_*)
+                            int s_coord_x = wx_b - int(window_offset_x);
+                            int s_coord_y = wy_b - int(window_offset_y);
+
+                            uint sad = calculate_sad(s_coord_x, s_coord_y, base_x, base_y, n, ch);
+
+                            #if SEARCH_TYPE == RAW_SAD
+                            {   // write full cost volume at channel = ch * SEARCH_SIZE + wi
+                                uint oc_idx[4] = uint[4](uint(n), uint(ch) * SEARCH_SIZE + uint(wi), py, px);
+                                tensorWriteARM(out_cost, oc_idx, uint16_t(sad));
+                            }
+                            #endif
+
+                            if (sad < min_sad) {
+                                min_sad  = sad;
+                                best_flow = ivec2(s_coord_x, s_coord_y);
+                            }
+
+                            wi++;
+                        }
+                    }
+                }
+            } else { // RASTER
+                for (int vy = 0; vy < int(search_h); ++vy) {
+                    for (int vx = 0; vx < int(search_w); ++vx) {
+
+                        int s_coord_x = vx - int(window_offset_x);
+                        int s_coord_y = vy - int(window_offset_y);
+
+                        uint sad = calculate_sad(s_coord_x, s_coord_y, base_x, base_y, n, ch);
+
+                        #if SEARCH_TYPE == RAW_SAD
+                        {
+                            uint oc_idx[4] = uint[4](uint(n), uint(ch) * SEARCH_SIZE + uint(wi), py, px);
+                            tensorWriteARM(out_cost, oc_idx, uint16_t(sad));
+                        }
+                        #endif
+
+                        if (sad < min_sad) {
+                            min_sad  = sad;
+                            best_flow = ivec2(s_coord_x, s_coord_y);
+                        }
+
+                        wi++;
+                    }
+                }
+            }
+
+            #if SEARCH_TYPE == MIN_SAD || SEARCH_TYPE == MIN_SAD_COST
+            {
+                // Same number of output channels as input: write per-channel best flow
+                uint f_idx[4] = uint[4](uint(n), uint(ch), py, px * 2u);
+                tensorWriteARM(out_flow, f_idx, int8_t(best_flow.x));
+                f_idx[3]++;
+                tensorWriteARM(out_flow, f_idx, int8_t(best_flow.y));
+            }
+            #endif
+
+            #if SEARCH_TYPE == MIN_SAD_COST
+            {
+                // Per-channel minimal SAD
+                uint c_idx[4] = uint[4](uint(n), uint(ch), py, px);
+                tensorWriteARM(out_cost, c_idx, uint16_t(min_sad)); // min only
+            }
+            #endif
+        }
+    }
+}

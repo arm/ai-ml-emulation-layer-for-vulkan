@@ -1108,6 +1108,52 @@ class TransposeConv2D : public ComputePipeline {
 };
 
 /*******************************************************************************
+ * BlockMatch
+ *******************************************************************************/
+
+class BlockMatch : public ComputePipeline {
+  public:
+    enum SearchType : uint32_t {
+        MIN_SAD = 0,
+        MIN_SAD_COST = 1,
+        RAW_SAD = 2,
+    };
+
+    BlockMatch(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, VkDevice _device,
+               const std::shared_ptr<PipelineCache> &_pipelineCache,
+               const std::shared_ptr<TensorDescriptor> &inTemplate, const std::shared_ptr<TensorDescriptor> &inSearch,
+               const std::optional<std::shared_ptr<TensorDescriptor>> &outVectors,
+               const std::optional<std::shared_ptr<TensorDescriptor>> &outCosts,
+               const std::vector<uint32_t> &kernelSizes, const std::vector<uint32_t> &searchWindowSizes,
+               const std::vector<uint32_t> &inputStrides, const std::vector<uint32_t> &windowStrides,
+               const std::vector<uint32_t> &windowOffsets, const std::vector<uint32_t> &padding,
+               const uint32_t searchPattern, const SearchType searchType, const std::string &debugName);
+
+  private:
+    DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &inTemplate,
+                                      const std::shared_ptr<TensorDescriptor> &inSearch,
+                                      const std::optional<std::shared_ptr<TensorDescriptor>> &outVectors,
+                                      const std::optional<std::shared_ptr<TensorDescriptor>> &outCosts,
+                                      const SearchType searchType) const;
+
+    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, const SearchType searchType) const;
+
+    SpecConstants createSpecConstants(const std::vector<uint32_t> &kernelSizes,
+                                      const std::vector<uint32_t> &searchWindowSizes,
+                                      const std::vector<uint32_t> &inputStrides,
+                                      const std::vector<uint32_t> &windowStrides,
+                                      const std::vector<uint32_t> &windowOffsets, const std::vector<uint32_t> &padding,
+                                      const uint32_t searchPattern) const;
+
+    void cmdDispatch(VkCommandBuffer commandBuffer) override;
+
+    static constexpr std::string_view shaderName = "block_match";
+
+    static const uint32_t warpX = 8;
+    static const uint32_t warpY = 8;
+};
+
+/*******************************************************************************
  * GraphPipeline
  *******************************************************************************/
 
@@ -1389,6 +1435,32 @@ class GraphPipeline {
                              const std::shared_ptr<TensorDescriptor> &biases, const std::vector<uint32_t> &pad,
                              const std::vector<uint32_t> &stride, const int8_t inputZeroPoint,
                              const int8_t weightZeroPoint, const uint32_t accType, const std::string &debugName);
+
+    /*******************************************************************************
+     * Motion Engine Ops
+     *******************************************************************************/
+    void makeMinSadCost(const std::shared_ptr<TensorDescriptor> &inTemplate,
+                        const std::shared_ptr<TensorDescriptor> &inSearch,
+                        const std::shared_ptr<TensorDescriptor> &outVectors,
+                        const std::shared_ptr<TensorDescriptor> &outCosts, const std::vector<uint32_t> &kernelSizes,
+                        const std::vector<uint32_t> &searchWindowSizes, const std::vector<uint32_t> &inputStrides,
+                        const std::vector<uint32_t> &windowStrides, const std::vector<uint32_t> &windowOffsets,
+                        const std::vector<uint32_t> &padding, const uint32_t searchPattern,
+                        const std::string &debugName);
+
+    void makeMinSad(const std::shared_ptr<TensorDescriptor> &inTemplate,
+                    const std::shared_ptr<TensorDescriptor> &inSearch,
+                    const std::shared_ptr<TensorDescriptor> &outVectors, const std::vector<uint32_t> &kernelSizes,
+                    const std::vector<uint32_t> &searchWindowSizes, const std::vector<uint32_t> &inputStrides,
+                    const std::vector<uint32_t> &windowStrides, const std::vector<uint32_t> &windowOffsets,
+                    const std::vector<uint32_t> &padding, const uint32_t searchPattern, const std::string &debugName);
+
+    void makeRawSad(const std::shared_ptr<TensorDescriptor> &inTemplate,
+                    const std::shared_ptr<TensorDescriptor> &inSearch,
+                    const std::shared_ptr<TensorDescriptor> &outCosts, const std::vector<uint32_t> &kernelSizes,
+                    const std::vector<uint32_t> &searchWindowSizes, const std::vector<uint32_t> &inputStrides,
+                    const std::vector<uint32_t> &windowStrides, const std::vector<uint32_t> &windowOffsets,
+                    const std::vector<uint32_t> &padding, const std::string &debugName);
 
   private:
     std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> loader;

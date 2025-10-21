@@ -11,6 +11,7 @@
 #include "spirv_pass_tosaspv_v100.hpp"
 #include "graph_log.hpp"
 
+#include <spirv/unified1/ArmMotionEngine.h>
 #include <spirv/unified1/TOSA.001000.1.h>
 
 using namespace mlsdk::el::log;
@@ -35,287 +36,323 @@ void GraphPassTosaSpv100::handleGraph(const Graph *graph) {
             throw std::runtime_error(std::string("Unsupported graph instruction ") +
                                      std::to_string(static_cast<unsigned>(opExtInst->opcode())));
         }
+
         const auto &resultId = opExtInst->GetInOperand(0);
-        const auto &tosa = TOSAInstructions(opExtInst->GetInOperand(1).words[0]);
+        const auto &importInstr = get_def_use_mgr()->GetDef(resultId.AsId());
+        const auto &importName = importInstr->GetInOperand(0).AsString();
 
-        // Verify that this is a TOSA external instruction
-        [[maybe_unused]] const auto &importInstr = get_def_use_mgr()->GetDef(resultId.AsId());
-        assert(importInstr->opcode() == spv::Op::OpExtInstImport &&
-               importInstr->GetInOperand(0).AsString() == tosaSpv100);
-
-        static const std::unordered_map<TOSAInstructions, std::string> opNameMap = {
-            {TOSAABS, "ABS"},
-            {TOSAADD, "ADD"},
-            {TOSAARGMAX, "ARGMAX"},
-            {TOSAARITHMETIC_RIGHT_SHIFT, "ARITHMETIC_RIGHT_SHIFT"},
-            {TOSAAVG_POOL2D, "AVG_POOL2D"},
-            {TOSABITWISE_AND, "BITWISE_AND"},
-            {TOSABITWISE_NOT, "BITWISE_NOT"},
-            {TOSABITWISE_OR, "BITWISE_OR"},
-            {TOSABITWISE_XOR, "BITWISE_XOR"},
-            {TOSACAST, "CAST"},
-            {TOSACEIL, "CEIL"},
-            {TOSACLAMP, "CLAMP"},
-            {TOSACLZ, "CLZ"},
-            {TOSACONCAT, "CONCAT"},
-            {TOSACONV2D, "CONV2D"},
-            {TOSACONV3D, "CONV3D"},
-            {TOSACOS, "COS"},
-            {TOSADEPTHWISE_CONV2D, "DEPTHWISE_CONV2D"},
-            {TOSAEQUAL, "EQUAL"},
-            {TOSAERF, "ERF"},
-            {TOSAEXP, "EXP"},
-            {TOSAFFT2D, "FFT2D"},
-            {TOSAFLOOR, "FLOOR"},
-            {TOSAGATHER, "GATHER"},
-            {TOSAGREATER, "GREATER"},
-            {TOSAGREATER_EQUAL, "GREATER_EQUAL"},
-            {TOSAINTDIV, "INTDIV"},
-            {TOSALOG, "LOG"},
-            {TOSALOGICAL_AND, "LOGICAL_AND"},
-            {TOSALOGICAL_LEFT_SHIFT, "LOGICAL_LEFT_SHIFT"},
-            {TOSALOGICAL_NOT, "LOGICAL_NOT"},
-            {TOSALOGICAL_OR, "LOGICAL_OR"},
-            {TOSALOGICAL_RIGHT_SHIFT, "LOGICAL_RIGHT_SHIFT"},
-            {TOSALOGICAL_XOR, "LOGICAL_XOR"},
-            {TOSAMATMUL, "MATMUL"},
-            {TOSAMAX_POOL2D, "MAX_POOL2D"},
-            {TOSAMAXIMUM, "MAXIMUM"},
-            {TOSAMINIMUM, "MINIMUM"},
-            {TOSAMUL, "MUL"},
-            {TOSANEGATE, "NEGATE"},
-            {TOSAPAD, "PAD"},
-            {TOSAPOW, "POW"},
-            {TOSARECIPROCAL, "RECIPROCAL"},
-            {TOSAREDUCE_ALL, "REDUCE_ALL"},
-            {TOSAREDUCE_ANY, "REDUCE_ANY"},
-            {TOSAREDUCE_MAX, "REDUCE_MAX"},
-            {TOSAREDUCE_MIN, "REDUCE_MIN"},
-            {TOSAREDUCE_PRODUCT, "REDUCE_PRODUCT"},
-            {TOSAREDUCE_SUM, "REDUCE_SUM"},
-            {TOSARESCALE, "RESCALE"},
-            {TOSARESHAPE, "RESHAPE"},
-            {TOSARESIZE, "RESIZE"},
-            {TOSAREVERSE, "REVERSE"},
-            {TOSARFFT2D, "RFFT2D"},
-            {TOSARSQRT, "RSQRT"},
-            {TOSASCATTER, "SCATTER"},
-            {TOSASELECT, "SELECT"},
-            {TOSASIGMOID, "SIGMOID"},
-            {TOSASIN, "SIN"},
-            {TOSASLICE, "SLICE"},
-            {TOSASUB, "SUB"},
-            {TOSATABLE, "TABLE"},
-            {TOSATANH, "TANH"},
-            {TOSATILE, "TILE"},
-            {TOSATRANSPOSE, "TRANSPOSE"},
-            {TOSATRANSPOSE_CONV2D, "TRANSPOSE_CONV2D"},
-        };
-        std::string debugName = extractDebugInfoFromSPV(&*opExtInst, &graph->DefInst(),
-                                                        opNameMap.count(tosa) ? opNameMap.at(tosa) : "UNKNOWN");
-
-        switch (tosa) {
-        case TOSAABS:
-            handleElementwiseUnary(&*opExtInst, debugName, &GraphPipeline::makeAbs);
-            break;
-        case TOSAADD:
-            handleElementwiseBinary(&*opExtInst, debugName, &GraphPipeline::makeAdd);
-            break;
-        case TOSAARGMAX:
-            handleArgmax(&*opExtInst, debugName);
-            break;
-        case TOSAARITHMETIC_RIGHT_SHIFT:
-            handleArithmeticRightShift(&*opExtInst, debugName);
-            break;
-        case TOSAAVG_POOL2D:
-            handleAvgPool2D(&*opExtInst, debugName);
-            break;
-        case TOSABITWISE_AND:
-            handleElementwiseBinary(&*opExtInst, debugName, &GraphPipeline::makeBitwiseAnd);
-            break;
-        case TOSABITWISE_NOT:
-            handleElementwiseUnary(&*opExtInst, debugName, &GraphPipeline::makeBitwiseNot);
-            break;
-        case TOSABITWISE_OR:
-            handleElementwiseBinary(&*opExtInst, debugName, &GraphPipeline::makeBitwiseOr);
-            break;
-        case TOSABITWISE_XOR:
-            handleElementwiseBinary(&*opExtInst, debugName, &GraphPipeline::makeBitwiseXor);
-            break;
-        case TOSACAST:
-            handleCast(&*opExtInst, debugName);
-            break;
-        case TOSACEIL:
-            handleElementwiseUnary(&*opExtInst, debugName, &GraphPipeline::makeCeil);
-            break;
-        case TOSACLAMP:
-            handleClamp(&*opExtInst, debugName);
-            break;
-        case TOSACLZ:
-            handleElementwiseUnary(&*opExtInst, debugName, &GraphPipeline::makeClz);
-            break;
-        case TOSACONCAT:
-            handleConcat(&*opExtInst, debugName);
-            break;
-        case TOSACONV2D:
-            handleConv2D(&*opExtInst, debugName);
-            break;
-        case TOSACONV3D:
-            handleConv3D(&*opExtInst, debugName);
-            break;
-        case TOSACOS:
-            handleElementwiseUnary(&*opExtInst, debugName, &GraphPipeline::makeCos);
-            break;
-        case TOSADEPTHWISE_CONV2D:
-            handleDepthwiseConv2D(&*opExtInst, debugName);
-            break;
-        case TOSAEQUAL:
-            handleElementwiseBinary(&*opExtInst, debugName, &GraphPipeline::makeEqual);
-            break;
-        case TOSAERF:
-            handleElementwiseUnary(&*opExtInst, debugName, &GraphPipeline::makeErf);
-            break;
-        case TOSAEXP:
-            handleElementwiseUnary(&*opExtInst, debugName, &GraphPipeline::makeExp);
-            break;
-        case TOSAFFT2D:
-            handleFft2D(&*opExtInst, debugName);
-            break;
-        case TOSAFLOOR:
-            handleElementwiseUnary(&*opExtInst, debugName, &GraphPipeline::makeFloor);
-            break;
-        case TOSAGATHER:
-            handleGather(&*opExtInst, debugName);
-            break;
-        case TOSAGREATER:
-            handleElementwiseBinary(&*opExtInst, debugName, &GraphPipeline::makeGreater);
-            break;
-        case TOSAGREATER_EQUAL:
-            handleElementwiseBinary(&*opExtInst, debugName, &GraphPipeline::makeGreaterEqual);
-            break;
-        case TOSAINTDIV:
-            handleElementwiseBinary(&*opExtInst, debugName, &GraphPipeline::makeIntdiv);
-            break;
-        case TOSALOG:
-            handleElementwiseUnary(&*opExtInst, debugName, &GraphPipeline::makeLog);
-            break;
-        case TOSALOGICAL_AND:
-            handleElementwiseBinary(&*opExtInst, debugName, &GraphPipeline::makeLogicalAnd);
-            break;
-        case TOSALOGICAL_LEFT_SHIFT:
-            handleElementwiseBinary(&*opExtInst, debugName, &GraphPipeline::makeLogicalLeftShift);
-            break;
-        case TOSALOGICAL_NOT:
-            handleElementwiseUnary(&*opExtInst, debugName, &GraphPipeline::makeLogicalNot);
-            break;
-        case TOSALOGICAL_OR:
-            handleElementwiseBinary(&*opExtInst, debugName, &GraphPipeline::makeLogicalOr);
-            break;
-        case TOSALOGICAL_RIGHT_SHIFT:
-            handleElementwiseBinary(&*opExtInst, debugName, &GraphPipeline::makeLogicalRightShift);
-            break;
-        case TOSALOGICAL_XOR:
-            handleElementwiseBinary(&*opExtInst, debugName, &GraphPipeline::makeLogicalXor);
-            break;
-        case TOSAMATMUL:
-            handleMatmul(&*opExtInst, debugName);
-            break;
-        case TOSAMAX_POOL2D:
-            handleMaxPool2D(&*opExtInst, debugName);
-            break;
-        case TOSAMAXIMUM:
-            handleMaximum(&*opExtInst, debugName);
-            break;
-        case TOSAMINIMUM:
-            handleMinimum(&*opExtInst, debugName);
-            break;
-        case TOSAMUL:
-            handleMul(&*opExtInst, debugName);
-            break;
-        case TOSANEGATE:
-            handleNegate(&*opExtInst, debugName);
-            break;
-        case TOSAPAD:
-            handlePad(&*opExtInst, debugName);
-            break;
-        case TOSAPOW:
-            handleElementwiseBinary(&*opExtInst, debugName, &GraphPipeline::makePow);
-            break;
-        case TOSARECIPROCAL:
-            handleElementwiseUnary(&*opExtInst, debugName, &GraphPipeline::makeReciprocal);
-            break;
-        case TOSAREDUCE_ALL:
-            handleReduce(&*opExtInst, debugName, &GraphPipeline::makeReduceAll);
-            break;
-        case TOSAREDUCE_ANY:
-            handleReduce(&*opExtInst, debugName, &GraphPipeline::makeReduceAny);
-            break;
-        case TOSAREDUCE_MAX:
-            handleReduceMax(&*opExtInst, debugName);
-            break;
-        case TOSAREDUCE_MIN:
-            handleReduceMin(&*opExtInst, debugName);
-            break;
-        case TOSAREDUCE_PRODUCT:
-            handleReduce(&*opExtInst, debugName, &GraphPipeline::makeReduceProduct);
-            break;
-        case TOSAREDUCE_SUM:
-            handleReduce(&*opExtInst, debugName, &GraphPipeline::makeReduceSum);
-            break;
-        case TOSARESCALE:
-            handleRescale(&*opExtInst, debugName);
-            break;
-        case TOSARESHAPE:
-            handleReshape(&*opExtInst, debugName);
-            break;
-        case TOSARESIZE:
-            handleResize(&*opExtInst, debugName);
-            break;
-        case TOSAREVERSE:
-            handleReverse(&*opExtInst, debugName);
-            break;
-        case TOSARFFT2D:
-            handleRfft2D(&*opExtInst, debugName);
-            break;
-        case TOSARSQRT:
-            handleElementwiseUnary(&*opExtInst, debugName, &GraphPipeline::makeRsqrt);
-            break;
-        case TOSASCATTER:
-            handleScatter(&*opExtInst, debugName);
-            break;
-        case TOSASELECT:
-            handleSelect(&*opExtInst, debugName);
-            break;
-        case TOSASIGMOID:
-            handleElementwiseUnary(&*opExtInst, debugName, &GraphPipeline::makeSigmoid);
-            break;
-        case TOSASIN:
-            handleElementwiseUnary(&*opExtInst, debugName, &GraphPipeline::makeSin);
-            break;
-        case TOSASLICE:
-            handleSlice(&*opExtInst, debugName);
-            break;
-        case TOSASUB:
-            handleElementwiseBinary(&*opExtInst, debugName, &GraphPipeline::makeSub);
-            break;
-        case TOSATABLE:
-            handleTable(&*opExtInst, debugName);
-            break;
-        case TOSATANH:
-            handleElementwiseUnary(&*opExtInst, debugName, &GraphPipeline::makeTanh);
-            break;
-        case TOSATILE:
-            handleTile(&*opExtInst, debugName);
-            break;
-        case TOSATRANSPOSE:
-            handleTranspose(&*opExtInst, debugName);
-            break;
-        case TOSATRANSPOSE_CONV2D:
-            handleTransposeConv2D(&*opExtInst, debugName);
-            break;
-        default:
-            throw std::runtime_error(std::string("Unsupported TOSA.001000.1 operand ") + std::to_string(tosa));
+        if (importName == tosaSpv100)
+            handleTosaInst(&*opExtInst);
+        else if (importName == motionEngine100)
+            handleMotionEngineInst(&*opExtInst);
+        else {
+            throw std::runtime_error(std::string("Unsupported extension ") + importName);
         }
+    }
+}
+
+void GraphPassTosaSpv100::handleTosaInst(const Instruction *opExtInst) {
+    const auto &tosa = TOSAInstructions(opExtInst->GetInOperand(1).words[0]);
+
+    // Verify that this is a TOSA external instruction
+    static const std::unordered_map<TOSAInstructions, std::string> opNameMap = {
+        {TOSAABS, "ABS"},
+        {TOSAADD, "ADD"},
+        {TOSAARGMAX, "ARGMAX"},
+        {TOSAARITHMETIC_RIGHT_SHIFT, "ARITHMETIC_RIGHT_SHIFT"},
+        {TOSAAVG_POOL2D, "AVG_POOL2D"},
+        {TOSABITWISE_AND, "BITWISE_AND"},
+        {TOSABITWISE_NOT, "BITWISE_NOT"},
+        {TOSABITWISE_OR, "BITWISE_OR"},
+        {TOSABITWISE_XOR, "BITWISE_XOR"},
+        {TOSACAST, "CAST"},
+        {TOSACEIL, "CEIL"},
+        {TOSACLAMP, "CLAMP"},
+        {TOSACLZ, "CLZ"},
+        {TOSACONCAT, "CONCAT"},
+        {TOSACONV2D, "CONV2D"},
+        {TOSACONV3D, "CONV3D"},
+        {TOSACOS, "COS"},
+        {TOSADEPTHWISE_CONV2D, "DEPTHWISE_CONV2D"},
+        {TOSAEQUAL, "EQUAL"},
+        {TOSAERF, "ERF"},
+        {TOSAEXP, "EXP"},
+        {TOSAFFT2D, "FFT2D"},
+        {TOSAFLOOR, "FLOOR"},
+        {TOSAGATHER, "GATHER"},
+        {TOSAGREATER, "GREATER"},
+        {TOSAGREATER_EQUAL, "GREATER_EQUAL"},
+        {TOSAINTDIV, "INTDIV"},
+        {TOSALOG, "LOG"},
+        {TOSALOGICAL_AND, "LOGICAL_AND"},
+        {TOSALOGICAL_LEFT_SHIFT, "LOGICAL_LEFT_SHIFT"},
+        {TOSALOGICAL_NOT, "LOGICAL_NOT"},
+        {TOSALOGICAL_OR, "LOGICAL_OR"},
+        {TOSALOGICAL_RIGHT_SHIFT, "LOGICAL_RIGHT_SHIFT"},
+        {TOSALOGICAL_XOR, "LOGICAL_XOR"},
+        {TOSAMATMUL, "MATMUL"},
+        {TOSAMAX_POOL2D, "MAX_POOL2D"},
+        {TOSAMAXIMUM, "MAXIMUM"},
+        {TOSAMINIMUM, "MINIMUM"},
+        {TOSAMUL, "MUL"},
+        {TOSANEGATE, "NEGATE"},
+        {TOSAPAD, "PAD"},
+        {TOSAPOW, "POW"},
+        {TOSARECIPROCAL, "RECIPROCAL"},
+        {TOSAREDUCE_ALL, "REDUCE_ALL"},
+        {TOSAREDUCE_ANY, "REDUCE_ANY"},
+        {TOSAREDUCE_MAX, "REDUCE_MAX"},
+        {TOSAREDUCE_MIN, "REDUCE_MIN"},
+        {TOSAREDUCE_PRODUCT, "REDUCE_PRODUCT"},
+        {TOSAREDUCE_SUM, "REDUCE_SUM"},
+        {TOSARESCALE, "RESCALE"},
+        {TOSARESHAPE, "RESHAPE"},
+        {TOSARESIZE, "RESIZE"},
+        {TOSAREVERSE, "REVERSE"},
+        {TOSARFFT2D, "RFFT2D"},
+        {TOSARSQRT, "RSQRT"},
+        {TOSASCATTER, "SCATTER"},
+        {TOSASELECT, "SELECT"},
+        {TOSASIGMOID, "SIGMOID"},
+        {TOSASIN, "SIN"},
+        {TOSASLICE, "SLICE"},
+        {TOSASUB, "SUB"},
+        {TOSATABLE, "TABLE"},
+        {TOSATANH, "TANH"},
+        {TOSATILE, "TILE"},
+        {TOSATRANSPOSE, "TRANSPOSE"},
+        {TOSATRANSPOSE_CONV2D, "TRANSPOSE_CONV2D"},
+    };
+    std::string debugName = extractDebugInfoFromSPV(opExtInst, opNameMap.count(tosa) ? opNameMap.at(tosa) : "UNKNOWN");
+
+    switch (tosa) {
+    case TOSAABS:
+        handleElementwiseUnary(opExtInst, debugName, &GraphPipeline::makeAbs);
+        break;
+    case TOSAADD:
+        handleElementwiseBinary(opExtInst, debugName, &GraphPipeline::makeAdd);
+        break;
+    case TOSAARGMAX:
+        handleArgmax(opExtInst, debugName);
+        break;
+    case TOSAARITHMETIC_RIGHT_SHIFT:
+        handleArithmeticRightShift(opExtInst, debugName);
+        break;
+    case TOSAAVG_POOL2D:
+        handleAvgPool2D(opExtInst, debugName);
+        break;
+    case TOSABITWISE_AND:
+        handleElementwiseBinary(opExtInst, debugName, &GraphPipeline::makeBitwiseAnd);
+        break;
+    case TOSABITWISE_NOT:
+        handleElementwiseUnary(opExtInst, debugName, &GraphPipeline::makeBitwiseNot);
+        break;
+    case TOSABITWISE_OR:
+        handleElementwiseBinary(opExtInst, debugName, &GraphPipeline::makeBitwiseOr);
+        break;
+    case TOSABITWISE_XOR:
+        handleElementwiseBinary(opExtInst, debugName, &GraphPipeline::makeBitwiseXor);
+        break;
+    case TOSACAST:
+        handleCast(opExtInst, debugName);
+        break;
+    case TOSACEIL:
+        handleElementwiseUnary(opExtInst, debugName, &GraphPipeline::makeCeil);
+        break;
+    case TOSACLAMP:
+        handleClamp(opExtInst, debugName);
+        break;
+    case TOSACLZ:
+        handleElementwiseUnary(opExtInst, debugName, &GraphPipeline::makeClz);
+        break;
+    case TOSACONCAT:
+        handleConcat(opExtInst, debugName);
+        break;
+    case TOSACONV2D:
+        handleConv2D(opExtInst, debugName);
+        break;
+    case TOSACONV3D:
+        handleConv3D(opExtInst, debugName);
+        break;
+    case TOSACOS:
+        handleElementwiseUnary(opExtInst, debugName, &GraphPipeline::makeCos);
+        break;
+    case TOSADEPTHWISE_CONV2D:
+        handleDepthwiseConv2D(opExtInst, debugName);
+        break;
+    case TOSAEQUAL:
+        handleElementwiseBinary(opExtInst, debugName, &GraphPipeline::makeEqual);
+        break;
+    case TOSAERF:
+        handleElementwiseUnary(opExtInst, debugName, &GraphPipeline::makeErf);
+        break;
+    case TOSAEXP:
+        handleElementwiseUnary(opExtInst, debugName, &GraphPipeline::makeExp);
+        break;
+    case TOSAFFT2D:
+        handleFft2D(opExtInst, debugName);
+        break;
+    case TOSAFLOOR:
+        handleElementwiseUnary(opExtInst, debugName, &GraphPipeline::makeFloor);
+        break;
+    case TOSAGATHER:
+        handleGather(opExtInst, debugName);
+        break;
+    case TOSAGREATER:
+        handleElementwiseBinary(opExtInst, debugName, &GraphPipeline::makeGreater);
+        break;
+    case TOSAGREATER_EQUAL:
+        handleElementwiseBinary(opExtInst, debugName, &GraphPipeline::makeGreaterEqual);
+        break;
+    case TOSAINTDIV:
+        handleElementwiseBinary(opExtInst, debugName, &GraphPipeline::makeIntdiv);
+        break;
+    case TOSALOG:
+        handleElementwiseUnary(opExtInst, debugName, &GraphPipeline::makeLog);
+        break;
+    case TOSALOGICAL_AND:
+        handleElementwiseBinary(opExtInst, debugName, &GraphPipeline::makeLogicalAnd);
+        break;
+    case TOSALOGICAL_LEFT_SHIFT:
+        handleElementwiseBinary(opExtInst, debugName, &GraphPipeline::makeLogicalLeftShift);
+        break;
+    case TOSALOGICAL_NOT:
+        handleElementwiseUnary(opExtInst, debugName, &GraphPipeline::makeLogicalNot);
+        break;
+    case TOSALOGICAL_OR:
+        handleElementwiseBinary(opExtInst, debugName, &GraphPipeline::makeLogicalOr);
+        break;
+    case TOSALOGICAL_RIGHT_SHIFT:
+        handleElementwiseBinary(opExtInst, debugName, &GraphPipeline::makeLogicalRightShift);
+        break;
+    case TOSALOGICAL_XOR:
+        handleElementwiseBinary(opExtInst, debugName, &GraphPipeline::makeLogicalXor);
+        break;
+    case TOSAMATMUL:
+        handleMatmul(opExtInst, debugName);
+        break;
+    case TOSAMAX_POOL2D:
+        handleMaxPool2D(opExtInst, debugName);
+        break;
+    case TOSAMAXIMUM:
+        handleMaximum(opExtInst, debugName);
+        break;
+    case TOSAMINIMUM:
+        handleMinimum(opExtInst, debugName);
+        break;
+    case TOSAMUL:
+        handleMul(opExtInst, debugName);
+        break;
+    case TOSANEGATE:
+        handleNegate(opExtInst, debugName);
+        break;
+    case TOSAPAD:
+        handlePad(opExtInst, debugName);
+        break;
+    case TOSAPOW:
+        handleElementwiseBinary(opExtInst, debugName, &GraphPipeline::makePow);
+        break;
+    case TOSARECIPROCAL:
+        handleElementwiseUnary(opExtInst, debugName, &GraphPipeline::makeReciprocal);
+        break;
+    case TOSAREDUCE_ALL:
+        handleReduce(opExtInst, debugName, &GraphPipeline::makeReduceAll);
+        break;
+    case TOSAREDUCE_ANY:
+        handleReduce(opExtInst, debugName, &GraphPipeline::makeReduceAny);
+        break;
+    case TOSAREDUCE_MAX:
+        handleReduceMax(opExtInst, debugName);
+        break;
+    case TOSAREDUCE_MIN:
+        handleReduceMin(opExtInst, debugName);
+        break;
+    case TOSAREDUCE_PRODUCT:
+        handleReduce(opExtInst, debugName, &GraphPipeline::makeReduceProduct);
+        break;
+    case TOSAREDUCE_SUM:
+        handleReduce(opExtInst, debugName, &GraphPipeline::makeReduceSum);
+        break;
+    case TOSARESCALE:
+        handleRescale(opExtInst, debugName);
+        break;
+    case TOSARESHAPE:
+        handleReshape(opExtInst, debugName);
+        break;
+    case TOSARESIZE:
+        handleResize(opExtInst, debugName);
+        break;
+    case TOSAREVERSE:
+        handleReverse(opExtInst, debugName);
+        break;
+    case TOSARFFT2D:
+        handleRfft2D(opExtInst, debugName);
+        break;
+    case TOSARSQRT:
+        handleElementwiseUnary(opExtInst, debugName, &GraphPipeline::makeRsqrt);
+        break;
+    case TOSASCATTER:
+        handleScatter(opExtInst, debugName);
+        break;
+    case TOSASELECT:
+        handleSelect(opExtInst, debugName);
+        break;
+    case TOSASIGMOID:
+        handleElementwiseUnary(opExtInst, debugName, &GraphPipeline::makeSigmoid);
+        break;
+    case TOSASIN:
+        handleElementwiseUnary(opExtInst, debugName, &GraphPipeline::makeSin);
+        break;
+    case TOSASLICE:
+        handleSlice(opExtInst, debugName);
+        break;
+    case TOSASUB:
+        handleElementwiseBinary(opExtInst, debugName, &GraphPipeline::makeSub);
+        break;
+    case TOSATABLE:
+        handleTable(opExtInst, debugName);
+        break;
+    case TOSATANH:
+        handleElementwiseUnary(opExtInst, debugName, &GraphPipeline::makeTanh);
+        break;
+    case TOSATILE:
+        handleTile(opExtInst, debugName);
+        break;
+    case TOSATRANSPOSE:
+        handleTranspose(opExtInst, debugName);
+        break;
+    case TOSATRANSPOSE_CONV2D:
+        handleTransposeConv2D(opExtInst, debugName);
+        break;
+    default:
+        throw std::runtime_error(std::string("Unsupported TOSA.001000.1 operand ") + std::to_string(tosa));
+    }
+}
+
+void GraphPassTosaSpv100::handleMotionEngineInst(const Instruction *opExtInst) {
+    const auto &motionEngine = ArmMotionEngineInstructions(opExtInst->GetInOperand(1).words[0]);
+
+    // Verify that this is a Motion Engine external instruction
+    static const std::unordered_map<ArmMotionEngineInstructions, std::string> opNameMap = {
+        {ArmMotionEngineMIN_SAD, "MIN_SAD"},
+        {ArmMotionEngineMIN_SAD_COST, "MIN_SAD_COST"},
+        {ArmMotionEngineRAW_SAD, "RAW_SAD"},
+    };
+    std::string debugName =
+        extractDebugInfoFromSPV(opExtInst, opNameMap.count(motionEngine) ? opNameMap.at(motionEngine) : "UNKNOWN");
+
+    switch (motionEngine) {
+    case ArmMotionEngineMIN_SAD:
+        handleMinSad(opExtInst, debugName);
+        break;
+    case ArmMotionEngineMIN_SAD_COST:
+        handleMinSadCost(opExtInst, debugName);
+        break;
+    case ArmMotionEngineRAW_SAD:
+        handleRawSad(opExtInst, debugName);
+        break;
+    default:
+        throw std::runtime_error(std::string("Unsupported ArmMotionEngine operand ") + std::to_string(motionEngine));
     }
 }
 
@@ -938,6 +975,85 @@ void GraphPassTosaSpv100::handleTransposeConv2D(const Instruction *opExtInst, co
 
     graphPipeline.makeTransposeConv2D(getTensor(inputId), getTensor(*opExtInst), getTensor(weightId), getTensor(biasId),
                                       outPad, stride, inputZeroPoint[0], weightZeroPoint[0], accType, debugName);
+}
+
+void GraphPassTosaSpv100::handleMinSad(const Instruction *opExtInst, const std::string &debugName) {
+    // OpExtInst <result id> <OpExtInstImport id> MIN_SAD kernel_sizes search_window_sizes input_strides
+    // window_strides window_offsets padding search_pattern input0 input1
+    assert(opExtInst->NumInOperands() == 11);
+
+    const auto &resultId = opExtInst->result_id();
+    const auto &kernelSizes = getConstVector(opExtInst->GetInOperand(2));
+    const auto &searchWindowSizes = getConstVector(opExtInst->GetInOperand(3));
+    const auto &inputStrides = getConstVector(opExtInst->GetInOperand(4));
+    const auto &windowStrides = getConstVector(opExtInst->GetInOperand(5));
+    const auto &windowOffsets = getConstVector(opExtInst->GetInOperand(6));
+    const auto &padding = getConstVector(opExtInst->GetInOperand(7));
+    const auto &searchPattern = getConstant<uint32_t>(opExtInst->GetInOperand(8));
+    const auto &input0Id = opExtInst->GetInOperand(9);
+    const auto &input1Id = opExtInst->GetInOperand(10);
+
+    graphLog(Severity::Info) << "OpExtInst result=" << resultId << ", " << debugName << ", kernelSizes=" << kernelSizes
+                             << ", searchWindowSizes=" << searchWindowSizes << ", inputStrides=" << inputStrides
+                             << ", windowStrides=" << windowStrides << ", windowOffsets=" << windowOffsets
+                             << ", padding=" << padding << ", searchPattern=" << searchPattern << ", input0=%"
+                             << input0Id.AsId() << ", input1=%" << input1Id.AsId() << std::endl;
+
+    graphPipeline.makeMinSad(getTensor(input0Id), getTensor(input1Id), getTensor(*opExtInst), kernelSizes,
+                             searchWindowSizes, inputStrides, windowStrides, windowOffsets, padding, searchPattern,
+                             debugName);
+}
+
+void GraphPassTosaSpv100::handleMinSadCost(const Instruction *opExtInst, const std::string &debugName) {
+    // OpExtInst <result id> <OpExtInstImport id> MIN_SAD_COST kernel_sizes search_window_sizes input_strides
+    // window_strides window_offsets padding search_pattern input0 input1
+    assert(opExtInst->NumInOperands() == 11);
+
+    const auto &resultId = opExtInst->result_id();
+    const auto &kernelSizes = getConstVector(opExtInst->GetInOperand(2));
+    const auto &searchWindowSizes = getConstVector(opExtInst->GetInOperand(3));
+    const auto &inputStrides = getConstVector(opExtInst->GetInOperand(4));
+    const auto &windowStrides = getConstVector(opExtInst->GetInOperand(5));
+    const auto &windowOffsets = getConstVector(opExtInst->GetInOperand(6));
+    const auto &padding = getConstVector(opExtInst->GetInOperand(7));
+    const auto &searchPattern = getConstant<uint32_t>(opExtInst->GetInOperand(8));
+    const auto &input0Id = opExtInst->GetInOperand(9);
+    const auto &input1Id = opExtInst->GetInOperand(10);
+
+    graphLog(Severity::Info) << "OpExtInst result=" << resultId << ", " << debugName << ", kernelSizes=" << kernelSizes
+                             << ", searchWindowSizes=" << searchWindowSizes << ", inputStrides=" << inputStrides
+                             << ", windowStrides=" << windowStrides << ", windowOffsets=" << windowOffsets
+                             << ", padding=" << padding << ", searchPattern=" << searchPattern << ", input0=%"
+                             << input0Id.AsId() << ", input1=%" << input1Id.AsId() << std::endl;
+
+    graphPipeline.makeMinSadCost(getTensor(input0Id), getTensor(input1Id), getTensor(*opExtInst, 0),
+                                 getTensor(*opExtInst, 1), kernelSizes, searchWindowSizes, inputStrides, windowStrides,
+                                 windowOffsets, padding, searchPattern, debugName);
+}
+
+void GraphPassTosaSpv100::handleRawSad(const Instruction *opExtInst, const std::string &debugName) {
+    // OpExtInst <result id> <OpExtInstImport id> RAW_SAD kernel_sizes search_window_sizes input_strides
+    // window_strides window_offsets padding input0 input1
+    assert(opExtInst->NumInOperands() == 10);
+
+    const auto &resultId = opExtInst->result_id();
+    const auto &kernelSizes = getConstVector(opExtInst->GetInOperand(2));
+    const auto &searchWindowSizes = getConstVector(opExtInst->GetInOperand(3));
+    const auto &inputStrides = getConstVector(opExtInst->GetInOperand(4));
+    const auto &windowStrides = getConstVector(opExtInst->GetInOperand(5));
+    const auto &windowOffsets = getConstVector(opExtInst->GetInOperand(6));
+    const auto &padding = getConstVector(opExtInst->GetInOperand(7));
+    const auto &input0Id = opExtInst->GetInOperand(8);
+    const auto &input1Id = opExtInst->GetInOperand(9);
+
+    graphLog(Severity::Info) << "OpExtInst result=" << resultId << ", " << debugName << ", kernelSizes=" << kernelSizes
+                             << ", searchWindowSizes=" << searchWindowSizes << ", inputStrides=" << inputStrides
+                             << ", windowStrides=" << windowStrides << ", windowOffsets=" << windowOffsets
+                             << ", padding=" << padding << ", input0=%" << input0Id.AsId() << ", input1=%"
+                             << input1Id.AsId() << std::endl;
+
+    graphPipeline.makeRawSad(getTensor(input0Id), getTensor(input1Id), getTensor(*opExtInst), kernelSizes,
+                             searchWindowSizes, inputStrides, windowStrides, windowOffsets, padding, debugName);
 }
 
 } // namespace spvtools::opt
