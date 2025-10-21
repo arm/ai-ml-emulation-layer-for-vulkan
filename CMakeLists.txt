@@ -31,7 +31,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 ###############################################################################
 # Options for ML Emulation Layer for Vulkan
 ###############################################################################
-if(ML_SDK_GENERATE_CPACK)
+if(NOT (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR) AND ML_SDK_GENERATE_CPACK)
     set(ML_SDK_EL_PACKAGE_NAME "ai_ml_sdk_for_vulkan")
     set(ML_SDK_EL_NAMESPACE "ai_ml_sdk_for_vulkan")
 else()
@@ -79,7 +79,6 @@ endif()
 ###############################################################################
 # Packaging
 ###############################################################################
-
 include(package)
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     mlsdk_package(PACKAGE_NAME ${ML_SDK_EL_PACKAGE_NAME}
