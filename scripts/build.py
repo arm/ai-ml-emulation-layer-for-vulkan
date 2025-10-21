@@ -294,6 +294,8 @@ class Builder:
                     platformName = "win_amd64"
                 elif sys.platform.startswith("linux"):
                     platformName = "manyLinux2014_x86_64"
+                elif sys.platform.startswith("darwin"):
+                    platformName = "macosx_11_0_arm64"
                 else:
                     print(f"ERROR: Unknown platform: {sys.platform}")
                     return 1
