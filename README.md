@@ -78,6 +78,7 @@ The build system must have:
 
 - CMake 3.25 or later.
 - C/C++ 17 compiler: GCC, or optionally Clang on Linux and MSVC on Windows®.
+- Ninja 1.10 or later.
 
 The following dependencies are also needed:
 
