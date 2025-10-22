@@ -237,40 +237,37 @@ class Builder:
                 )
 
             if self.lint:
-                lint_cmd = [
-                    "cppcheck",
-                    f"-j{str(self.threads)}",
-                    "--std=c++17",
-                    "--error-exitcode=1",
-                    "--inline-suppr",
-                    f"--project={self.build_dir}/compile_commands.json",
-                    f"--cppcheck-build-dir={self.build_dir}/cppcheck",
-                    "--enable=information,performance,portability,style",
-                    f"-i={DEPENDENCY_DIR}",
-                    f"--suppress=noValidConfiguration",
-                    f"--suppress=unassignedVariable",
-                    f"--suppress=unmatchedSuppression",
-                    f"--suppress=useStlAlgorithm",
-                    f"--suppress=*:MachineIndependent*",
-                    f"--suppress=*:{self.vulkan_headers_path}*",
-                    f"--suppress=*:{self.spirv_cross_path}*",
-                    f"--suppress=*:{self.spirv_tools_path}*",
-                    f"--suppress=*:{self.spirv_headers_path}*",
-                    f"--suppress=*:{self.glslang_path}*",
-                    f"--suppress=*:{self.gtest_path}*",
-                ]
-                subprocess.run(lint_cmd, check=True)
-
-                clang_tidy_cmd = [
-                    "run-clang-tidy",
-                    f"-j{self.threads}",
-                    f"-p{self.build_dir}",
+                source_dirs = [
                     f"{EMULATION_LAYER_DIR / 'common'}",
                     f"{EMULATION_LAYER_DIR / 'graph'}",
                     f"{EMULATION_LAYER_DIR / 'tensor'}",
                     f"{EMULATION_LAYER_DIR / 'tests'}",
                     f"{EMULATION_LAYER_DIR / 'utilities'}",
                 ]
+
+                lint_cmd = [
+                    "cppcheck",
+                    f"-j{str(self.threads)}",
+                    "--std=c++17",
+                    "--error-exitcode=1",
+                    "--inline-suppr",
+                    f"--cppcheck-build-dir={self.build_dir}/cppcheck",
+                    "--enable=information,performance,portability,style",
+                    "--suppress=noValidConfiguration",
+                    "--suppress=unassignedVariable",
+                    "--suppress=unmatchedSuppression",
+                    "--suppress=useStlAlgorithm",
+                    "--suppress=*:MachineIndependent*",
+                    f"--suppress=*:{DEPENDENCY_DIR}*",
+                ] + source_dirs
+
+                subprocess.run(lint_cmd, check=True)
+
+                clang_tidy_cmd = [
+                    "run-clang-tidy",
+                    f"-j{self.threads}",
+                    f"-p{self.build_dir}",
+                ] + source_dirs
 
                 if self.clang_tidy_fix:
                     clang_tidy_cmd.append("-fix")
