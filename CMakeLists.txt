@@ -81,7 +81,7 @@ endif()
 ###############################################################################
 
 include(package)
-if(NOT ML_SDK_GENERATE_CPACK)
+if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     mlsdk_package(PACKAGE_NAME ${ML_SDK_EL_PACKAGE_NAME}
         NAMESPACE ${ML_SDK_EL_NAMESPACE}
         LICENSES "${CMAKE_CURRENT_LIST_DIR}/LICENSES/Apache-2.0.txt")
