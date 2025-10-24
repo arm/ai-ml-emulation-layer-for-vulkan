@@ -154,28 +154,23 @@ class Builder:
             str(EMULATION_LAYER_DIR),
             "-B",
             self.build_dir,
+            f"-DCMAKE_BUILD_TYPE={self.build_type}",
         ]
-        if self.build_type:
-            cmake_setup_cmd.append(f"-DCMAKE_BUILD_TYPE={self.build_type}")
 
         if self.prefix_path:
             cmake_setup_cmd.append(f"-DCMAKE_PREFIX_PATH={self.prefix_path}")
 
         # Dependency injection
-        if self.vulkan_headers_path:
-            cmake_setup_cmd.append(f"-DVULKAN_HEADERS_PATH={self.vulkan_headers_path}")
-        if self.spirv_headers_path:
-            cmake_setup_cmd.append(f"-DSPIRV_HEADERS_PATH={self.spirv_headers_path}")
-        if self.spirv_tools_path:
-            cmake_setup_cmd.append(f"-DSPIRV_TOOLS_PATH={self.spirv_tools_path}")
-        if self.spirv_cross_path:
-            cmake_setup_cmd.append(f"-DSPIRV_CROSS_PATH={self.spirv_cross_path}")
-        if self.glslang_path:
-            cmake_setup_cmd.append(f"-DGLSLANG_PATH={self.glslang_path}")
-        if self.gtest_path:
-            cmake_setup_cmd.append(f"-DGTEST_PATH={self.gtest_path}")
+        cmake_setup_cmd.append(f"-DVULKAN_HEADERS_PATH={self.vulkan_headers_path}")
+        cmake_setup_cmd.append(f"-DSPIRV_HEADERS_PATH={self.spirv_headers_path}")
+        cmake_setup_cmd.append(f"-DSPIRV_TOOLS_PATH={self.spirv_tools_path}")
+        cmake_setup_cmd.append(f"-DSPIRV_CROSS_PATH={self.spirv_cross_path}")
+        cmake_setup_cmd.append(f"-DGLSLANG_PATH={self.glslang_path}")
+        cmake_setup_cmd.append(f"-DGTEST_PATH={self.gtest_path}")
 
         # Extra options
+        if self.run_tests:
+            cmake_setup_cmd.append("-DVMEL_TESTS_ENABLE=ON")
         if self.lint:
             cmake_setup_cmd.append("-DCMAKE_EXPORT_COMPILE_COMMANDS=ON")
         if self.disable_precompile_shaders:
