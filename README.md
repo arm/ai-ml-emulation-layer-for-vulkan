@@ -10,7 +10,7 @@ enabling ML workloads to be executed on any Vulkan® Compute capable device. The
 Emulation Layer is split into separate graph, VK_ARM_data_graph, and tensor,
 VK_ARM_tensors, layers that are inserted by the Vulkan® Loader.
 
-### Cloning the repository
+## Cloning the repository
 
 To clone the ML SDK Emulation Layer for Vulkan® as a stand-alone repository,
 you can use regular git clone commands. However, for better management of
@@ -72,7 +72,7 @@ Layer for Vulkan® in `<repo_root>/sw/emulation-layer/`. You can also find all
 the dependencies required by the ML SDK Emulation Layer for Vulkan® in
 `<repo_root>/dependencies/`.
 
-### Building the Emulation Layer from source
+## Building the Emulation Layer from source
 
 The build system must have:
 
@@ -92,7 +92,7 @@ For the preferred dependency versions see the manifest file.
 
 <a name="building-with-the-script"></a>
 
-### Building with the script
+## Building with the script
 
 To make the build configuration options easily discoverable, we provide a python
 build script. When you run the script from a git-repo manifest checkout, the
@@ -130,7 +130,7 @@ For more command line options, see the help output:
 python3 $SDK_PATH/sw/emulation-layer/scripts/build.py --help
 ```
 
-### Usage on Linux
+## Usage on Linux
 
 You can enable the graph and tensor layers using environment variables only,
 without modifying the Vulkan® application. The following environment variables
@@ -168,7 +168,7 @@ Common severity for both layers can be set using the following command:
 export VMEL_COMMON_SEVERITY=debug
 ```
 
-### Usage on Windows®
+## Usage on Windows®
 
 You can enable the graph and tensor layers using environment variables only,
 without modifying the Vulkan® application. The following environment variables
@@ -215,7 +215,7 @@ $env:VMEL_GRAPH_SEVERITY="debug"
 $env:VMEL_TENSOR_SEVERITY="info"
 ```
 
-### Building for Android™ (Experimental)
+## Building for Android™ (Experimental)
 
 The Android™ NDK toolset is required to build the Emulation layer for an Android™
 device. The Android™ device must have Vulkan® API 1.3 support.
@@ -235,7 +235,7 @@ $ cmake -B build
 $ cmake --build build
 ```
 
-### Usage on Android™ (Experimental)
+## Usage on Android™ (Experimental)
 
 You can pack the graph and tensor layer libraries into the Application Package
 Kit (APK) or push to the `/data/local/debug/vulkan` directory for Android™ to
@@ -250,28 +250,28 @@ $ adb shell settings put global gpu_debug_layers \
     VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation
 ```
 
-### Cross compilation for AArch64 on x86-64 (Experimental)
+## Cross compilation for AArch64 on x86-64 (Experimental)
 
 The shader pre-compilation step requires a glslang compiler. There are three
 ways to accomplish this when cross-compiling:
 
-1.  Provide a custom glslang executable. You can direct CMake to a custom
-    glslang executable file using the `GLSLANG_EXECUTABLE` option. First, build
-    glslang inside its repo. When the repository is initialized using the repo
-    manifest, the glslang source is checked out in
-    `<repo_root>/dependencies/glslang/` For building glslang, see
-    [Building (CMake)](https://github.com/KhronosGroup/glslang?tab=readme-ov-file#building-cmake).
+1. Provide a custom glslang executable. You can direct CMake to a custom
+   glslang executable file using the `GLSLANG_EXECUTABLE` option. First, build
+   glslang inside its repo. When the repository is initialized using the repo
+   manifest, the glslang source is checked out in
+   `<repo_root>/dependencies/glslang/` For building glslang, see
+   [Building (CMake)](https://github.com/KhronosGroup/glslang?tab=readme-ov-file#building-cmake).
 
-2.  Install glslang to the system. Under cross compilation, when no custom
-    glslang executable is provided, it will be searched from the system using
-    CMake's `find_package`. On Ubuntu, you can install it with
-    `sudo apt install glslang-tools` or from the source code following the
-    previously mentioned documentation. Note that we require version > 15.4.0,
-    which may not yet be available in Ubuntu’s official package repositories.
+2. Install glslang to the system. Under cross compilation, when no custom
+   glslang executable is provided, it will be searched from the system using
+   CMake's `find_package`. On Ubuntu, you can install it with
+   `sudo apt install glslang-tools` or from the source code following the
+   previously mentioned documentation. Note that we require version > 15.4.0,
+   which may not yet be available in Ubuntu’s official package repositories.
 
-3.  Disable the shader pre-compilation. This can be done by adding the CMake
-    option `-DVMEL_DISABLE_PRECOMPILE_SHADERS=ON` to CMake Command. By doing so,
-    the shaders would be compiled at runtime.
+3. Disable the shader pre-compilation. This can be done by adding the CMake
+   option `-DVMEL_DISABLE_PRECOMPILE_SHADERS=ON` to CMake Command. By doing so,
+   the shaders would be compiled at runtime.
 
 An example build flow using the option 1 would be:
 
@@ -300,14 +300,14 @@ $ cmake -B build \
 $ cmake --build build
 ```
 
-### Vulkan® Layer Documentation
+## Vulkan® Layer Documentation
 
 For more information about using layers, see the
 [Vulkan® Layer Documentation](https://github.com/KhronosGroup/Vulkan-Loader/blob/main/docs/LoaderLayerInterface.md).
 
-### Troubleshooting
+## Troubleshooting
 
-#### All zero output from AMD GPUs on Linux
+### All zero output from AMD GPUs on Linux
 
 Some workloads may cause silent GPU crashes due to timeout errors. You can check
 for related kernel messages with the following command:
@@ -321,28 +321,28 @@ the bootloader):
 
 1. Edit the GRUB configuration file:
 
-```shell
-sudo nano /etc/default/grub
-```
+   ```shell
+   sudo nano /etc/default/grub
+   ```
 
 2. Add or modify the `GRUB_CMDLINE_LINUX` line to include a longer timeout value
    in milliseconds:
 
-```
-GRUB_CMDLINE_LINUX="quiet splash amdgpu.lockup_timeout=20000"
-```
+   ```
+   GRUB_CMDLINE_LINUX="quiet splash amdgpu.lockup_timeout=20000"
+   ```
 
 3. Update the GRUB configuration:
 
-```shell
-sudo update-grub
-```
+   ```shell
+   sudo update-grub
+   ```
 
 4. Reboot the system:
 
-```shell
-sudo reboot
-```
+   ```shell
+   sudo reboot
+   ```
 
 ## Known Limitations
 
