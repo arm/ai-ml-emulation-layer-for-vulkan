@@ -86,7 +86,7 @@
             "name": "glslang",
             "copyrightText": "Copyright (c) The Khronos Group Inc.",
             "supplier": "Organization: Khronos Group",
-            "versionInfo": "vulkan-sdk-1.4.321.0"
+            "versionInfo": "vulkan-sdk-1.4.328.1"
         },
         {
             "SPDXID": "SPDXRef-package-a22316c0-1153-40f0-94e4-b7cf02232d85",
@@ -142,7 +142,7 @@
             "name": "SPIRV-Cross",
             "supplier": "Organization: Khronos Group",
             "copyrightText": "Copyright (c) The Khronos Group Inc.",
-            "versionInfo": "vulkan-sdk-1.4.321.0"
+            "versionInfo": "vulkan-sdk-1.4.328.1"
         },
         {
             "SPDXID": "SPDXRef-package-c5af8272-fb0c-4b55-a344-7330045b54e4",
@@ -170,7 +170,7 @@
             "name": "SPIRV-Headers",
             "copyrightText": "Copyright (c) The Khronos Group Inc.",
             "supplier": "Organization: Khronos Group",
-            "versionInfo": "staging-2025-09-09 (with Arm patches)"
+            "versionInfo": "staging branch (with Arm patches)"
         },
         {
             "SPDXID": "SPDXRef-package-53317521-4f29-449d-b3c8-ae0d339cacd4",
@@ -198,7 +198,7 @@
             "name": "SPIRV-Tools",
             "supplier": "Organization: Khronos Group",
             "copyrightText": "Copyright (c) The Khronos Group Inc.",
-            "versionInfo": "staging-2025-09-09 (with Arm patches)"
+            "versionInfo": "staging branch (with Arm patches)"
         },
         {
             "SPDXID": "SPDXRef-package-ebe0c66e-2c6c-46fb-b7a2-0b65fb2c4ca8",
@@ -226,7 +226,7 @@
             "name": "Vulkan-Headers",
             "copyrightText": "Copyright (c) The Khronos Group Inc.",
             "supplier": "Organization: Khronos Group",
-            "versionInfo": "1.4.321.0"
+            "versionInfo": "vulkan-sdk-1.4.328.1"
         },
         {
             "SPDXID": "SPDXRef-package-c0d3fb35-93b8-484f-ac99-32afbc49ba3a",
