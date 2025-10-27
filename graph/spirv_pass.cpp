@@ -118,8 +118,7 @@ void GraphPassBase::handleInputsAndOutputs(const Instruction &opGraphEntryPoint)
         case spv::Op::OpGraphInputARM:
         case spv::Op::OpGraphConstantARM: {
             const auto &inputTensor = getTensor(*instruction);
-            graphPipeline.makeCast(inputTensor, outputTensor,
-                                   extractDebugInfoFromSPV(instruction, &opGraphEntryPoint, "CAST"));
+            graphPipeline.makeCast(inputTensor, outputTensor, extractDebugInfoFromSPV(instruction, "CAST"));
             break;
         }
         case spv::Op::OpCompositeExtract: {
@@ -396,8 +395,7 @@ bool GraphPassBase::getBoolConstant(const Operand &operand) {
     return constant->AsBoolConstant()->value();
 }
 
-std::string GraphPassBase::extractDebugInfoFromSPV(const Instruction *opExtInst, const Instruction *,
-                                                   const std::string &defaultName) {
+std::string GraphPassBase::extractDebugInfoFromSPV(const Instruction *opExtInst, const std::string &defaultName) {
     if (!opExtInst) {
         return defaultName;
     }

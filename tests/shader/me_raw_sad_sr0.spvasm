@@ -1,0 +1,54 @@
+;
+; SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+; SPDX-License-Identifier: Apache-2.0
+;
+                     OpCapability VulkanMemoryModel
+                     OpCapability Shader
+                     OpCapability Int8
+                     OpCapability Int16
+                     OpCapability GraphARM
+                     OpCapability TensorsARM
+                     OpExtension "SPV_ARM_graph"
+                     OpExtension "SPV_ARM_tensors"
+            %armme = OpExtInstImport "Arm.MotionEngine.100"
+                     OpMemoryModel Logical Vulkan
+                     OpDecorate %output0_tensor_ptr DescriptorSet 0
+                     OpDecorate %output0_tensor_ptr Binding 0
+                     OpDecorate %input0_tensor_ptr DescriptorSet 0
+                     OpDecorate %input0_tensor_ptr Binding 1
+                     OpDecorate %input1_tensor_ptr DescriptorSet 0
+                     OpDecorate %input1_tensor_ptr Binding 2
+             %uint = OpTypeInt 32 0
+           %uint_0 = OpConstant %uint 0
+           %uint_1 = OpConstant %uint 1
+           %uint_2 = OpConstant %uint 2
+           %uint_3 = OpConstant %uint 3
+           %uint_4 = OpConstant %uint 4
+           %uint_7 = OpConstant %uint 7
+           %uint_10 = OpConstant %uint 10
+               %i8 = OpTypeInt 8 0
+              %i16 = OpTypeInt 16 0
+        %uint_arr1 = OpTypeArray %uint %uint_1
+          %shape_2 = OpConstantComposite %uint_arr1 %uint_2
+%tensor_rank1_shape2 = OpTypeTensorARM %uint %uint_1 %shape_2
+          %padding = OpConstantComposite %tensor_rank1_shape2 %uint_1 %uint_1
+    %input_strides = OpConstantComposite %tensor_rank1_shape2 %uint_1 %uint_1
+   %window_strides = OpConstantComposite %tensor_rank1_shape2 %uint_1 %uint_1
+   %window_offsets = OpConstantComposite %tensor_rank1_shape2 %uint_0 %uint_0
+     %kernel_sizes = OpConstantComposite %tensor_rank1_shape2 %uint_3 %uint_3
+%search_window_sizes = OpConstantComposite %tensor_rank1_shape2 %uint_2 %uint_2
+      %tensor_4_i8 = OpTypeTensorARM %i8 %uint_4
+     %tensor_4_i16 = OpTypeTensorARM %i16 %uint_4
+%ptr_UniformConstant_tensor_4_i8 = OpTypePointer UniformConstant %tensor_4_i8
+%ptr_UniformConstant_tensor_4_i16 = OpTypePointer UniformConstant %tensor_4_i16
+%graph_2I_T4I8_T4I8_T4I16 = OpTypeGraphARM 2 %tensor_4_i8 %tensor_4_i8 %tensor_4_i16
+%input0_tensor_ptr = OpVariable %ptr_UniformConstant_tensor_4_i8 UniformConstant
+%input1_tensor_ptr = OpVariable %ptr_UniformConstant_tensor_4_i8 UniformConstant
+%output0_tensor_ptr = OpVariable %ptr_UniformConstant_tensor_4_i16 UniformConstant
+                     OpGraphEntryPointARM %graph "metest" %input0_tensor_ptr %input1_tensor_ptr %output0_tensor_ptr
+            %graph = OpGraphARM %graph_2I_T4I8_T4I8_T4I16
+              %in0 = OpGraphInputARM %tensor_4_i8 %uint_0
+              %in1 = OpGraphInputARM %tensor_4_i8 %uint_1
+           %result = OpExtInst %tensor_4_i16 %armme RAW_SAD %kernel_sizes %search_window_sizes %input_strides %window_strides %window_offsets %padding %in0 %in1
+                     OpGraphSetOutputARM %result %uint_0
+                     OpGraphEndARM

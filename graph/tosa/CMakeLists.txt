@@ -332,5 +332,24 @@ mlel_spv_reduce(
 mlel_spv_reduce(product "1" "result * value" "float16_t;float")
 mlel_spv_reduce(sum "0" "result + value" "int;float16_t;float")
 
+# Block Match
+macro(mlel_spv_block_match OPERATION SEARCH_TYPE)
+    set(INPUT "${CMAKE_CURRENT_BINARY_DIR}/${OPERATION}.comp")
+    set(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${OPERATION}_${SEARCH_TYPE}.spv")
+
+    mlel_generate_glsl(
+        INPUT ${INPUT}
+        OUTPUT ${OUTPUT}
+        REPLACE "warpX=8"
+        REPLACE "warpY=8"
+        REPLACE "search_type=${SEARCH_TYPE}")
+
+    list(APPEND SPV_FILES ${OUTPUT})
+endmacro()
+
+mlel_spv_block_match(block_match "0")
+mlel_spv_block_match(block_match "1")
+mlel_spv_block_match(block_match "2")
+
 # Generate header file with SPIR-V modules
 mlel_generate_spv_inc()

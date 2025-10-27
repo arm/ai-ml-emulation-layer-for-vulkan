@@ -62,8 +62,7 @@ class GraphPassBase : public Pass {
     std::shared_ptr<mlsdk::el::compute::TensorDescriptor> makeCompositeTensor(const uint32_t id) const;
     VkFormat getVkFormat(const analysis::Type *type) const;
     bool getBoolConstant(const Operand &operand);
-    std::string extractDebugInfoFromSPV(const Instruction *opExtInst, const Instruction *Graph,
-                                        const std::string &defaultname);
+    std::string extractDebugInfoFromSPV(const Instruction *opExtInst, const std::string &defaultname);
     template <typename T = uint32_t> std::vector<T> getConstVector(const Operand &operand) const {
         return getConstVector<T>(operand.AsId());
     }

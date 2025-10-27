@@ -2165,6 +2165,91 @@ SpirvBinary TransposeConv2D::createSpirv(const std::shared_ptr<PipelineCache> &_
 }
 
 /*******************************************************************************
+ * BlockMatch
+ *******************************************************************************/
+
+BlockMatch::BlockMatch(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader,
+                       VkDevice _device, const std::shared_ptr<PipelineCache> &_pipelineCache,
+                       const std::shared_ptr<TensorDescriptor> &inTemplate,
+                       const std::shared_ptr<TensorDescriptor> &inSearch,
+                       const std::optional<std::shared_ptr<TensorDescriptor>> &outVectors,
+                       const std::optional<std::shared_ptr<TensorDescriptor>> &outCosts,
+                       const std::vector<uint32_t> &kernelSizes, const std::vector<uint32_t> &searchWindowSizes,
+                       const std::vector<uint32_t> &inputStrides, const std::vector<uint32_t> &windowStrides,
+                       const std::vector<uint32_t> &windowOffsets, const std::vector<uint32_t> &padding,
+                       const uint32_t searchPattern, const SearchType searchType, const std::string &debugName)
+    : ComputePipeline(_loader, _device, createDescriptorMap(inTemplate, inSearch, outVectors, outCosts, searchType), {},
+                      _pipelineCache, createSpirv(_pipelineCache, searchType), debugName,
+                      createSpecConstants(kernelSizes, searchWindowSizes, inputStrides, windowStrides, windowOffsets,
+                                          padding, searchPattern)) {}
+
+DescriptorMap BlockMatch::createDescriptorMap(const std::shared_ptr<TensorDescriptor> &inTemplate,
+                                              const std::shared_ptr<TensorDescriptor> &inSearch,
+                                              const std::optional<std::shared_ptr<TensorDescriptor>> &outVectors,
+                                              const std::optional<std::shared_ptr<TensorDescriptor>> &outCosts,
+                                              const SearchType searchType) const {
+
+    DescriptorMap descriptorMap = {
+        {Input, inTemplate}, // set 0
+        {Input, inSearch},   // set 1
+    };
+
+    switch (searchType) {
+    case SearchType::MIN_SAD: {
+        assert(outVectors);
+        descriptorMap.emplace_back(Output, outVectors.value()); // set 2
+        break;
+    }
+    case SearchType::RAW_SAD: {
+        assert(outCosts);
+        descriptorMap.emplace_back(Output, outCosts.value()); // set 2
+        break;
+    }
+    case SearchType::MIN_SAD_COST: {
+        assert(outVectors && outCosts);
+        descriptorMap.emplace_back(Output, outVectors.value()); // set 2
+        descriptorMap.emplace_back(Output, outCosts.value());   // set 3
+        break;
+    }
+    }
+
+    return descriptorMap;
+}
+
+SpirvBinary BlockMatch::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
+                                    const SearchType searchType) const {
+    return _pipelineCache->lookup(shaderName, {std::to_string(searchType)},
+                                  {
+                                      {"%search_type%", std::to_string(searchType)},
+                                      {"%warpX%", std::to_string(warpX)},
+                                      {"%warpY%", std::to_string(warpY)},
+                                  });
+}
+
+SpecConstants BlockMatch::createSpecConstants(const std::vector<uint32_t> &kernelSizes,
+                                              const std::vector<uint32_t> &searchWindowSizes,
+                                              const std::vector<uint32_t> &inputStrides,
+                                              const std::vector<uint32_t> &windowStrides,
+                                              const std::vector<uint32_t> &windowOffsets,
+                                              const std::vector<uint32_t> &padding,
+                                              const uint32_t searchPattern) const {
+    SpecConstants specConstants = {
+        kernelSizes[0],  kernelSizes[1],   searchWindowSizes[0], searchWindowSizes[1], inputStrides[0],
+        inputStrides[1], windowStrides[0], windowStrides[1],     windowOffsets[0],     windowOffsets[1],
+        padding[0],      padding[1],       searchPattern,
+    };
+
+    return specConstants;
+}
+
+void BlockMatch::cmdDispatch(VkCommandBuffer commandBuffer) {
+    const auto &tensor = pipelineLayout->getTensor(0);
+    const auto &dimensions = tensor->getDimensions();
+    loader->vkCmdDispatch(commandBuffer, divideRoundUp(static_cast<uint32_t>(dimensions[3]), warpX),
+                          divideRoundUp(static_cast<uint32_t>(dimensions[2]), warpY), 1);
+}
+
+/*******************************************************************************
  * GraphPipeline
  *******************************************************************************/
 
@@ -2843,4 +2928,48 @@ void GraphPipeline::makeTransposeConv2D(const std::shared_ptr<TensorDescriptor> 
                                                       pad, stride, inputZeroPoint, weightZeroPoint, accType, debugName);
     pipelines.emplace_back(pipeline);
 }
+
+void GraphPipeline::makeMinSadCost(
+    const std::shared_ptr<TensorDescriptor> &inTemplate, const std::shared_ptr<TensorDescriptor> &inSearch,
+    const std::shared_ptr<TensorDescriptor> &outVectors, const std::shared_ptr<TensorDescriptor> &outCosts,
+    const std::vector<uint32_t> &kernelSizes, const std::vector<uint32_t> &searchWindowSizes,
+    const std::vector<uint32_t> &inputStrides, const std::vector<uint32_t> &windowStrides,
+    const std::vector<uint32_t> &windowOffsets, const std::vector<uint32_t> &padding, const uint32_t searchPattern,
+    const std::string &debugName) {
+    auto pipeline =
+        std::make_shared<BlockMatch>(loader, device, pipelineCache, inTemplate, inSearch, outVectors, outCosts,
+                                     kernelSizes, searchWindowSizes, inputStrides, windowStrides, windowOffsets,
+                                     padding, searchPattern, BlockMatch::SearchType::MIN_SAD_COST, debugName);
+
+    pipelines.emplace_back(pipeline);
+}
+
+void GraphPipeline::makeMinSad(const std::shared_ptr<TensorDescriptor> &inTemplate,
+                               const std::shared_ptr<TensorDescriptor> &inSearch,
+                               const std::shared_ptr<TensorDescriptor> &outVectors,
+                               const std::vector<uint32_t> &kernelSizes, const std::vector<uint32_t> &searchWindowSizes,
+                               const std::vector<uint32_t> &inputStrides, const std::vector<uint32_t> &windowStrides,
+                               const std::vector<uint32_t> &windowOffsets, const std::vector<uint32_t> &padding,
+                               const uint32_t searchPattern, const std::string &debugName) {
+    auto pipeline = std::make_shared<BlockMatch>(
+        loader, device, pipelineCache, inTemplate, inSearch, outVectors, std::nullopt, kernelSizes, searchWindowSizes,
+        inputStrides, windowStrides, windowOffsets, padding, searchPattern, BlockMatch::SearchType::MIN_SAD, debugName);
+
+    pipelines.emplace_back(pipeline);
+}
+
+void GraphPipeline::makeRawSad(const std::shared_ptr<TensorDescriptor> &inTemplate,
+                               const std::shared_ptr<TensorDescriptor> &inSearch,
+                               const std::shared_ptr<TensorDescriptor> &outCosts,
+                               const std::vector<uint32_t> &kernelSizes, const std::vector<uint32_t> &searchWindowSizes,
+                               const std::vector<uint32_t> &inputStrides, const std::vector<uint32_t> &windowStrides,
+                               const std::vector<uint32_t> &windowOffsets, const std::vector<uint32_t> &padding,
+                               const std::string &debugName) {
+    auto pipeline = std::make_shared<BlockMatch>(loader, device, pipelineCache, inTemplate, inSearch, std::nullopt,
+                                                 outCosts, kernelSizes, searchWindowSizes, inputStrides, windowStrides,
+                                                 windowOffsets, padding, 0, BlockMatch::SearchType::RAW_SAD, debugName);
+
+    pipelines.emplace_back(pipeline);
+}
+
 } // namespace mlsdk::el::compute
