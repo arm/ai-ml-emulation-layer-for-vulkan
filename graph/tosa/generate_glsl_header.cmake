@@ -20,17 +20,26 @@ set(SHADER_MAP "const std::map<std::string_view, std::string_view> glslMap {\n")
 foreach(SHADER_FILE ${ARGS_SRCS})
     get_filename_component(SHADER_NAME ${SHADER_FILE} NAME_WE)
 
-    # Append common header and shader
-    file(APPEND "${ARGS_OUTPUT_FILE}" "constexpr std::string_view ${SHADER_NAME}GLSL =\n")
-
     # Read shader file
     file(READ "${SHADER_FILE}" SHADER_GLSL)
 
-    # Most compilers have a maximum string length that could cause compilation errors
-    # unless the lines are split into shorter segments
+    # Get string length
+    string(LENGTH "${SHADER_GLSL}" LENGTH)
+
+    # Handle empty files
+    if(LENGTH EQUAL 0)
+        message(FATAL_ERROR "Shader file is empty: ${SHADER_FILE}")
+    endif()
+
+    # Debug output for troubleshooting
+    message(STATUS "Processing ${SHADER_FILE}: length=${LENGTH}")
+
+    # Append shader variable declaration
+    file(APPEND "${ARGS_OUTPUT_FILE}" "constexpr std::string_view ${SHADER_NAME}GLSL =\n")
+
+    # Split into chunks to avoid compiler string length limits
     set(OFFSET 0)
     set(CHUNK_SIZE 16000)
-    string(LENGTH "${SHADER_GLSL}" LENGTH)
 
     while(OFFSET LESS LENGTH)
         string(SUBSTRING "${SHADER_GLSL}" ${OFFSET} ${CHUNK_SIZE} CHUNK)
@@ -44,11 +53,11 @@ foreach(SHADER_FILE ${ARGS_SRCS})
 
     file(APPEND "${ARGS_OUTPUT_FILE}" ";\n")
 
-    string(APPEND SHADER_MAP "{ \"${SHADER_NAME}\", ${SHADER_NAME}GLSL },\n")
+    string(APPEND SHADER_MAP "    { \"${SHADER_NAME}\", ${SHADER_NAME}GLSL },\n")
 endforeach()
 
 string(APPEND SHADER_MAP "};\n")
 file(APPEND "${ARGS_OUTPUT_FILE}" "${SHADER_MAP}")
 
 # Write header file footer
-file(APPEND "${ARGS_OUTPUT_FILE}" "\n}")
+file(APPEND "${ARGS_OUTPUT_FILE}" "\n}\n")
