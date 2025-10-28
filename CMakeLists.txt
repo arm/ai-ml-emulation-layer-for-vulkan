@@ -40,7 +40,7 @@ else()
     set(CPACK_PACKAGE_NAME "ai_ml_emulation_layer_for_vulkan")
 endif()
 
-option(VMEL_TESTS_ENABLE "Enable tests" ON)
+option(VMEL_TESTS_ENABLE "Enable tests" OFF)
 option(VMEL_DISABLE_PRECOMPILE_SHADERS "Disable precompilation of SPIR-V shaders" OFF)
 option(VMEL_BUILD_DOCS "Build documentation" OFF)
 
@@ -48,7 +48,6 @@ option(VMEL_BUILD_DOCS "Build documentation" OFF)
 # Vulkan and SPIR-V dependencies
 ###############################################################################
 
-include(gtest)
 include(vulkan-headers)
 include(spirv-headers)
 include(spirv-cross)
@@ -72,7 +71,9 @@ add_subdirectory(utilities)
 # Tests
 ###############################################################################
 
-if(VMEL_TESTS_ENABLE AND TARGET GTest::gtest_main)
+if(VMEL_TESTS_ENABLE)
+    include(gtest)
+
     add_subdirectory(tests)
 endif()
 
