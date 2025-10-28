@@ -1918,39 +1918,36 @@ TEST_F(MLEmulationLayerForVulkan, GetQueueFamilyDataGraphPropertiesARM) {
     ASSERT_FALSE(result.empty());
 }
 
-#if !(_WIN32)
-// FIXME: Temporarily disabled on Windows due to segfault
-TEST_F(MLEmulationLayerForVulkan, GetExternalTensorProperties) {
-    vk::raii::Context ctx{};
-    auto instance = createInstance(ctx, {"VK_LAYER_ML_Tensor_Emulation"});
-    auto [device, physicalDevice] =
-        createDevice(instance, {"VK_LAYER_ML_Tensor_Emulation"}, {VK_ARM_TENSORS_EXTENSION_NAME});
+TEST_F(MLEmulationLayerForVulkan, GetExternalTensorPropertiesARM) {
+    const auto device = createDevice();
+    const auto &physicalDevice = device->getPhysicalDevice();
+    const auto &vkPhysicalDevice = &(*physicalDevice);
 
     const VkExternalMemoryHandleTypeFlagBits handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
 
-    std::vector<int64_t> dimensions = {1, 32, 4};
-    VkTensorDescriptionARM tensorDesc = {VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM,
-                                         nullptr,
-                                         VK_TENSOR_TILING_LINEAR_ARM,
-                                         VK_FORMAT_R8_UINT,
-                                         1,
-                                         dimensions.data(),
-                                         nullptr,
-                                         VK_TENSOR_USAGE_SHADER_BIT_ARM};
-    VkPhysicalDeviceExternalTensorInfoARM externalTensorInfoARM = {
+    const std::vector<int64_t> dimensions = {1, 32, 4};
+    const VkTensorDescriptionARM tensorDesc = {VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM,
+                                               nullptr,
+                                               VK_TENSOR_TILING_LINEAR_ARM,
+                                               VK_FORMAT_R8_UINT,
+                                               1,
+                                               dimensions.data(),
+                                               nullptr,
+                                               VK_TENSOR_USAGE_SHADER_BIT_ARM};
+    const VkPhysicalDeviceExternalTensorInfoARM externalTensorInfoARM = {
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_TENSOR_INFO_ARM, nullptr, {}, &tensorDesc, handleType};
-    auto properties = physicalDevice.getExternalTensorPropertiesARM(externalTensorInfoARM);
+    const auto properties = vkPhysicalDevice.getExternalTensorPropertiesARM(externalTensorInfoARM);
 
-    VkPhysicalDeviceExternalBufferInfo externalBufferInfo = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_BUFFER_INFO,
-                                                             nullptr,
-                                                             {},
-                                                             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                             VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
-    auto bufferProperties = physicalDevice.getExternalBufferProperties(externalBufferInfo);
+    const VkPhysicalDeviceExternalBufferInfo externalBufferInfo = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_BUFFER_INFO,
+        nullptr,
+        {},
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
+    const auto bufferProperties = vkPhysicalDevice.getExternalBufferProperties(externalBufferInfo);
 
     ASSERT_EQ(properties.externalMemoryProperties, bufferProperties.externalMemoryProperties);
 }
-#endif
 
 TEST_F(MLEmulationLayerForVulkan, BlockMatch_MIN_SAD_COST) {
     auto device = createDevice();

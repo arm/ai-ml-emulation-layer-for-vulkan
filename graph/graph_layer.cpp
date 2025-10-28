@@ -232,6 +232,7 @@ class GraphLayer : public VulkanLayerImpl {
         static const vTable vtable = {
             // Instance functions
             {"vkGetInstanceProcAddr", PFN_vkVoidFunction(vkGetInstanceProcAddr)},
+            {"vk_layerGetPhysicalDeviceProcAddr", PFN_vkVoidFunction(vk_layerGetPhysicalDeviceProcAddr)},
 
             // PhysicalDevice functions
             {"vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM",
