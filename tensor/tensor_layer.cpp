@@ -203,6 +203,7 @@ class TensorLayer : public VulkanLayerImpl {
     static PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char *name) {
         static const vTable vtable = {
             {"vkGetInstanceProcAddr", PFN_vkVoidFunction(vkGetInstanceProcAddr)},
+            {"vk_layerGetPhysicalDeviceProcAddr", PFN_vkVoidFunction(vk_layerGetPhysicalDeviceProcAddr)},
             // PhysicalDevice functions
             {"vkGetPhysicalDeviceProperties2", PFN_vkVoidFunction(vkGetPhysicalDeviceProperties2)},
             {"vkGetPhysicalDeviceFormatProperties2", PFN_vkVoidFunction(vkGetPhysicalDeviceFormatProperties2)},
