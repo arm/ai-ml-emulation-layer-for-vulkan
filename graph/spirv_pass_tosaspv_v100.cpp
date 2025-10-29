@@ -11,11 +11,7 @@
 #include "spirv_pass_tosaspv_v100.hpp"
 #include "graph_log.hpp"
 
-#if __has_include("spirv/unified1/ArmMotionEngine.100.h")
-#    include <spirv/unified1/ArmMotionEngine.100.h>
-#else
-#    include <spirv/unified1/ArmMotionEngine.h>
-#endif
+#include <spirv/unified1/ArmMotionEngine.100.h>
 #include <spirv/unified1/TOSA.001000.1.h>
 
 using namespace mlsdk::el::log;
