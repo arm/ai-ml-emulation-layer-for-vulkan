@@ -1194,6 +1194,13 @@ VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(uint32_t *pPropertyCount,
     return GraphLayer::vkEnumerateInstanceLayerProperties(pPropertyCount, pProperties);
 }
 
+#ifdef __ANDROID__
+VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(const char *pLayerName, uint32_t *pPropertyCount,
+                                                           VkExtensionProperties *pProperties) {
+    return GraphLayer::vkEnumerateInstanceExtensionProperties(pLayerName, pPropertyCount, pProperties);
+}
+#endif
+
 VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(VkPhysicalDevice physicalDevice, uint32_t *pPropertyCount,
                                                      VkLayerProperties *pProperties) {
     return GraphLayer::vkEnumerateDeviceLayerProperties(physicalDevice, pPropertyCount, pProperties);
