@@ -1174,9 +1174,9 @@ vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *pNegotiateLaye
     }
 
     if (pNegotiateLayerInterface->loaderLayerInterfaceVersion >= 2) {
-        pNegotiateLayerInterface->pfnGetInstanceProcAddr = vkGetInstanceProcAddr;
-        pNegotiateLayerInterface->pfnGetDeviceProcAddr = vkGetDeviceProcAddr;
-        pNegotiateLayerInterface->pfnGetPhysicalDeviceProcAddr = vk_layerGetPhysicalDeviceProcAddr;
+        pNegotiateLayerInterface->pfnGetInstanceProcAddr = GraphLayer::vkGetInstanceProcAddr;
+        pNegotiateLayerInterface->pfnGetDeviceProcAddr = GraphLayer::vkGetDeviceProcAddr;
+        pNegotiateLayerInterface->pfnGetPhysicalDeviceProcAddr = GraphLayer::vk_layerGetPhysicalDeviceProcAddr;
     }
 
     return VK_SUCCESS;
