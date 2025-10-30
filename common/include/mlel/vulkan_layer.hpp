@@ -486,6 +486,20 @@ class VulkanLayer {
     /**************************************************************************
      * Introspection functions
      **************************************************************************/
+#ifdef __ANDROID__
+    // Android requires this function to be present on layer loading
+    static VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(const char *pLayerName, uint32_t *pPropertyCount,
+                                                                      VkExtensionProperties *) {
+        if (pLayerName == nullptr || std::string(pLayerName) != layerProperties.layerName) {
+            return VK_ERROR_LAYER_NOT_PRESENT;
+        }
+        if (pPropertyCount) {
+            *pPropertyCount = 0;
+        }
+        return VK_SUCCESS;
+    }
+#endif
+
     static VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(uint32_t *pPropertyCount,
                                                                   VkLayerProperties *pProperties) {
         if (pProperties == nullptr) {
