@@ -243,6 +243,7 @@ class GraphLayer : public VulkanLayerImpl {
             {"vkGetPhysicalDeviceQueueFamilyProperties2",
              PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyProperties2)},
             {"vkGetPhysicalDeviceFeatures2", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2)},
+            {"vkGetPhysicalDeviceFeatures2KHR", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2KHR)},
             {"vkCreateDevice", PFN_vkVoidFunction(vkCreateDevice)},
 
             // Device functions
@@ -316,6 +317,7 @@ class GraphLayer : public VulkanLayerImpl {
             {"vkGetPhysicalDeviceQueueFamilyProperties2",
              PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyProperties2)},
             {"vkGetPhysicalDeviceFeatures2", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2)},
+            {"vkGetPhysicalDeviceFeatures2KHR", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2KHR)},
             {"vkCreateDevice", PFN_vkVoidFunction(vkCreateDevice)}};
 
         if (auto it = vtable.find(name); it != vtable.end()) {
@@ -515,6 +517,11 @@ class GraphLayer : public VulkanLayerImpl {
         }
 
         return VK_SUCCESS;
+    }
+
+    static void VKAPI_CALL vkGetPhysicalDeviceFeatures2KHR(VkPhysicalDevice physicalDevice,
+                                                           VkPhysicalDeviceFeatures2 *pFeatures) {
+        vkGetPhysicalDeviceFeatures2(physicalDevice, pFeatures);
     }
 
     static void VKAPI_CALL vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
