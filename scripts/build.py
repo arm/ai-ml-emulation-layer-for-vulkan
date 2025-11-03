@@ -310,6 +310,7 @@ class Builder:
                     "pip_package/emulation_layer/deploy/",
                     dirs_exist_ok=True,
                 )
+                shutil.copyfile("README.md", "pip_package/README.md")
 
                 os.environ[
                     "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_AI_ML_EMULATION_LAYER_FOR_VULKAN"
