@@ -352,16 +352,8 @@ sudo reboot
 
 ## License
 
-The ML Emulation Layer for Vulkan® is provided under an Apache-2.0 license.
-Please see [Apache-2.0.txt](LICENSES/Apache-2.0.txt) for more information.
-
-## Contributions
-
-Please see [Contributing](CONTRIBUTING.md).
-
-## Security
-
-Please see [Security](SECURITY.md).
+The ML Emulation Layer for Vulkan® is distributed under the software licenses in
+LICENSES directory.
 
 ## Trademark notice
 
