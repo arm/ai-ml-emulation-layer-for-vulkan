@@ -8,6 +8,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai_ml_emulation_layer_for_vulkan"
+description = "ML Emulation Layer for Vulkan"
+readme = "README.md"
 dynamic = ["version"]
 
 [project.scripts]
