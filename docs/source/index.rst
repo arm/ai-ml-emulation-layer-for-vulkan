@@ -4,7 +4,7 @@ ML Emulation Layer for Vulkan®
 .. include:: ../generated/README.md
     :parser: myst_parser.sphinx_
     :start-after: # ML Emulation Layer for Vulkan®
-    :end-before: ### Cloning the repository
+    :end-before: ## Cloning the repository
 
 .. toctree::
    :maxdepth: 1
