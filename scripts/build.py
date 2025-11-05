@@ -155,6 +155,8 @@ class Builder:
             "-B",
             self.build_dir,
             f"-DCMAKE_BUILD_TYPE={self.build_type}",
+            "-G",
+            "Ninja",
         ]
 
         if self.prefix_path:
@@ -217,10 +219,9 @@ class Builder:
             self.build_dir,
             "-j",
             str(self.threads),
+            "--config",
+            self.build_type,
         ]
-
-        if self.build_type:
-            cmake_build_cmd.extend(["--config", self.build_type])
 
         try:
             subprocess.run(cmake_setup_cmd, check=True)
@@ -276,9 +277,9 @@ class Builder:
                     self.build_dir,
                     "--prefix",
                     self.install,
+                    "--config",
+                    self.build_type,
                 ]
-                if self.build_type:
-                    cmake_install_cmd += ["--config", self.build_type]
                 subprocess.run(cmake_install_cmd, check=True)
 
             if self.run_tests:
