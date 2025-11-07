@@ -1203,6 +1203,54 @@ TEST_F(MLEmulationLayerForVulkan, FFT2D) {
     outputTensor1->print();
 }
 
+TEST_F(MLEmulationLayerForVulkan, SIN) {
+    auto device = createDevice();
+
+    auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{1}});
+    auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{1}});
+    const GraphPipeline::DescriptorMap descriptorMap = {
+        {
+            // set 0
+            {
+                0,             // binding
+                {inputTensor}, // tensor
+            },
+            {
+                1,              // binding
+                {outputTensor}, // tensor
+            },
+        },
+    };
+
+    float32 value = 0.000111731846f;
+    *(reinterpret_cast<float32 *>(inputTensor->data())) = value;
+
+    const auto spirv = assembleSpirv(fileToString("sin.spvasm"));
+    auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, GraphConstants{}, spirv);
+
+    graphPipeline->dispatchSubmit();
+
+    std::cout << "INPUT" << std::endl;
+    std::cout << std::setprecision(9) << *(reinterpret_cast<float32 *>(inputTensor->data()));
+    inputTensor->print();
+    std::cout << std::endl;
+
+    std::cout << "OUTPUT" << std::endl;
+    std::cout << std::setprecision(9) << *(reinterpret_cast<float32 *>(outputTensor->data()));
+    outputTensor->print();
+    std::cout << std::endl;
+
+    float64 reference = 0.00011173184588586903;
+    float64 error_bound = 7.715463482888105e-08;
+    float64 ref_min = reference - error_bound;
+    float64 ref_max = reference + error_bound;
+
+    float64 output = *(reinterpret_cast<float32 *>(outputTensor->data()));
+
+    ASSERT_GE(output, ref_min);
+    ASSERT_LE(output, ref_max);
+}
+
 #ifndef EXPERIMENTAL_MOLTEN_VK_SUPPORT
 vk::raii::ShaderModule createShaderModule(const vk::raii::Device &device, const std::vector<uint32_t> &code) {
     const vk::ShaderModuleCreateInfo info{

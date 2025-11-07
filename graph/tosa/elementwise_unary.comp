@@ -146,6 +146,39 @@ float log_guarded(float x) {
     return x < 0.0 ? NAN : log(x);
 }
 
+// Use a small-angle poly only for |x| <= 1e-3
+#ifndef SIN_SMALL_THRESHOLD
+#define SIN_SMALL_THRESHOLD 1.0e-3
+#endif
+
+// High-accuracy small-angle sine for float32
+float sin_small_precise(float x) {
+    const float c3  = -1.0 / 6.0;         // -1/3!
+    const float c5  =  1.0 / 120.0;       //  1/5!
+    const float c7  = -1.0 / 5040.0;      // -1/7!
+    const float c9  =  1.0 / 362880.0;    //  1/9!
+    const float c11 = -1.0 / 39916800.0;  // -1/11!
+
+    float x2 = x * x;
+    // Horner: x*(1 + x2*(c3 + x2*(c5 + x2*(c7 + x2*(c9 + x2*c11)))))
+
+    float p = ((c11 * x2 + c9) * x2 + c7);
+    p = (p * x2 + c5);
+    p = (p * x2 + c3);
+    p = p * x2 + 1.0;
+    return x * p;
+}
+
+float sin_hybrid(float x) {
+    float ax = abs(x);
+    if (ax < SIN_SMALL_THRESHOLD) {
+        return sin_small_precise(x);
+    } else {
+        return sin(x);  // builtin for the rest
+    }
+}
+
+
 void main() {
     uint[RANK] index;
     getIndex(outputData, index);

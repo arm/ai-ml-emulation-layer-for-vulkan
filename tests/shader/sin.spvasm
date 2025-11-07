@@ -1,0 +1,41 @@
+;
+; SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+; SPDX-License-Identifier: Apache-2.0
+;
+               OpCapability GraphARM
+               OpCapability TensorsARM
+               OpCapability Shader
+               OpCapability VulkanMemoryModel
+               OpCapability Int8
+               OpCapability Matrix
+               OpExtension "SPV_ARM_graph"
+               OpExtension "SPV_ARM_tensors"
+               OpExtension "SPV_KHR_vulkan_memory_model"
+         %18 = OpExtInstImport "TOSA.001000.1"
+               OpMemoryModel Logical Vulkan
+               OpName %graph_partition_0_arg_0 "graph_partition_0_arg_0"
+               OpName %graph_partition_0_res_0 "graph_partition_0_res_0"
+               OpDecorate %graph_partition_0_arg_0 Binding 0
+               OpDecorate %graph_partition_0_arg_0 DescriptorSet 0
+               OpDecorate %graph_partition_0_res_0 Binding 1
+               OpDecorate %graph_partition_0_res_0 DescriptorSet 0
+      %float = OpTypeFloat 32
+       %uint = OpTypeInt 32 0
+     %uint_3 = OpConstant %uint 3
+%_arr_uint_uint_3 = OpTypeArray %uint %uint_3
+    %uint_54 = OpConstant %uint 54
+    %uint_40 = OpConstant %uint 40
+    %uint_39 = OpConstant %uint 39
+          %7 = OpConstantComposite %_arr_uint_uint_3 %uint_54 %uint_40 %uint_39
+          %2 = OpTypeTensorARM %float %uint_3 %7
+%_ptr_UniformConstant_2 = OpTypePointer UniformConstant %2
+%graph_partition_0_arg_0 = OpVariable %_ptr_UniformConstant_2 UniformConstant
+%graph_partition_0_res_0 = OpVariable %_ptr_UniformConstant_2 UniformConstant
+         %14 = OpTypeGraphARM 1 %2 %2
+     %uint_0 = OpConstant %uint 0
+               OpGraphEntryPointARM %13 "graph_partition_0" %graph_partition_0_arg_0 %graph_partition_0_res_0
+         %13 = OpGraphARM %14
+         %15 = OpGraphInputARM %2 %uint_0
+         %17 = OpExtInst %2 %18 SIN %15
+               OpGraphSetOutputARM %17 %uint_0
+               OpGraphEndARM
