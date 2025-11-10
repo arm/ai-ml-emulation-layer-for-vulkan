@@ -11,16 +11,24 @@ file(GLOB SOURCES "*.comp")
 list(FILTER SOURCES EXCLUDE REGEX common.comp)
 
 # Merge common header with GLSL sources
+set(GLSL_SOURCES "")
+add_custom_target(mlel_generate_shader_comp)
 foreach(SOURCE ${SOURCES})
     get_filename_component(NAME ${SOURCE} NAME)
+    set(OUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/${NAME}")
 
     add_custom_command(
-        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${NAME}"
-        COMMAND ${CMAKE_COMMAND} -E cat "${CMAKE_CURRENT_SOURCE_DIR}/common.comp" "${SOURCE}" > "${CMAKE_CURRENT_BINARY_DIR}/${NAME}"
+        OUTPUT "${OUT_FILE}"
+        COMMAND ${CMAKE_COMMAND} -E cat "${CMAKE_CURRENT_SOURCE_DIR}/common.comp" "${SOURCE}" > "${OUT_FILE}"
         DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/common.comp" "${SOURCE}")
+    add_custom_target("mlel_generate_shader_${NAME}" DEPENDS "${OUT_FILE}")
+    add_dependencies(mlel_generate_shader_comp "mlel_generate_shader_${NAME}")
 
-    list(APPEND GLSL_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/${NAME}")
+    list(APPEND GLSL_SOURCES "${OUT_FILE}")
 endforeach()
+
+# Combine all outputs into a single target
+add_custom_target(mlel_generate_all_shaders ALL DEPENDS ${GLSL_SOURCES} mlel_generate_shader_comp)
 
 # Generate C++ header file
 add_custom_command(
@@ -30,7 +38,7 @@ add_custom_command(
         SRCS ${GLSL_SOURCES}
     DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/generate_glsl_header.cmake
-        ${GLSL_SOURCES})
+        mlel_generate_all_shaders)
 
 add_custom_target(mlel_generate_glsl_header DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shaders.hpp.inc)
 
@@ -54,6 +62,7 @@ macro(mlel_generate_spv_inc)
         DEPENDS
             ${CMAKE_CURRENT_SOURCE_DIR}/generate_spv_header.cmake
             ${SHORT_SPV_FILES}
+            mlel_generate_all_shaders
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
     add_custom_target(mlel_generate_spv_header DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shaders_spv.hpp.inc)
