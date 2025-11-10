@@ -1,0 +1,36 @@
+#
+# SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+#
+version = 1
+SPDX-PackageName = "ai-ml-emulation-layer-for-vulkan"
+
+[[annotations]]
+path = "*.md"
+SPDX-FileCopyrightText = "Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "CONTRIBUTORS.txt"
+SPDX-FileCopyrightText = "2025 Arm Limited and/or its affiliates <open-source-office@arm.com>"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "docs/source/*.rst"
+SPDX-FileCopyrightText = "Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "docs/source/puml/*.puml"
+SPDX-FileCopyrightText = "Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "graph/layer.d/VkLayer_Graph.json.in"
+SPDX-FileCopyrightText = "Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "tensor/layer.d/VkLayer_Tensor.json.in"
+SPDX-FileCopyrightText = "Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>"
+SPDX-License-Identifier = "Apache-2.0"
