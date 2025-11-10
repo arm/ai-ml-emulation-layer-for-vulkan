@@ -344,6 +344,16 @@ the bootloader):
    sudo reboot
    ```
 
+## PyPI
+
+The ML Emulation Layer for Vulkan® is available on PyPI as the [ai-ml-emulation-layer-for-vulkan](https://pypi.org/project/ai-ml-emulation-layer-for-vulkan) package.
+
+Install:
+
+```bash
+pip install ai-ml-emulation-layer-for-vulkan
+```
+
 ## Known Limitations
 
 - Resources created with `VK_IMAGE_TILING_OPTIMAL` and
