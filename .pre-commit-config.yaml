@@ -43,7 +43,7 @@ repos:
       - id: black
         stages: [pre-commit]
   - repo: https://github.com/fsfe/reuse-tool.git
-    rev: v3.0.2
+    rev: v5.1.1
     hooks:
       - id: reuse
         stages: [pre-commit]
