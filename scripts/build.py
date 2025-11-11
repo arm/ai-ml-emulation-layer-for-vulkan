@@ -60,6 +60,8 @@ class Builder:
         if not self.install and self.package_pip:
             self.install = "pip_install"
 
+        self.cross_compile = self.target_platform == "android"
+
     def setup_platform_build(self, cmake_cmd):
         system = platform.system()
         if self.target_platform == "host":
@@ -282,7 +284,7 @@ class Builder:
                 ]
                 subprocess.run(cmake_install_cmd, check=True)
 
-            if self.run_tests:
+            if self.run_tests and not self.cross_compile:
                 test_cmd = [
                     "ctest",
                     "--test-dir",
