@@ -58,8 +58,8 @@ std::vector<uint32_t> glslToSpirv(const std::string &glsl) {
     glslang_shader_t *shader = glslang_shader_create(&input);
     Finally f2([&shader]() { glslang_shader_delete(shader); });
 
-#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
-    glslang_shader_set_preamble(shader, "#define EXPERIMENTAL_MOLTEN_VK_SUPPORT\n");
+#if !defined(EXPERIMENTAL_MOLTEN_VK_SUPPORT) && !defined(ANDROID)
+    glslang_shader_set_preamble(shader, "#define USE_DOUBLE_AS_FLOAT\n");
 #endif
 
     if (!glslang_shader_preprocess(shader, &input)) {
