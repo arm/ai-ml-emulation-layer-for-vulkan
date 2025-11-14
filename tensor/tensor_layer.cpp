@@ -764,7 +764,10 @@ class TensorLayer : public VulkanLayerImpl {
 
     static VkResult vkAllocateMemory(VkDevice device, const VkMemoryAllocateInfo *pAllocateInfo,
                                      const VkAllocationCallbacks *pAllocator, VkDeviceMemory *pMemory) {
-        auto handle = VulkanLayerImpl::getHandle(device);
+        const auto originalAllocateChain = dumpVkStructureList(pAllocateInfo);
+        VkMemoryAllocateInfo newAllocateInfo{*pAllocateInfo};
+        findAndRemoveType<VkMemoryAllocateFlagsInfo>(&newAllocateInfo, VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO);
+
         auto newAllocateFlagInfo =
             getType<VkMemoryAllocateFlagsInfo>(pAllocateInfo->pNext, VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO,
                                                VkMemoryAllocateFlagsInfo{
@@ -776,13 +779,14 @@ class TensorLayer : public VulkanLayerImpl {
         newAllocateFlagInfo.flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
         if (getBufferDeviceAddressCaptureReplayFeat(device) == VK_TRUE)
             newAllocateFlagInfo.flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT;
-        const VkMemoryAllocateInfo newAllocateInfo{
-            pAllocateInfo->sType,
-            &newAllocateFlagInfo,
-            pAllocateInfo->allocationSize,
-            pAllocateInfo->memoryTypeIndex,
-        };
-        return handle->loader->vkAllocateMemory(device, &newAllocateInfo, pAllocator, pMemory);
+
+        appendType(&newAllocateInfo, &newAllocateFlagInfo);
+
+        auto handle = VulkanLayerImpl::getHandle(device);
+        const auto result = handle->loader->vkAllocateMemory(device, &newAllocateInfo, pAllocator, pMemory);
+
+        loadVkStructureList(const_cast<VkMemoryAllocateInfo *>(pAllocateInfo), originalAllocateChain);
+        return result;
     }
 
     static void vkFreeMemory(VkDevice device, VkDeviceMemory memory, const VkAllocationCallbacks *pAllocator) {

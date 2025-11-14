@@ -117,7 +117,7 @@ template <typename T, class U> static LinkedType<T> findAndRemoveType(U *ptr, co
     if (node.current == nullptr) {
         return {};
     }
-    node.parent->pNext = reinterpret_cast<VkBaseOutStructure *>(node.current->pNext);
+    node.parent->pNext = reinterpret_cast<VkBaseOutStructure *>(const_cast<void *>(node.current->pNext));
     return node;
 }
 

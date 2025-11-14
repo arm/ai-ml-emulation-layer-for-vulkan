@@ -2162,3 +2162,72 @@ TEST_F(MLEmulationLayerForVulkan, BlockMatch_RAW_SAD) {
         throw std::runtime_error("Output mismatch");
     }
 }
+
+TEST_F(MLEmulationLayerForVulkan, Application_Fixed_Address_Allocation) {
+    auto device = createDevice();
+    const auto &vkDevice = &(*device);
+    const auto &vkPhysicalDevice = &(*device->getPhysicalDevice());
+
+    const auto features =
+        vkPhysicalDevice.getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan12Features>();
+    if (!features.template get<vk::PhysicalDeviceVulkan12Features>().bufferDeviceAddressCaptureReplay) {
+        GTEST_SKIP() << "Device does not support BDA capture/replay";
+    }
+
+    const auto memSize = 0x4000;
+    auto memAddr = uint64_t{};
+    auto goodIndex = uint32_t{};
+
+    // First allocate freely so we can get a valid GPU address and index
+    auto flagsInfo = vk::MemoryAllocateFlagsInfo{vk::MemoryAllocateFlagBits::eDeviceAddress |
+                                                 vk::MemoryAllocateFlagBits::eDeviceAddressCaptureReplay};
+    auto addrInfo = vk::MemoryOpaqueCaptureAddressAllocateInfo{0x0, &flagsInfo};
+
+    const auto memoryTypeIndices =
+        device->getPhysicalDevice()->getMemoryTypeIndices(vk::MemoryPropertyFlagBits::eDeviceLocal, 0xffffffff);
+    for (auto index : memoryTypeIndices) {
+        try {
+            const auto memoryAllocateInfo = vk::MemoryAllocateInfo{memSize, index, &addrInfo};
+            const auto devMem = vk::raii::DeviceMemory{vkDevice, memoryAllocateInfo};
+
+            memAddr = vkDevice.getMemoryOpaqueCaptureAddress(vk::DeviceMemoryOpaqueCaptureAddressInfo{devMem});
+            goodIndex = index;
+            break;
+        } catch (const vk::OutOfDeviceMemoryError &) {
+            // Ignore exception and try next memory index
+        }
+    }
+
+    if (memAddr == 0x0) {
+        throw std::runtime_error("Failed to allocate any memory or failed to acquire initial memory address");
+    }
+
+    // Allocate at the fixed address
+    {
+        addrInfo.opaqueCaptureAddress = memAddr;
+        const auto memoryAllocateInfo = vk::MemoryAllocateInfo{memSize, goodIndex, &addrInfo};
+        const auto devMem = vk::raii::DeviceMemory{vkDevice, memoryAllocateInfo};
+
+        const auto newMemAddr =
+            vkDevice.getMemoryOpaqueCaptureAddress(vk::DeviceMemoryOpaqueCaptureAddressInfo{devMem});
+        if (newMemAddr != memAddr) {
+            throw std::runtime_error("Memory address does not match requested");
+        }
+    }
+
+    // Allocate again but with allocation pNext chain reversed
+    {
+        addrInfo = vk::MemoryOpaqueCaptureAddressAllocateInfo{memAddr};
+        flagsInfo = vk::MemoryAllocateFlagsInfo{vk::MemoryAllocateFlagBits::eDeviceAddress |
+                                                    vk::MemoryAllocateFlagBits::eDeviceAddressCaptureReplay,
+                                                0x0, &addrInfo};
+        const auto memoryAllocateInfo = vk::MemoryAllocateInfo{memSize, goodIndex, &flagsInfo};
+        const auto devMem = vk::raii::DeviceMemory{vkDevice, memoryAllocateInfo};
+
+        const auto newMemAddr =
+            vkDevice.getMemoryOpaqueCaptureAddress(vk::DeviceMemoryOpaqueCaptureAddressInfo{devMem});
+        if (newMemAddr != memAddr) {
+            throw std::runtime_error("Memory address does not match requested");
+        }
+    }
+}
