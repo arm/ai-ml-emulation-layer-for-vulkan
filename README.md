@@ -7,18 +7,18 @@ ML Emulation Layer is required.
 
 The ML Emulation Layer for Vulkan® provides an implementation of the ML APIs
 enabling ML workloads to be executed on any Vulkan® Compute capable device. The
-Emulation Layer is split into separate graph, VK_ARM_data_graph, and tensor,
+ML Emulation Layer for Vulkan® is split into separate graph, VK_ARM_data_graph, and tensor,
 VK_ARM_tensors, layers that are inserted by the Vulkan® Loader.
 
 ## Cloning the repository
 
-To clone the ML SDK Emulation Layer for Vulkan® as a stand-alone repository,
+To clone the ML Emulation Layer for Vulkan® as a stand-alone repository,
 you can use regular git clone commands. However, for better management of
 dependencies and to ensure everything is placed in the appropriate directories,
 we recommend using the `git-repo` tool to clone the repository as part of the ML
 SDK for Vulkan® suite. [Repo tool](https://gerrit.googlesource.com/git-repo).
 
-For a minimal build and to initialize only the ML SDK Emulation Layer for
+For a minimal build and to initialize only the ML Emulation Layer for
 Vulkan® and its dependencies, run:
 
 ```bash
@@ -26,7 +26,7 @@ repo init -u https://github.com/arm/ai-ml-sdk-manifest -g emulation-layer
 ```
 
 Alternatively, to initialize the repo structure for the entire ML SDK for
-Vulkan®, including the Emulation Layer, run:
+Vulkan®, including the ML Emulation Layer for Vulkan®, run:
 
 ```bash
 repo init -u https://github.com/arm/ai-ml-sdk-manifest -g all
@@ -68,10 +68,10 @@ python <path-to-git-repo>/git-repo/repo sync --no-clone-bundle
 
 After the sync command completes successfully, you can find the ML SDK Emulation
 Layer for Vulkan® in `<repo_root>/sw/emulation-layer/`. You can also find all
-the dependencies required by the ML SDK Emulation Layer for Vulkan® in
+the dependencies required by the ML Emulation Layer for Vulkan® in
 `<repo_root>/dependencies/`.
 
-## Building the Emulation Layer from source
+## Building the ML Emulation Layer for Vulkan® from source
 
 The build system must have:
 
@@ -143,7 +143,7 @@ are used:
 - You must enable the graph layer before the tensor layer. To do this, use the
   `VK_INSTANCE_LAYERS` environment variable.
 
-If you have installed the Emulation Layer into a deploy folder, use the
+If you have installed the ML Emulation Layer for Vulkan® into a deploy folder, use the
 following environment variables to enable the layers:
 
 ```shell
@@ -179,7 +179,7 @@ are used:
 - You must enable the graph layer before the tensor layer. To do this, use the
   `VK_INSTANCE_LAYERS` environment variable.
 
-If you have installed the Emulation Layer into a deploy folder, use the
+If you have installed the ML Emulation Layer for Vulkan® into a deploy folder, use the
 following environment variables to enable the layers:
 
 ```powershell
@@ -189,7 +189,7 @@ $env:VK_INSTANCE_LAYERS="VK_LAYER_ML_Graph_Emulation;VK_LAYER_ML_Tensor_Emulatio
 
 Alternatively, you can use the Windows® registry keys to load the manifest
 files. This can be done using the Windows® GUI. Or, if you have installed the
-emulation layer into a deploy folder, you set the path to the manifest files
+ML Emulation Layer for Vulkan® into a deploy folder, you set the path to the manifest files
 using:
 
 ```powershell
@@ -217,10 +217,10 @@ $env:VMEL_TENSOR_SEVERITY="info"
 
 ## Building for Android™ (Experimental)
 
-The Android™ NDK toolset is required to build the Emulation layer for an Android™
+The Android™ NDK toolset is required to build the ML Emulation Layer for Vulkan® for an Android™
 device. The Android™ device must have Vulkan® API 1.3 support.
 
-To build the Emulation Layer, run:
+To build the ML Emulation Layer for Vulkan®, run:
 
 ```shell
 $ cmake -B build
@@ -239,7 +239,7 @@ $ cmake --build build
 
 You can pack the graph and tensor layer libraries into the Application Package
 Kit (APK) or push to the `/data/local/debug/vulkan` directory for Android™ to
-discover the Emulation Layer. Applications can enable the layers during Vulkan
+discover the ML Emulation Layer for Vulkan®. Applications can enable the layers during Vulkan
 instance creation or you can enable the layers without modifying the application
 by using following commands:
 
@@ -248,6 +248,35 @@ $ adb shell settings put global enable_gpu_debug_layers 1
 $ adb shell settings put global gpu_debug_app ${package_name}
 $ adb shell settings put global gpu_debug_layers \
     VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation
+```
+
+## Building for Darwin (Experimental)
+
+MoltenVK is required to build and run the ML Emulation Layer for Vulkan® for a Darwin
+device. The MoltenVK version must have Vulkan® API 1.3 support.
+In this example we install into a deploy folder and build using the script.
+
+To build the ML Emulation Layer for Vulkan®, run:
+
+```shell
+$ python3 ${REPO}/sw/emulation-layer/scripts/build.py --install $SDK_PATH/deploy
+```
+
+Install MoltenVK by following the documentation:
+https://vulkan.lunarg.com/doc/sdk/1.4.321.0/mac/getting_started.html
+
+## Usage on Darwin (Experimental)
+
+We need to link to both the MoltenVK and the ML Emulation Layer for Vulkan® build output, when running on a Darwin device.
+On Darwin, `LD_LIBRARY_PATH` is instead `DYLD_LIBRARY_PATH`.
+
+```shell
+
+export PATH=${MOLTEN_VK_PATH}/macOS/bin:${PATH}
+export VK_ICD_FILENAMES=${MOLTEN_VK_PATH}/macOS/share/vulkan/icd.d/MoltenVK_icd.json
+export DYLD_LIBRARY_PATH=${MOLTEN_VK_PATH}/macOS/lib:${SDK_PATH}/deploy/lib
+export VK_ADD_LAYER_PATH=${REPO}/deploy/share/vulkan/explicit_layer.d
+export VK_INSTANCE_LAYERS=VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation
 ```
 
 ## Cross compilation for AArch64 on x86-64 (Experimental)
@@ -359,6 +388,11 @@ pip install ai-ml-emulation-layer-for-vulkan
 - Resources created with `VK_IMAGE_TILING_OPTIMAL` and
   `VK_TENSOR_TILING_OPTIMAL_ARM` flags cannot be used with memory aliasing.
 - Data graph pipeline creation without a shader module is not supported.
+
+MoltenVK currently does not have full Vulkan® coverage, some notable issues are:
+- Several Vulkan® extensions are not available in MoltenVK, e.g. [custom border color](https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_custom_border_color.html).
+- High-precision types in buffers/push constants is currently not supported, which forces lower precision to be used instead.
+- Passing Shader Storage Buffer Objects, SSBOs, to functions is currently not supported in MoltenVK.
 
 ## License
 
