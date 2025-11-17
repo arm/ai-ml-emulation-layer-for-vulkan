@@ -275,17 +275,4 @@ vk::raii::Device Device::createDevice(const std::vector<const char *> &layers,
     return device;
 }
 
-/*******************************************************************************
- * MakeDevice
- *******************************************************************************/
-
-std::shared_ptr<Device> makeDevice(const std::vector<const char *> &instanceLayers,
-                                   const std::vector<const char *> &deviceExtensions, const void *deviceFeatures) {
-    auto context = std::make_shared<vk::raii::Context>();
-    auto instance = std::make_shared<Instance>(context, instanceLayers);
-    auto physicalDevice = std::make_shared<PhysicalDevice>(instance, deviceExtensions);
-
-    return std::make_shared<Device>(physicalDevice, deviceExtensions, deviceFeatures);
-};
-
 } // namespace mlsdk::el::utilities

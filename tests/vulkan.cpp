@@ -311,7 +311,11 @@ std::shared_ptr<Device> createDevice() {
     vk::PhysicalDeviceFeatures2 features2 = {};
     features2.setFeatures(baseFeatures);
 
-    return makeDevice(layers, extensions, &features2);
+    auto context = std::make_shared<vk::raii::Context>();
+    auto instance = std::make_shared<Instance>(context, layers);
+    auto physicalDevice = std::make_shared<PhysicalDevice>(instance, extensions);
+
+    return std::make_shared<Device>(physicalDevice, extensions, &features2);
 }
 
 } // namespace

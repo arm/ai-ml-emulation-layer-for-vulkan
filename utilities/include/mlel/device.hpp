@@ -88,11 +88,4 @@ class Device {
     vk::raii::Device device;
 };
 
-/*******************************************************************************
- * MakeDevice
- *******************************************************************************/
-
-std::shared_ptr<Device> makeDevice(const std::vector<const char *> &instanceLayers,
-                                   const std::vector<const char *> &deviceExtensions, const void *deviceFeatures);
-
 } // namespace mlsdk::el::utilities
