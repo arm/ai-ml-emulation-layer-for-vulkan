@@ -11,7 +11,6 @@
 #include <gtest/gtest.h>
 
 #include "mlel/device.hpp"
-#include "mlel/exception.hpp"
 #include "mlel/float.hpp"
 #include "mlel/log.hpp"
 #include "mlel/pipeline.hpp"
@@ -232,7 +231,9 @@ vk::raii::TensorViewARM createTensorView(vk::raii::Device &device, const vk::rai
 std::string fileToString(const std::string &filename) {
     const std::filesystem::path path = std::filesystem::path(TOSTRING(SHADER_SOURCE_DIR)) / filename;
     std::ifstream ifs{path};
-    VK_ASSERT_EQ(!ifs, false, std::string("Failed to open ") + filename);
+    if (!ifs) {
+        throw std::runtime_error(std::string("Failed to open ") + filename);
+    }
 
     std::string str(std::istreambuf_iterator<char>{ifs}, {});
     return str;
@@ -269,8 +270,7 @@ std::vector<uint32_t> assembleSpirv(const std::string &text) {
     spvtools::SpirvTools tools{SPV_ENV_UNIVERSAL_1_6};
 
     if (!tools.IsValid()) {
-        VK_ASSERT(false, "Failed to instantiate SPIR-V tools");
-        return {};
+        throw std::runtime_error("Failed to instantiate SPIR-V tools");
     }
 
     tools.SetMessageConsumer(sprivMessageConsumer);
@@ -278,13 +278,11 @@ std::vector<uint32_t> assembleSpirv(const std::string &text) {
     std::vector<uint32_t> spirvModule;
 
     if (!tools.Assemble(text, &spirvModule)) {
-        VK_ASSERT(false, "Failed to assemble SPIR-V program");
-        return {};
+        throw std::runtime_error("Failed to assemble SPIR-V program");
     }
 
     if (!tools.Validate(spirvModule)) {
-        VK_ASSERT(false, "Failed to validate SPIR-V program");
-        return {};
+        throw std::runtime_error("Failed to validate SPIR-V program");
     }
 
     return spirvModule;

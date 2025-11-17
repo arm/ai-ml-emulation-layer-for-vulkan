@@ -10,7 +10,6 @@
 
 #include "mlel/pipeline.hpp"
 
-#include "mlel/exception.hpp"
 #include "mlel/utils.hpp"
 
 #include <numeric>

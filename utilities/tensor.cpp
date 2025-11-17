@@ -10,8 +10,6 @@
 
 #include "mlel/tensor.hpp"
 
-#include "mlel/exception.hpp"
-
 #include <iostream>
 #include <numeric>
 #include <vulkan/vulkan_format_traits.hpp>
@@ -101,7 +99,9 @@ vk::Format Tensor::getFormat() const { return shape.getFormat(); }
 const std::vector<int64_t> &Tensor::getDimensions() const { return shape.getDimensions(); }
 
 void Tensor::setData(const uint8_t *_pointer, const size_t _size) {
-    VK_ASSERT_GE(size(), _size, "Tensor data is larger than tensor size");
+    if (size() < _size) {
+        throw std::runtime_error("Tensor data is larger than tensor size");
+    }
 
     std::copy(_pointer, _pointer + _size, data());
     std::fill(data() + _size, data() + size(), 0);

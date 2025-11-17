@@ -9,7 +9,6 @@
  *******************************************************************************/
 
 #include "mlel/device.hpp"
-#include "mlel/exception.hpp"
 
 #include <algorithm>
 #include <map>
