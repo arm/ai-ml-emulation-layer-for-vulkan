@@ -354,23 +354,6 @@ class DescriptorSet {
     std::shared_ptr<DescriptorSetLayout> descriptorSetLayout;
 };
 
-/**************************************************************************
- * PipelineLayout
- **************************************************************************/
-
-class PipelineLayout {
-  public:
-    explicit PipelineLayout(const VkPipelineLayoutCreateInfo *_info,
-                            const std::vector<std::shared_ptr<DescriptorSetLayout>> &descriptorSetLayouts)
-        : info{*_info}, descriptorSetLayouts{descriptorSetLayouts}, pushConstants{_info->pPushConstantRanges,
-                                                                                  _info->pPushConstantRanges +
-                                                                                      _info->pushConstantRangeCount} {}
-
-    const VkPipelineLayoutCreateInfo info;
-    const std::vector<std::shared_ptr<DescriptorSetLayout>> descriptorSetLayouts;
-    const std::vector<VkPushConstantRange> pushConstants;
-};
-
 /*****************************************************************************
  * VulkanLayer
  *****************************************************************************/
@@ -422,10 +405,6 @@ class VulkanLayer {
             // DescriptorSetLayout
             {"vkCreateDescriptorSetLayout", PFN_vkVoidFunction(vkCreateDescriptorSetLayout)},
             {"vkDestroyDescriptorSetLayout", PFN_vkVoidFunction(vkDestroyDescriptorSetLayout)},
-
-            // PipelineLayout
-            {"vkCreatePipelineLayout", PFN_vkVoidFunction(vkCreatePipelineLayout)},
-            {"vkDestroyPipelineLayout", PFN_vkVoidFunction(vkDestroyPipelineLayout)},
 
             // Device queue
             {"vkGetDeviceQueue", PFN_vkVoidFunction(vkGetDeviceQueue)},
@@ -914,36 +893,6 @@ class VulkanLayer {
         }
     }
 
-    /**************************************************************************
-     * PipelineLayout
-     **************************************************************************/
-
-    static VkResult VKAPI_CALL vkCreatePipelineLayout(VkDevice device, const VkPipelineLayoutCreateInfo *createInfo,
-                                                      const VkAllocationCallbacks *allocator,
-                                                      VkPipelineLayout *pipelineLayout) {
-        auto handle = getHandle(device);
-        auto res = handle->loader->vkCreatePipelineLayout(device, createInfo, allocator, pipelineLayout);
-
-        if (res == VK_SUCCESS) {
-            scopedMutex l(globalMutex);
-            pipelineLayoutMap[*pipelineLayout] = std::make_shared<PipelineLayout>(
-                createInfo, getHandle(createInfo->pSetLayouts, createInfo->setLayoutCount));
-        }
-
-        return res;
-    }
-
-    static void VKAPI_CALL vkDestroyPipelineLayout(VkDevice device, VkPipelineLayout pipelineLayout,
-                                                   const VkAllocationCallbacks *allocator) {
-        auto handle = getHandle(device);
-        handle->loader->vkDestroyPipelineLayout(device, pipelineLayout, allocator);
-
-        {
-            scopedMutex l(globalMutex);
-            pipelineLayoutMap.erase(pipelineLayout);
-        }
-    }
-
     /*******************************************************************************
      * CommandBuffers
      *******************************************************************************/
@@ -1004,23 +953,6 @@ class VulkanLayer {
         return descriptorSetLayoutMap[handle];
     }
 
-    static std::vector<std::shared_ptr<DescriptorSetLayout>> getHandle(const VkDescriptorSetLayout *handle,
-                                                                       const uint32_t count) {
-        scopedMutex l(globalMutex);
-
-        std::vector<std::shared_ptr<DescriptorSetLayout>> descriptorSetLayouts;
-        for (uint32_t i = 0; i < count; i++) {
-            descriptorSetLayouts.emplace_back(descriptorSetLayoutMap[handle[i]]);
-        }
-
-        return descriptorSetLayouts;
-    }
-
-    static std::shared_ptr<PipelineLayout> getHandle(const VkPipelineLayout handle) {
-        scopedMutex l(globalMutex);
-        return pipelineLayoutMap[handle];
-    }
-
     static std::shared_ptr<DeviceImpl> getHandle(const VkQueue handle) {
         scopedMutex l(globalMutex);
         return queueMap[handle];
@@ -1068,7 +1000,6 @@ class VulkanLayer {
     static std::map<VkPhysicalDevice, std::shared_ptr<PhysicalDeviceImpl>> physicalDeviceMap;
     static std::map<VkDevice, std::shared_ptr<DeviceImpl>> deviceMap;
     static std::map<VkDescriptorSetLayout, std::shared_ptr<DescriptorSetLayout>> descriptorSetLayoutMap;
-    static std::map<VkPipelineLayout, std::shared_ptr<PipelineLayout>> pipelineLayoutMap;
     static std::map<VkQueue, std::shared_ptr<DeviceImpl>> queueMap;
     static std::map<VkCommandBuffer, std::shared_ptr<CommandBuffer>> commandBufferMap;
     static std::map<VkDevice, VkBool32> bufferDeviceAddressCaptureReplayFeatMap;
@@ -1099,11 +1030,6 @@ template <const auto &layerProperties, const auto &extensions, const auto &requi
 std::map<VkDescriptorSetLayout, std::shared_ptr<DescriptorSetLayout>>
     VulkanLayer<layerProperties, extensions, requiredExtensions, InstanceImpl, PhysicalDeviceImpl,
                 DeviceImpl>::descriptorSetLayoutMap;
-
-template <const auto &layerProperties, const auto &extensions, const auto &requiredExtensions, typename InstanceImpl,
-          typename PhysicalDeviceImpl, typename DeviceImpl>
-std::map<VkPipelineLayout, std::shared_ptr<PipelineLayout>> VulkanLayer<
-    layerProperties, extensions, requiredExtensions, InstanceImpl, PhysicalDeviceImpl, DeviceImpl>::pipelineLayoutMap;
 
 template <const auto &layerProperties, const auto &extensions, const auto &requiredExtensions, typename InstanceImpl,
           typename PhysicalDeviceImpl, typename DeviceImpl>
