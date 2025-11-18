@@ -386,9 +386,7 @@ TEST_F(MLEmulationLayerForVulkan, CheckTensorFeature) {
     auto [device, physicalDevice] = createDevice(instance, {"VK_LAYER_ML_Tensor_Emulation"});
     auto features = physicalDevice.getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceTensorFeaturesARM>();
     const auto &tensorFeature = features.template get<vk::PhysicalDeviceTensorFeaturesARM>();
-    if (!tensorFeature.shaderTensorAccess) {
-        throw std::runtime_error("shaderTensorAccess not supported!");
-    }
+    ASSERT_TRUE(tensorFeature.shaderTensorAccess) << "shaderTensorAccess not supported!";
 }
 
 TEST_F(MLEmulationLayerForVulkan, CreateTensor) {
@@ -450,9 +448,7 @@ TEST_F(MLEmulationLayerForVulkan, MaxPool2D) {
         0x5d, 0x00, 0x00, 0x5f, 0x00, 0x00, 0x71, 0x00, 0x00, 0x73, 0x00, 0x00, 0x75, 0x00, 0x00, 0x77, 0x00, 0x00,
         0x79, 0x00, 0x00, 0x7b, 0x00, 0x00, 0x7d, 0x00, 0x00, 0x7f, 0x00, 0x00};
 
-    if (!outputTensor->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) {
-        throw std::runtime_error("Output mismatch");
-    }
+    ASSERT_TRUE(outputTensor->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) << "Output mismatch";
 }
 
 TEST_F(MLEmulationLayerForVulkan, TwoLayerMaxPool2D) {
@@ -494,9 +490,7 @@ TEST_F(MLEmulationLayerForVulkan, TwoLayerMaxPool2D) {
         0x00, 0x3f, 0x00, 0x00, 0x73, 0x00, 0x00, 0x77, 0x00, 0x00, 0x7b, 0x00, 0x00, 0x7f, 0x00, 0x00,
     };
 
-    if (!outputTensor->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) {
-        throw std::runtime_error("Output mismatch");
-    }
+    ASSERT_TRUE(outputTensor->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) << "Output mismatch";
 }
 
 TEST_F(MLEmulationLayerForVulkan, SamePipelineLayout) {
@@ -567,13 +561,9 @@ TEST_F(MLEmulationLayerForVulkan, SamePipelineLayout) {
         0x5d, 0x00, 0x00, 0x5f, 0x00, 0x00, 0x71, 0x00, 0x00, 0x73, 0x00, 0x00, 0x75, 0x00, 0x00, 0x77, 0x00, 0x00,
         0x79, 0x00, 0x00, 0x7b, 0x00, 0x00, 0x7d, 0x00, 0x00, 0x7f, 0x00, 0x00};
 
-    if (!outputTensor->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) {
-        throw std::runtime_error("Output mismatch");
-    }
+    ASSERT_TRUE(outputTensor->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) << "Output mismatch";
 
-    if (!outputTensor1->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) {
-        throw std::runtime_error("Output mismatch");
-    }
+    ASSERT_TRUE(outputTensor1->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) << "Output mismatch";
 }
 
 TEST_F(MLEmulationLayerForVulkan, UpdateAfterDispatch) {
@@ -624,9 +614,7 @@ TEST_F(MLEmulationLayerForVulkan, UpdateAfterDispatch) {
         0x5d, 0x00, 0x00, 0x5f, 0x00, 0x00, 0x71, 0x00, 0x00, 0x73, 0x00, 0x00, 0x75, 0x00, 0x00, 0x77, 0x00, 0x00,
         0x79, 0x00, 0x00, 0x7b, 0x00, 0x00, 0x7d, 0x00, 0x00, 0x7f, 0x00, 0x00};
 
-    if (!outputTensor->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) {
-        throw std::runtime_error("Output mismatch");
-    }
+    ASSERT_TRUE(outputTensor->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) << "Output mismatch";
 }
 
 TEST_F(MLEmulationLayerForVulkan, SequentialDispatch) {
@@ -704,13 +692,9 @@ TEST_F(MLEmulationLayerForVulkan, SequentialDispatch) {
         0x5d, 0x00, 0x00, 0x5f, 0x00, 0x00, 0x71, 0x00, 0x00, 0x73, 0x00, 0x00, 0x75, 0x00, 0x00, 0x77, 0x00, 0x00,
         0x79, 0x00, 0x00, 0x7b, 0x00, 0x00, 0x7d, 0x00, 0x00, 0x7f, 0x00, 0x00};
 
-    if (!outputTensor->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) {
-        throw std::runtime_error("Output mismatch");
-    }
+    ASSERT_TRUE(outputTensor->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) << "Output mismatch";
 
-    if (!outputTensor1->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) {
-        throw std::runtime_error("Output mismatch");
-    }
+    ASSERT_TRUE(outputTensor1->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) << "Output mismatch";
 }
 
 TEST_F(MLEmulationLayerForVulkan, Conv2D) {
@@ -802,9 +786,8 @@ TEST_F(MLEmulationLayerForVulkan, Conv2D) {
         },
     };
 
-    if (!outputTensor->compare(reinterpret_cast<const int32_t *>(&ref[0][0][0][0]), sizeof(ref))) {
-        throw std::runtime_error("Output mismatch");
-    }
+    ASSERT_TRUE(outputTensor->compare(reinterpret_cast<const int32_t *>(&ref[0][0][0][0]), sizeof(ref)))
+        << "Output mismatch";
 }
 
 TEST_F(MLEmulationLayerForVulkan, Concat) {
@@ -877,9 +860,7 @@ TEST_F(MLEmulationLayerForVulkan, Concat) {
         },
     };
 
-    if (!outputTensor->compare(&ref[0][0][0][0], sizeof(ref))) {
-        throw std::runtime_error("Output mismatch");
-    }
+    ASSERT_TRUE(outputTensor->compare(&ref[0][0][0][0], sizeof(ref))) << "Output mismatch";
 }
 
 TEST_F(MLEmulationLayerForVulkan, Slice) {
@@ -931,9 +912,8 @@ TEST_F(MLEmulationLayerForVulkan, Slice) {
     std::cout << "OUTPUT" << std::endl;
     outputTensor->print();
 
-    if (!outputTensor->compare(reinterpret_cast<const int8_t *>(&ref[0][0][0][0]), sizeof(ref))) {
-        throw std::runtime_error("Output mismatch");
-    }
+    ASSERT_TRUE(outputTensor->compare(reinterpret_cast<const int8_t *>(&ref[0][0][0][0]), sizeof(ref)))
+        << "Output mismatch";
 }
 
 TEST_F(MLEmulationLayerForVulkan, NOPOutputs) {
@@ -1014,18 +994,14 @@ TEST_F(MLEmulationLayerForVulkan, NOPOutputs) {
     std::cout << "OUTPUT_2 from Const Tensor" << std::endl;
     outputTensor_2->print();
 
-    if (!outputTensor_0->compare(reinterpret_cast<const int8_t *>(&ref[0][0][0][0]), sizeof(ref))) {
-        throw std::runtime_error("Output mismatch in OUTPUT_0");
-    }
+    ASSERT_TRUE(outputTensor_0->compare(reinterpret_cast<const int8_t *>(&ref[0][0][0][0]), sizeof(ref)))
+        << "Output mismatch in OUTPUT_0";
 
-    if (!outputTensor_1->compare(reinterpret_cast<const int8_t *>(inputTensor->data()), inputTensor->size())) {
-        throw std::runtime_error("Output mismatch in OUTPUT_1");
-    }
-
-    if (!outputTensor_2->compare(reinterpret_cast<const int8_t *>(graphConstants[0].data()),
-                                 graphConstants[0].size())) {
-        throw std::runtime_error("Output mismatch in OUTPUT_2");
-    }
+    ASSERT_TRUE(outputTensor_1->compare(reinterpret_cast<const int8_t *>(inputTensor->data()), inputTensor->size()))
+        << "Output mismatch in OUTPUT_1";
+    ASSERT_TRUE(
+        outputTensor_2->compare(reinterpret_cast<const int8_t *>(graphConstants[0].data()), graphConstants[0].size()))
+        << "Output mismatch in OUTPUT_2";
 }
 
 TEST_F(MLEmulationLayerForVulkan, GraphConstantARM) {
@@ -1082,9 +1058,7 @@ TEST_F(MLEmulationLayerForVulkan, GraphConstantARM) {
 
     const uint8_t ref[5] = {0, 20, 40, 60, 80};
 
-    if (!outputTensor->compare(&ref[0], sizeof(ref))) {
-        throw std::runtime_error("Output mismatch");
-    }
+    ASSERT_TRUE(outputTensor->compare(&ref[0], sizeof(ref))) << "Output mismatch";
 }
 
 TEST_F(MLEmulationLayerForVulkan, Maximum) {
@@ -1150,9 +1124,7 @@ TEST_F(MLEmulationLayerForVulkan, Maximum) {
         },
     };
 
-    if (!outputTensor->compare(&ref[0][0][0][0], sizeof(ref))) {
-        throw std::runtime_error("Output mismatch");
-    }
+    ASSERT_TRUE(outputTensor->compare(&ref[0][0][0][0], sizeof(ref))) << "Output mismatch";
 }
 
 TEST_F(MLEmulationLayerForVulkan, FFT2D) {
@@ -1325,9 +1297,7 @@ TEST_F(MLEmulationLayerForVulkan, TensorArray) {
     }
 
     for (auto i : {0U, 1U, 2U, 3U}) {
-        if (!outputTensors[i]->compare(inputTensors[i]->data(), inputTensors[i]->size())) {
-            throw std::runtime_error("Output mismatch");
-        }
+        ASSERT_TRUE(outputTensors[i]->compare(inputTensors[i]->data(), inputTensors[i]->size())) << "Output mismatch";
     }
 }
 
@@ -1377,9 +1347,7 @@ TEST_F(MLEmulationLayerForVulkan, CreateTensorComputePipeline) {
          }},
     };
 
-    if (!outputTensor->compare(&ref[0][0][0][0], sizeof(ref))) {
-        throw std::runtime_error("Output mismatch");
-    }
+    ASSERT_TRUE(outputTensor->compare(&ref[0][0][0][0], sizeof(ref))) << "Output mismatch";
 }
 #endif
 
@@ -1501,9 +1469,7 @@ TEST_F(MLEmulationLayerForVulkan, CopyLargeNonPackedTensor) {
     std::cout << "Runtime " << std::dec << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count()
               << " ms" << std::endl;
 
-    if (!outputTensor->stridedCompare<int8_t, int8_t>(*inputTensor)) {
-        throw std::runtime_error("Output mismatch");
-    }
+    ASSERT_TRUE((outputTensor->stridedCompare<int8_t, int8_t>(*inputTensor))) << "Output mismatch";
 }
 
 template <typename T> void checkFloat(T v) {
@@ -1724,9 +1690,7 @@ TEST_F(MLEmulationLayerForVulkan, MultiSessionsInOneCommandBuffer) {
     };
 
     for (const auto &tensor : outputTensors) {
-        if (!tensor->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) {
-            throw std::runtime_error("Output mismatch");
-        }
+        ASSERT_TRUE(tensor->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) << "Output mismatch";
     }
 }
 
@@ -1795,10 +1759,8 @@ TEST_F(MLEmulationLayerForVulkan, MultiSessionsOneAtTheTime) {
             // std::cout << "OUTPUT" << std::endl;
             // outputTensor->print();
 
-            if (!outputTensor->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) {
-                throw std::runtime_error("Output mismatch");
-            }
-
+            ASSERT_TRUE(outputTensor->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref)))
+                << "Output mismatch";
             // descriptor set and pool are destroyed
         }
     }
@@ -2052,9 +2014,7 @@ TEST_F(MLEmulationLayerForVulkan, BlockMatch_MIN_SAD_COST) {
         {1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
     }}};
 
-    if (!outputFlow->compare(&refFlow[0][0][0][0], sizeof(refFlow))) {
-        throw std::runtime_error("Output mismatch");
-    }
+    ASSERT_TRUE(outputFlow->compare(&refFlow[0][0][0][0], sizeof(refFlow))) << "Output mismatch";
 
     const int32_t refCost[1][1][5][5] = {{{
         {0, 0, 0, 0, 0},
@@ -2064,9 +2024,7 @@ TEST_F(MLEmulationLayerForVulkan, BlockMatch_MIN_SAD_COST) {
         {0, 0, 0, 0, 0},
     }}};
 
-    if (!outputCost->compare(&refCost[0][0][0][0], sizeof(refCost))) {
-        throw std::runtime_error("Output mismatch");
-    }
+    ASSERT_TRUE(outputCost->compare(&refCost[0][0][0][0], sizeof(refCost))) << "Output mismatch";
 }
 
 TEST_F(MLEmulationLayerForVulkan, BlockMatch_MIN_SAD) {
@@ -2119,9 +2077,7 @@ TEST_F(MLEmulationLayerForVulkan, BlockMatch_MIN_SAD) {
         {1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
     }}};
 
-    if (!outputFlow->compare(&ref[0][0][0][0], sizeof(ref))) {
-        throw std::runtime_error("Output mismatch");
-    }
+    ASSERT_TRUE(outputFlow->compare(&ref[0][0][0][0], sizeof(ref))) << "Output mismatch";
 }
 
 TEST_F(MLEmulationLayerForVulkan, BlockMatch_RAW_SAD) {
@@ -2160,9 +2116,7 @@ TEST_F(MLEmulationLayerForVulkan, BlockMatch_RAW_SAD) {
         {4, 6, 6, 6, 4},
     }}};
 
-    if (!outputCost->compare(&ref[0][0][0][0], sizeof(ref))) {
-        throw std::runtime_error("Output mismatch");
-    }
+    ASSERT_TRUE(outputCost->compare(&ref[0][0][0][0], sizeof(ref))) << "Output mismatch";
 }
 
 TEST_F(MLEmulationLayerForVulkan, Application_Fixed_Address_Allocation) {
@@ -2200,9 +2154,7 @@ TEST_F(MLEmulationLayerForVulkan, Application_Fixed_Address_Allocation) {
         }
     }
 
-    if (memAddr == 0x0) {
-        throw std::runtime_error("Failed to allocate any memory or failed to acquire initial memory address");
-    }
+    ASSERT_TRUE(memAddr != 0x0) << "Failed to allocate any memory or failed to acquire initial memory address";
 
     // Allocate at the fixed address
     {
@@ -2212,9 +2164,7 @@ TEST_F(MLEmulationLayerForVulkan, Application_Fixed_Address_Allocation) {
 
         const auto newMemAddr =
             vkDevice.getMemoryOpaqueCaptureAddress(vk::DeviceMemoryOpaqueCaptureAddressInfo{devMem});
-        if (newMemAddr != memAddr) {
-            throw std::runtime_error("Memory address does not match requested");
-        }
+        ASSERT_TRUE(newMemAddr == memAddr) << "Memory address does not match requested";
     }
 
     // Allocate again but with allocation pNext chain reversed
@@ -2228,8 +2178,6 @@ TEST_F(MLEmulationLayerForVulkan, Application_Fixed_Address_Allocation) {
 
         const auto newMemAddr =
             vkDevice.getMemoryOpaqueCaptureAddress(vk::DeviceMemoryOpaqueCaptureAddressInfo{devMem});
-        if (newMemAddr != memAddr) {
-            throw std::runtime_error("Memory address does not match requested");
-        }
+        ASSERT_TRUE(newMemAddr == memAddr) << "Memory address does not match requested";
     }
 }
