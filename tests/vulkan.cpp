@@ -2181,3 +2181,48 @@ TEST_F(MLEmulationLayerForVulkan, Application_Fixed_Address_Allocation) {
         ASSERT_TRUE(newMemAddr == memAddr) << "Memory address does not match requested";
     }
 }
+
+TEST_F(MLEmulationLayerForVulkan, Buffer_Barrier_Graph_Rewrite) {
+    auto device = createDevice();
+    vk::raii::Queue queue(&(*device), device->getPhysicalDevice()->getComputeFamilyIndex(), 0);
+
+    vk::DeviceSize bufferSize = 100;
+    auto inputBufferInfo = vk::BufferCreateInfo{{}, bufferSize, vk::BufferUsageFlagBits::eTransferSrc};
+    vk::raii::Buffer inputBuffer{&(*device), inputBufferInfo};
+    const auto memoryTypeIndices =
+        device->getPhysicalDevice()->getMemoryTypeIndices(vk::MemoryPropertyFlagBits::eDeviceLocal, 0xffffffff);
+    vk::raii::DeviceMemory inputMemory{&(*device), {bufferSize, memoryTypeIndices[0]}};
+    inputBuffer.bindMemory(*inputMemory, 0);
+
+    vk::raii::Buffer outputBuffer{&(*device),
+                                  vk::BufferCreateInfo{{}, bufferSize, vk::BufferUsageFlagBits::eTransferDst}};
+    vk::raii::DeviceMemory outputMemory{&(*device), {bufferSize, memoryTypeIndices[0]}};
+    outputBuffer.bindMemory(*outputMemory, 0);
+
+    const vk::CommandPoolCreateInfo commandPoolCreateInfo{{}, device->getPhysicalDevice()->getComputeFamilyIndex()};
+    auto commandPool = vk::raii::CommandPool(&(*device), commandPoolCreateInfo);
+    const vk::CommandBufferAllocateInfo commandBufferAllocInfo{*commandPool, vk::CommandBufferLevel::ePrimary, 1};
+    vk::raii::CommandBuffers commandBuffers(&(*device), commandBufferAllocInfo);
+    auto commandBuffer = std::move(commandBuffers.front());
+
+    const vk::CommandBufferBeginInfo commandBufferBeginInfo{
+        vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
+    };
+    commandBuffer.begin(commandBufferBeginInfo);
+
+    vk::BufferCopy bufferCopy{0, 0, bufferSize};
+    commandBuffer.copyBuffer(*inputBuffer, *outputBuffer, bufferCopy);
+
+    vk::BufferMemoryBarrier2 bufferBarrier2{{}, {}, {}, {}, 0, 0, inputBuffer, 0, bufferSize};
+    auto info = vk::DependencyInfo{{}, {}, bufferBarrier2, {}};
+    commandBuffer.pipelineBarrier2(info);
+    commandBuffer.end();
+
+    vk::raii::Fence fence{&(*device), vk::FenceCreateInfo{}};
+    vk::SubmitInfo submitInfo;
+    submitInfo.setCommandBuffers(*commandBuffer);
+    queue.submit(submitInfo, *fence);
+    auto result = (&(*device)).waitForFences({*fence}, vk::True, uint64_t(-1));
+
+    ASSERT_TRUE(result == vk::Result::eSuccess);
+}

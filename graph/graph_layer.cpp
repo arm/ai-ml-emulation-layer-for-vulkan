@@ -1001,7 +1001,7 @@ class GraphLayer : public VulkanLayerImpl {
         auto tensorDependencyInfo =
             findType<VkTensorDependencyInfoARM>(pDependencyInfo->pNext, VK_STRUCTURE_TYPE_TENSOR_DEPENDENCY_INFO_ARM);
         if (tensorDependencyInfo == nullptr && pDependencyInfo->pMemoryBarriers == nullptr &&
-            pDependencyInfo->pImageMemoryBarriers == nullptr) {
+            pDependencyInfo->pImageMemoryBarriers == nullptr && pDependencyInfo->pBufferMemoryBarriers == nullptr) {
             return handle->loader->vkCmdPipelineBarrier2(commandBuffer, pDependencyInfo);
         }
 
@@ -1045,6 +1045,11 @@ class GraphLayer : public VulkanLayerImpl {
                                                              pDependencyInfo->imageMemoryBarrierCount};
         replaceBarriersGraphFlag(imageBarriers);
 
+        std::vector<VkBufferMemoryBarrier2> bufferBarriers{pDependencyInfo->pBufferMemoryBarriers,
+                                                           pDependencyInfo->pBufferMemoryBarriers +
+                                                               pDependencyInfo->bufferMemoryBarrierCount};
+        replaceBarriersGraphFlag(bufferBarriers);
+
         // replace tensor memory barrier graph flag
         if (tensorDependencyInfo != nullptr) {
             std::vector<VkTensorMemoryBarrierARM> tensorMemoryBarriers{
@@ -1066,8 +1071,8 @@ class GraphLayer : public VulkanLayerImpl {
                 pDependencyInfo->dependencyFlags,             // dependencyFlags
                 static_cast<uint32_t>(memoryBarriers.size()), // memoryBarrierCount
                 memoryBarriers.data(),                        // pMemoryBarriers
-                pDependencyInfo->bufferMemoryBarrierCount,    // bufferMemoryBarrierCount
-                pDependencyInfo->pBufferMemoryBarriers,       // pBufferMemoryBarriers
+                static_cast<uint32_t>(bufferBarriers.size()), // bufferMemoryBarrierCount
+                bufferBarriers.data(),                        // pBufferMemoryBarriers
                 static_cast<uint32_t>(imageBarriers.size()),  // imageMemoryBarrierCount
                 imageBarriers.data()                          // pImageMemoryBarriers
             };
@@ -1079,8 +1084,8 @@ class GraphLayer : public VulkanLayerImpl {
                 pDependencyInfo->dependencyFlags,             // dependencyFlags
                 static_cast<uint32_t>(memoryBarriers.size()), // memoryBarrierCount
                 memoryBarriers.data(),                        // pMemoryBarriers
-                pDependencyInfo->bufferMemoryBarrierCount,    // bufferMemoryBarrierCount
-                pDependencyInfo->pBufferMemoryBarriers,       // pBufferMemoryBarriers
+                static_cast<uint32_t>(bufferBarriers.size()), // bufferMemoryBarrierCount
+                bufferBarriers.data(),                        // pBufferMemoryBarriers
                 static_cast<uint32_t>(imageBarriers.size()),  // imageMemoryBarrierCount
                 imageBarriers.data()                          // pImageMemoryBarriers
             };
