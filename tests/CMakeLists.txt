@@ -3,24 +3,7 @@
 #
 
 if(ANDROID)
-    set(DEVICE_TEST_DIR "/data/local/tmp/vmel")
-    set(SHADER_SOURCE_DIR "${DEVICE_TEST_DIR}/shader")
-    set(TEST_SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shader)
-    set(TEST_LIBS $<TARGET_FILE:VkLayer_Tensor> $<TARGET_FILE:VkLayer_Graph>)
-    set(DEVICE_LIB_DIR "/data/local/debug/vulkan")
-
-    find_program(adb_executable adb)
-    if(NOT adb_executable)
-        message(FATAL_ERROR "could not find adb")
-    endif()
-
-    add_test(
-        NAME push_shaders
-        COMMAND ${adb_executable} push ${TEST_SHADERS} ${SHADER_SOURCE_DIR})
-
-    add_test(
-        NAME push_libs
-        COMMAND ${adb_executable} push ${TEST_LIBS} ${DEVICE_LIB_DIR})
+    set(SHADER_SOURCE_DIR "/data/local/tmp/vmel/shader")
 else()
     set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shader")
 endif()
@@ -40,19 +23,10 @@ function(mlel_add_test)
         GTest::gtest_main
         ${ARGS_LIBRARIES})
 
-    if(ANDROID)
-        add_test(
-            NAME push_${ARGS_TARGET}
-            COMMAND ${adb_executable} push $<TARGET_FILE:${ARGS_TARGET}> ${DEVICE_TEST_DIR})
-
-        add_test(
-            NAME run_${ARGS_TARGET}
-            COMMAND ${adb_executable} shell ${DEVICE_TEST_DIR}/${ARGS_TARGET})
-    else()
-        gtest_discover_tests(${ARGS_TARGET}
-            PROPERTIES ${ARGS_PROPERTIES})
-    endif()
+    gtest_discover_tests(${ARGS_TARGET}
+        PROPERTIES ${ARGS_PROPERTIES})
 endfunction()
+
 if(NOT APPLE)
     mlel_add_test(
         TARGET mlel_unit_tests
