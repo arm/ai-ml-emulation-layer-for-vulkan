@@ -21,8 +21,7 @@ using namespace mlsdk::el::utils;
 namespace mlsdk::el::compute {
 
 namespace {
-std::shared_ptr<VirtualTensor> makeVirtualTensor(const std::shared_ptr<TensorDescriptor> &tensor,
-                                                 ComputePipelineBase *descendant) {
+void makeAndConnectVirtualTensor(const std::shared_ptr<TensorDescriptor> &tensor, ComputePipelineBase *descendant) {
     auto parent = tensor->getPipeline();
     auto virtualTensor = std::make_shared<VirtualTensor>(tensor, parent, descendant);
 
@@ -33,8 +32,6 @@ std::shared_ptr<VirtualTensor> makeVirtualTensor(const std::shared_ptr<TensorDes
     if (descendant != nullptr) {
         descendant->pushParent(virtualTensor);
     }
-
-    return virtualTensor;
 }
 
 VkFormat accTypeVkFormat(uint32_t accType) {
@@ -504,7 +501,7 @@ void ComputePipeline::connectPipelines() {
     // Create connections to parent pipelines
     for (const auto &[direction, tensor] : descriptorMap) {
         if (direction == Input) {
-            makeVirtualTensor(tensor, this);
+            makeAndConnectVirtualTensor(tensor, this);
         }
     }
 }
@@ -2384,7 +2381,7 @@ void GraphPipeline::makeInput(const std::shared_ptr<TensorDescriptor> &tensor) {
 
 void GraphPipeline::makeOutput(const std::shared_ptr<TensorDescriptor> &tensor) {
     // Connect outputs pipeline with parent pipelines
-    makeVirtualTensor(tensor, &outputs);
+    makeAndConnectVirtualTensor(tensor, &outputs);
 }
 
 void GraphPipeline::makeAbs(const std::shared_ptr<TensorDescriptor> &input,
