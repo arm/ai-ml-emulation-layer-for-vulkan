@@ -7,9 +7,9 @@
 # It is not intended for use in building or packaging with Conan.
 
 [requires]
-glslang/1.4.313.0
+glslang/1.4.328.1
 gtest/1.16.0
-spirv-headers/1.4.313.0
-spirv-cross/1.4.313.0
-spirv-tools/1.4.313.0
-vulkan-headers/1.4.313.0
+spirv-headers/1.4.328.1
+spirv-cross/1.4.328.1
+spirv-tools/1.4.328.1
+vulkan-headers/1.4.328.1

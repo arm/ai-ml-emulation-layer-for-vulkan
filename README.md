@@ -78,6 +78,7 @@ The build system must have:
 - CMake 3.25 or later.
 - C/C++ 17 compiler: GCC, or optionally Clang on Linux and MSVC on Windows®.
 - Ninja 1.10 or later.
+- Vulkan® SDK 1.4.328.1 or later.
 
 The following dependencies are also needed:
 
@@ -223,7 +224,7 @@ device. The Android™ device must have Vulkan® API 1.3 support.
 To build the ML Emulation Layer for Vulkan®, run:
 
 ```shell
-$ cmake -B build
+cmake -B build
    -DCMAKE_TOOLCHAIN_FILE=${NDK}/build/cmake/android.toolchain.cmake \
    -DANDROID_ABI=arm64-v8a                                           \
    -DGLSLANG_PATH=${REPO}/dependencies/glslang                       \
@@ -232,7 +233,7 @@ $ cmake -B build
    -DSPIRV_TOOLS_PATH=${REPO}/dependencies/SPIRV-Tools               \
    -DVULKAN_HEADERS_PATH=${REPO}/dependencies/Vulkan-Headers
 
-$ cmake --build build
+cmake --build build
 ```
 
 ## Usage on Android™ (Experimental)
@@ -244,9 +245,9 @@ instance creation or you can enable the layers without modifying the application
 by using following commands:
 
 ```shell
-$ adb shell settings put global enable_gpu_debug_layers 1
-$ adb shell settings put global gpu_debug_app ${package_name}
-$ adb shell settings put global gpu_debug_layers \
+adb shell settings put global enable_gpu_debug_layers 1
+adb shell settings put global gpu_debug_app ${package_name}
+adb shell settings put global gpu_debug_layers \
     VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation
 ```
 
@@ -259,11 +260,11 @@ In this example we install into a deploy folder and build using the script.
 To build the ML Emulation Layer for Vulkan®, run:
 
 ```shell
-$ python3 ${REPO}/sw/emulation-layer/scripts/build.py --install $SDK_PATH/deploy
+python3 ${REPO}/sw/emulation-layer/scripts/build.py --install $SDK_PATH/deploy
 ```
 
 Install MoltenVK by following the documentation:
-https://vulkan.lunarg.com/doc/sdk/1.4.321.0/mac/getting_started.html
+<https://vulkan.lunarg.com/doc/sdk/1.4.321.0/mac/getting_started.html>
 
 ## Usage on Darwin (Experimental)
 
@@ -317,16 +318,16 @@ After building, the binary will be at
 following under `<repo_root>/sw/emulation-layer/`:
 
 ```shell
-$ cmake -B build \
-    -DCMAKE_TOOLCHAIN_FILE=${REPO}/sw/emulation-layer/cmake/toolchain/linux-aarch64-gcc.cmake \
-    -DGLSLANG_PATH=${REPO}/dependencies/glslang \
-    -DSPIRV_CROSS_PATH=${REPO}/dependencies/SPIRV-Cross \
-    -DSPIRV_HEADERS_PATH=${REPO}/dependencies/SPIRV-Headers \
-    -DSPIRV_TOOLS_PATH=${REPO}/dependencies/SPIRV-Tools \
-    -DVULKAN_HEADERS_PATH=${REPO}/dependencies/Vulkan-Headers \
-    -DGLSLANG_EXECUTABLE=${REPO}/dependencies/glslang/build/StandAlone/glslang
+cmake -B build \
+   -DCMAKE_TOOLCHAIN_FILE=${REPO}/sw/emulation-layer/cmake/toolchain/linux-aarch64-gcc.cmake \
+   -DGLSLANG_PATH=${REPO}/dependencies/glslang \
+   -DSPIRV_CROSS_PATH=${REPO}/dependencies/SPIRV-Cross \
+   -DSPIRV_HEADERS_PATH=${REPO}/dependencies/SPIRV-Headers \
+   -DSPIRV_TOOLS_PATH=${REPO}/dependencies/SPIRV-Tools \
+   -DVULKAN_HEADERS_PATH=${REPO}/dependencies/Vulkan-Headers \
+   -DGLSLANG_EXECUTABLE=${REPO}/dependencies/glslang/build/StandAlone/glslang
 
-$ cmake --build build
+cmake --build build
 ```
 
 ## Vulkan® Layer Documentation
@@ -390,6 +391,7 @@ pip install ai-ml-emulation-layer-for-vulkan
 - Data graph pipeline creation without a shader module is not supported.
 
 MoltenVK currently does not have full Vulkan® coverage, some notable issues are:
+
 - Several Vulkan® extensions are not available in MoltenVK, e.g. [custom border color](https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_custom_border_color.html).
 - High-precision types in buffers/push constants is currently not supported, which forces lower precision to be used instead.
 - Passing Shader Storage Buffer Objects, SSBOs, to functions is currently not supported in MoltenVK.
