@@ -15,6 +15,9 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+set(CMAKE_VISIBILITY_INLINES_HIDDEN 1)
+
 if(DEFINED ANDROID_ABI)
     message(WARNING "Building for Android is currently an experimental feature.")
 endif()
@@ -57,6 +60,8 @@ include(glslang)
 if(NOT EXISTS ${SPIRV_TOOLS_PATH}/CMakeLists.txt)
     message(FATAL_ERROR "ML Emulation Layer for Vulkan only supports building SPIR-V Tools from source")
 endif()
+
+include(setLayerEntrypoints)
 
 ###############################################################################
 # ML Emulation Layer for Vulkan
