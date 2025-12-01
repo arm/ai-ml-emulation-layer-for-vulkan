@@ -264,7 +264,7 @@ python3 ${REPO}/sw/emulation-layer/scripts/build.py --install $SDK_PATH/deploy
 ```
 
 Install MoltenVK by following the documentation:
-<https://vulkan.lunarg.com/doc/sdk/1.4.321.0/mac/getting_started.html>
+<https://vulkan.lunarg.com/doc/sdk/1.4.328.1/mac/getting_started.html>
 
 ## Usage on Darwin (Experimental)
 
