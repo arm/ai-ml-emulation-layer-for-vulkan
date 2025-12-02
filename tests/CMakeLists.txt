@@ -23,8 +23,11 @@ function(mlel_add_test)
         GTest::gtest_main
         ${ARGS_LIBRARIES})
 
-    gtest_discover_tests(${ARGS_TARGET}
-        PROPERTIES ${ARGS_PROPERTIES})
+    if(NOT ANDROID)
+        gtest_discover_tests(${ARGS_TARGET}
+            PROPERTIES ${ARGS_PROPERTIES})
+    endif()
+
 endfunction()
 
 if(NOT APPLE)
