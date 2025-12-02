@@ -49,6 +49,8 @@ install(TARGETS VkLayer_Graph EXPORT ${ML_SDK_EL_PACKAGE_NAME}Config)
 set(GRAPH_LIBRARY_PATH $<TARGET_FILE_NAME:VkLayer_Graph>)
 if(WIN32)
     set(GRAPH_LIBRARY_PATH ".\\\\${GRAPH_LIBRARY_PATH}")
+elseif(APPLE)
+    set(GRAPH_LIBRARY_PATH "../../../lib/${GRAPH_LIBRARY_PATH}")
 endif()
 
 configure_file(layer.d/VkLayer_Graph.json.in layer.d/VkLayer_Graph.json.in)
