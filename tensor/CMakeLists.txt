@@ -29,10 +29,12 @@ target_link_libraries(VkLayer_Tensor PRIVATE
 
 install(TARGETS VkLayer_Tensor EXPORT ${ML_SDK_EL_PACKAGE_NAME}Config)
 
-# Generate VkLayer_Graph.json
+# Generate VkLayer_Tensor.json
 set(TENSOR_LIBRARY_PATH $<TARGET_FILE_NAME:VkLayer_Tensor>)
 if(WIN32)
     set(TENSOR_LIBRARY_PATH ".\\\\${TENSOR_LIBRARY_PATH}")
+elseif(APPLE)
+    set(TENSOR_LIBRARY_PATH "../../../lib/${TENSOR_LIBRARY_PATH}")
 endif()
 
 configure_file(layer.d/VkLayer_Tensor.json.in layer.d/VkLayer_Tensor.json.in)
