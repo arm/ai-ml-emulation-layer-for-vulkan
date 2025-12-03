@@ -32,22 +32,22 @@
 #define IS_FLOAT(t) ((t >> 8) == 0x66)
 
 // Remaping types due to some platforms not supporting higher precision types in buffers/push constants
-#ifdef USE_DOUBLE_AS_FLOAT
-    #define FLOAT double
-    #define DVEC2 dvec2
-    #define DVEC3 dvec3
-    #define DVEC4 dvec4
-    #define DMAT2 dmat2
-    #define DMAT3 dmat3
-    #define DMAT4 dmat4
-#else
-    #define FLOAT float
+#ifdef USE_FLOAT_AS_DOUBLE
+    #define DOUBLE float
     #define DVEC2 vec2
     #define DVEC3 vec3
     #define DVEC4 vec4
     #define DMAT2 mat2
     #define DMAT3 mat3
     #define DMAT4 mat4
+#else
+    #define DOUBLE double
+    #define DVEC2 dvec2
+    #define DVEC3 dvec3
+    #define DVEC4 dvec4
+    #define DMAT2 dmat2
+    #define DMAT3 dmat3
+    #define DMAT4 dmat4
 #endif
 
 #define applyBroadcast(shape, index, coords)                                                                           \
