@@ -8,7 +8,7 @@
 layout(local_size_x = %warpX%) in;
 
 layout(push_constant) uniform PushConstants {
-    FLOAT padConst;
+    DOUBLE padConst;
 } pushConstants;
 
 layout(constant_id = 0) const uint32_t RANK = RANK_MAX;
