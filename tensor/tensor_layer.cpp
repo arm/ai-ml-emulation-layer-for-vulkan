@@ -858,12 +858,14 @@ class TensorLayer : public VulkanLayerImpl {
         if (tensorProps.current) {
             tensorProps.current->maxTensorDimensionCount = TensorARM::TENSOR_MAX_DIMENSIONS;
             tensorProps.current->maxTensorElements = limits.maxStorageBufferRange;
+            tensorProps.current->maxPerDimensionTensorElements = limits.maxStorageBufferRange;
             tensorProps.current->maxTensorStride = limits.maxStorageBufferRange;
+            tensorProps.current->maxTensorSize = limits.maxStorageBufferRange;
             tensorProps.current->maxTensorShaderAccessArrayLength = std::numeric_limits<uint8_t>::max();
             tensorProps.current->maxTensorShaderAccessSize = limits.maxStorageBufferRange;
             tensorProps.current->maxDescriptorSetStorageTensors = limits.maxDescriptorSetUniformBuffers;
-            tensorProps.current->maxDescriptorSetUpdateAfterBindStorageTensors = limits.maxDescriptorSetUniformBuffers;
             tensorProps.current->maxPerStageDescriptorSetStorageTensors = limits.maxPerStageDescriptorUniformBuffers;
+            tensorProps.current->maxDescriptorSetUpdateAfterBindStorageTensors = limits.maxDescriptorSetUniformBuffers;
             tensorProps.current->maxPerStageDescriptorUpdateAfterBindStorageTensors =
                 limits.maxPerStageDescriptorUniformBuffers;
             tensorProps.current->shaderStorageTensorArrayNonUniformIndexingNative = false;
