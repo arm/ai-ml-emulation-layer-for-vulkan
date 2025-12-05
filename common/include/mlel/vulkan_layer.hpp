@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -180,10 +180,48 @@ class Loader {
     explicit Loader(std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader) : loader{_loader} {}
 
     explicit Loader(const VkAllocationCallbacks *_callbacks, VkInstance _instance, PFN_vkGetInstanceProcAddr _gipr)
-        : loader{allocateObject<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic>(_callbacks, _instance, _gipr),
+        : loader{allocateObject<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic>(_callbacks),
                  [=](VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic *toDelete) {
                      destroyObject(_callbacks, toDelete);
-                 }} {}
+                 }} {
+        loader->vkGetInstanceProcAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(_gipr);
+
+        // Manually resolve the *few* instance functions you actually use
+        loader->vkEnumeratePhysicalDevices =
+            reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(_gipr(_instance, "vkEnumeratePhysicalDevices"));
+
+        loader->vkEnumerateDeviceExtensionProperties = reinterpret_cast<PFN_vkEnumerateDeviceExtensionProperties>(
+            _gipr(_instance, "vkEnumerateDeviceExtensionProperties"));
+
+        loader->vkGetPhysicalDeviceProperties =
+            reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(_gipr(_instance, "vkGetPhysicalDeviceProperties"));
+
+        loader->vkGetPhysicalDeviceProperties2 =
+            reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(_gipr(_instance, "vkGetPhysicalDeviceProperties2"));
+
+        loader->vkGetPhysicalDeviceQueueFamilyProperties =
+            reinterpret_cast<PFN_vkGetPhysicalDeviceQueueFamilyProperties>(
+                _gipr(_instance, "vkGetPhysicalDeviceQueueFamilyProperties"));
+
+        loader->vkGetPhysicalDeviceFeatures2 =
+            reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2>(_gipr(_instance, "vkGetPhysicalDeviceFeatures2"));
+
+        loader->vkDestroyInstance = reinterpret_cast<PFN_vkDestroyInstance>(_gipr(_instance, "vkDestroyInstance"));
+
+        loader->vkGetPhysicalDeviceMemoryProperties = reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(
+            _gipr(_instance, "vkGetPhysicalDeviceMemoryProperties"));
+
+        loader->vkGetPhysicalDeviceExternalBufferProperties =
+            reinterpret_cast<PFN_vkGetPhysicalDeviceExternalBufferProperties>(
+                _gipr(_instance, "vkGetPhysicalDeviceExternalBufferProperties"));
+
+        loader->vkGetPhysicalDeviceQueueFamilyProperties2 =
+            reinterpret_cast<PFN_vkGetPhysicalDeviceQueueFamilyProperties2>(
+                _gipr(_instance, "vkGetPhysicalDeviceQueueFamilyProperties2"));
+
+        loader->vkGetPhysicalDeviceFormatProperties2 = reinterpret_cast<PFN_vkGetPhysicalDeviceFormatProperties2>(
+            _gipr(_instance, "vkGetPhysicalDeviceFormatProperties2"));
+    }
 
     explicit Loader(const VkAllocationCallbacks *_callbacks, VkInstance _instance, PFN_vkGetInstanceProcAddr _gipr,
                     VkDevice _device, PFN_vkGetDeviceProcAddr _gdpr)
@@ -207,7 +245,6 @@ class Instance : public Loader {
         : Loader(_callbacks, _instance, _gipr), instance{_instance}, callbacks{_callbacks},
           nextGetInstanceProcAddr{_nextGetInstanceProcAddr}, nextGetPhysicalDeviceProcAddr{
                                                                  _nextGetPhysicalDeviceProcAddr} {}
-
     VkInstance instance;
     const VkAllocationCallbacks *callbacks;
     PFN_vkGetInstanceProcAddr nextGetInstanceProcAddr;
@@ -581,7 +618,6 @@ class VulkanLayer {
                 std::allocate_shared<InstanceImpl>(Allocator<InstanceImpl>{allocator}, *instance, getInstanceProcAddr,
                                                    allocator, getInstanceProcAddr, getNextPhysicalDeviceProcAddr);
         }
-
         return VK_SUCCESS;
     }
 
