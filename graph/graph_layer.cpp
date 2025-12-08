@@ -187,8 +187,35 @@ class GraphDevice : public Device {
  *****************************************************************************/
 namespace {
 
+void sprivMessageConsumer(spv_message_level_t level, const char *, const spv_position_t &position,
+                          const char *message) {
+    Severity severity = Severity::Info;
+    switch (level) {
+    case SPV_MSG_FATAL:
+        severity = Severity::Error;
+        break;
+    case SPV_MSG_INTERNAL_ERROR:
+        severity = Severity::Error;
+        break;
+    case SPV_MSG_ERROR:
+        severity = Severity::Error;
+        break;
+    case SPV_MSG_WARNING:
+        severity = Severity::Warning;
+        break;
+    case SPV_MSG_INFO:
+        severity = Severity::Info;
+        break;
+    case SPV_MSG_DEBUG:
+        severity = Severity::Debug;
+        break;
+    }
+
+    graphLog(severity) << "SPIRV-Tools message: " << message << " at position " << position.index << std::endl;
+}
+
 inline std::optional<bool> isGraphSpirv(const std::vector<uint32_t> &spirv) {
-    auto ir = spvtools::BuildModule(SPV_ENV_UNIVERSAL_1_6, nullptr, spirv.data(), spirv.size());
+    auto ir = spvtools::BuildModule(SPV_ENV_UNIVERSAL_1_6, sprivMessageConsumer, spirv.data(), spirv.size());
     if (ir == nullptr || ir->module() == nullptr) {
         return std::nullopt;
     }
@@ -197,7 +224,7 @@ inline std::optional<bool> isGraphSpirv(const std::vector<uint32_t> &spirv) {
 
 std::optional<std::string> tryGetExtInstVersion(const uint32_t *spirvCode, const size_t spirvSize,
                                                 const std::regex &pattern) {
-    auto ir = spvtools::BuildModule(SPV_ENV_UNIVERSAL_1_6, nullptr, spirvCode, spirvSize);
+    auto ir = spvtools::BuildModule(SPV_ENV_UNIVERSAL_1_6, sprivMessageConsumer, spirvCode, spirvSize);
     for (const auto &inst : ir->module()->ext_inst_imports()) {
         const auto name = inst.GetInOperand(0).AsString();
         if (std::regex_search(name, pattern))
