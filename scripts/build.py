@@ -7,10 +7,12 @@ import argparse
 import os
 import pathlib
 import platform
+import re
 import shutil
 import subprocess
 import sys
 from datetime import datetime
+from datetime import timezone
 
 try:
     import argcomplete
@@ -42,10 +44,11 @@ class Builder:
         self.clang_tidy_fix = args.clang_tidy_fix
 
         self.package_dir = args.package_dir or self.build_dir
-        self.package_version = args.package_version
         self.package_tgz = "tgz" in args.package_type
         self.package_zip = "zip" in args.package_type
         self.package_pip = "pip" in args.package_type
+        self.package_version = args.package_version
+        self.package_release_pip = "release-pip" in args.package_type
         self.package_source_tgz = "source-tgz" in args.package_type
         self.package_source_zip = "source-zip" in args.package_type
 
@@ -56,6 +59,9 @@ class Builder:
         self.spirv_cross_path = args.spirv_cross_path
         self.glslang_path = args.glslang_path
         self.gtest_path = args.gtest_path
+
+        if self.package_release_pip:
+            self.package_pip = True
 
         if not self.install and self.package_pip:
             self.install = "pip_install"
@@ -315,9 +321,17 @@ class Builder:
                 )
                 shutil.copyfile("README.md", "pip_package/README.md")
 
+                package_version = ""
+                if self.package_version:
+                    package_version = self.package_version
+                else:
+                    package_version = (
+                        "" if self.package_release_pip else get_package_version()
+                    )
+
                 os.environ[
                     "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_AI_ML_EMULATION_LAYER_FOR_VULKAN"
-                ] = self.package_version
+                ] = package_version
                 result = subprocess.Popen(
                     [sys.executable, "-m", "build"],
                     env=os.environ,
@@ -333,6 +347,20 @@ class Builder:
             return 1
 
         return 0
+
+
+def get_package_version():
+    pyproject = (EMULATION_LAYER_DIR / "pip_package" / "pyproject.toml").read_text()
+
+    regex_result = re.search(r'fallback_version\s*=\s*"([^"]+)"', pyproject)
+    if not regex_result:
+        raise RuntimeError("fallback_version not found")
+
+    base_version = regex_result.group(1)
+
+    date_tag = datetime.now(timezone.utc).strftime("%Y%m%d")
+
+    return f"{base_version}.dev{date_tag}"
 
 
 def parse_arguments():
@@ -400,7 +428,7 @@ def parse_arguments():
     )
     parser.add_argument(
         "--package-type",
-        choices=["zip", "tgz", "pip", "source-zip", "source-tgz"],
+        choices=["zip", "tgz", "pip", "source-zip", "source-tgz", "release_pip"],
         action="append",
         help="Create a package of a certain type",
         default=[],
@@ -408,7 +436,7 @@ def parse_arguments():
     parser.add_argument(
         "--package-version",
         help="Manually specify pip package version number",
-        default=datetime.today().strftime("%m.%d"),
+        default="",
     )
     parser.add_argument(
         "--enable-sanitizers",
@@ -422,7 +450,6 @@ def parse_arguments():
         action="store_true",
         default=False,
     )
-
     # Extras
     parser.add_argument(
         "--disable-precompile-shaders",
