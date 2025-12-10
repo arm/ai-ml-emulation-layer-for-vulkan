@@ -1193,19 +1193,11 @@ class GraphLayer : public VulkanLayerImpl {
 extern "C" {
 using namespace mlsdk::el::layer;
 
-PFN_vkVoidFunction VKAPI_CALL graphGetInstanceProcAddr(VkInstance instance, const char *name) {
-    return GraphLayer::vkGetInstanceProcAddr(instance, name);
-}
-
-PFN_vkVoidFunction VKAPI_CALL graphGetDeviceProcAddr(VkDevice device, const char *name) {
-    return GraphLayer::vkGetDeviceProcAddr(device, name);
-}
-
-PFN_vkVoidFunction VKAPI_CALL vk_layerGetPhysicalDeviceProcAddr(VkInstance instance, const char *name) {
+MLEL_EXPORT PFN_vkVoidFunction VKAPI_CALL vk_layerGetPhysicalDeviceProcAddr(VkInstance instance, const char *name) {
     return GraphLayer::vk_layerGetPhysicalDeviceProcAddr(instance, name);
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL
+MLEL_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *pNegotiateLayerInterface) {
 
     if (!pNegotiateLayerInterface || pNegotiateLayerInterface->sType != LAYER_NEGOTIATE_INTERFACE_STRUCT) {
@@ -1221,32 +1213,35 @@ vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *pNegotiateLaye
     return VK_SUCCESS;
 }
 
-PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char *name) {
+MLEL_EXPORT PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char *name) {
     return GraphLayer::vkGetInstanceProcAddr(instance, name);
 }
 
-PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char *name) {
+MLEL_EXPORT PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char *name) {
     return GraphLayer::vkGetDeviceProcAddr(device, name);
 }
 
-VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(uint32_t *pPropertyCount, VkLayerProperties *pProperties) {
+MLEL_EXPORT VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(uint32_t *pPropertyCount,
+                                                                   VkLayerProperties *pProperties) {
     return GraphLayer::vkEnumerateInstanceLayerProperties(pPropertyCount, pProperties);
 }
 
 #ifdef __ANDROID__
-VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(const char *pLayerName, uint32_t *pPropertyCount,
-                                                           VkExtensionProperties *pProperties) {
+MLEL_EXPORT VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(const char *pLayerName, uint32_t *pPropertyCount,
+                                                                       VkExtensionProperties *pProperties) {
     return GraphLayer::vkEnumerateInstanceExtensionProperties(pLayerName, pPropertyCount, pProperties);
 }
 #endif
 
-VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(VkPhysicalDevice physicalDevice, uint32_t *pPropertyCount,
-                                                     VkLayerProperties *pProperties) {
+MLEL_EXPORT VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(VkPhysicalDevice physicalDevice,
+                                                                 uint32_t *pPropertyCount,
+                                                                 VkLayerProperties *pProperties) {
     return GraphLayer::vkEnumerateDeviceLayerProperties(physicalDevice, pPropertyCount, pProperties);
 }
 
-VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice, const char *pLayerName,
-                                                         uint32_t *pPropertyCount, VkExtensionProperties *pProperties) {
+MLEL_EXPORT VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice,
+                                                                     const char *pLayerName, uint32_t *pPropertyCount,
+                                                                     VkExtensionProperties *pProperties) {
     return GraphLayer::vkEnumerateDeviceExtensionProperties(physicalDevice, pLayerName, pPropertyCount, pProperties);
 }
 }

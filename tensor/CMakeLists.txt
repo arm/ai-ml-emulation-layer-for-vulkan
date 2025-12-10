@@ -6,10 +6,7 @@ add_library(VkLayer_Tensor SHARED)
 
 add_library(${ML_SDK_EL_NAMESPACE}::VkLayer_Tensor ALIAS VkLayer_Tensor)
 
-if(WIN32)
-  # Ensure the Windows DLL exports the exact Vulkan loader entry points
-  target_sources(VkLayer_Tensor PRIVATE VkLayer_Tensor.def)
-endif()
+target_set_vulkan_exports(VkLayer_Tensor)
 
 target_compile_options(VkLayer_Tensor PRIVATE ${VMEL_COMPILE_OPTIONS})
 

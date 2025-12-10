@@ -30,6 +30,12 @@
 
 namespace mlsdk::el::layer {
 
+#if defined(_WIN32)
+#    define MLEL_EXPORT
+#else
+#    define MLEL_EXPORT __attribute__((visibility("default")))
+#endif
+
 static inline mlsdk::el::log::Log layerLog("VMEL_COMMON_SEVERITY", "Layer");
 
 template <typename T> struct LinkedType {
