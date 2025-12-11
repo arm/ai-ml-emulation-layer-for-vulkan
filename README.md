@@ -141,6 +141,7 @@ are used:
   and `VkLayer_Tensor` libraries.
 - Use the `VK_ADD_LAYER_PATH` environment variable to point at the
   `VkLayer_Graph.json` and `VkLayer_Tensor.json` manifest file.
+  - If your loader ignores `VK_ADD_LAYER_PATH` (older SDKs before 1.4.328.1), use `VK_LAYER_PATH`.
 - You must enable the graph layer before the tensor layer. To do this, use the
   `VK_INSTANCE_LAYERS` environment variable.
 
