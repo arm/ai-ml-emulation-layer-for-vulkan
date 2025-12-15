@@ -511,7 +511,7 @@ class VulkanLayer {
             }
 
             const uint32_t copySize = std::min(*propertyCount, static_cast<uint32_t>(extensions.size()));
-            std::copy(extensions.begin(), extensions.begin() + copySize, properties);
+            std::copy_n(extensions.begin(), copySize, properties);
             *propertyCount = copySize;
             if (copySize < extensions.size()) {
                 return VK_INCOMPLETE;
@@ -525,23 +525,29 @@ class VulkanLayer {
             return VK_ERROR_INVALID_EXTERNAL_HANDLE;
         }
 
-        uint32_t lowerLayerPropertyCount = 0;
-        auto res = handle->loader->vkEnumerateDeviceExtensionProperties(physicalDevice, layerName,
-                                                                        &lowerLayerPropertyCount, nullptr);
-        if (res != VK_SUCCESS) {
-            return res;
-        }
         if (!properties) {
-            *propertyCount = lowerLayerPropertyCount + static_cast<uint32_t>(extensions.size());
-        } else {
-            res = handle->loader->vkEnumerateDeviceExtensionProperties(physicalDevice, layerName,
-                                                                       &lowerLayerPropertyCount, properties);
-
+            uint32_t lowerLayerPropertyCount = 0;
+            auto res = handle->loader->vkEnumerateDeviceExtensionProperties(physicalDevice, layerName,
+                                                                            &lowerLayerPropertyCount, nullptr);
             if (res != VK_SUCCESS) {
                 return res;
             }
-            for (size_t i = 0; i < extensions.size(); ++i) {
-                properties[lowerLayerPropertyCount + i] = extensions[i];
+            *propertyCount = lowerLayerPropertyCount + static_cast<uint32_t>(extensions.size());
+        } else {
+            uint32_t lowerLayerQueryCount = *propertyCount;
+            auto res = handle->loader->vkEnumerateDeviceExtensionProperties(physicalDevice, layerName,
+                                                                            &lowerLayerQueryCount, properties);
+            if (res != VK_SUCCESS) {
+                *propertyCount = lowerLayerQueryCount;
+                return res;
+            }
+
+            const uint32_t copySize =
+                std::min(*propertyCount - lowerLayerQueryCount, static_cast<uint32_t>(extensions.size()));
+            std::copy_n(extensions.begin(), copySize, &properties[lowerLayerQueryCount]);
+            *propertyCount = lowerLayerQueryCount + copySize;
+            if (copySize < extensions.size()) {
+                return VK_INCOMPLETE;
             }
         }
         return VK_SUCCESS;
