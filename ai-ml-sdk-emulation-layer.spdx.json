@@ -57,7 +57,7 @@
             "licenseConcluded": "BSD-3-Clause",
             "licenseDeclared": "BSD-3-Clause",
             "name": "CMake",
-            "supplier": "Organization: conan",
+            "supplier": "Organization: CMake",
             "versionInfo": "v3.31.8"
         },
         {
