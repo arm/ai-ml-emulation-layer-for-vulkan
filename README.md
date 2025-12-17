@@ -390,6 +390,12 @@ pip install ai-ml-emulation-layer-for-vulkan
 - Resources created with `VK_IMAGE_TILING_OPTIMAL` and
   `VK_TENSOR_TILING_OPTIMAL_ARM` flags cannot be used with memory aliasing.
 - Data graph pipeline creation without a shader module is not supported.
+- Usage of capacity 'shaderFloat64' must have support in the underlying icd.
+  This relates to high-precision types. Support of it can be visualized with:
+
+   ```bash
+   vulkaninfo 2>&1 | grep -e 'shaderFloat64\|deviceName'
+   ```
 
 MoltenVK currently does not have full Vulkan® coverage, some notable issues are:
 
