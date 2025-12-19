@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -825,6 +825,16 @@ class VulkanLayer {
      * Device
      *******************************************************************************/
 
+    template <typename T, typename U, typename Pred> static void erase_if(std::map<T, U> &map, Pred pred) {
+        for (auto it = map.begin(); it != map.end();) {
+            if (pred(it)) {
+                it = map.erase(it);
+            } else {
+                it++;
+            }
+        }
+    }
+
     static void VKAPI_CALL vkDestroyDevice(VkDevice device, const VkAllocationCallbacks *allocator) {
         std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> loader;
 
@@ -838,13 +848,13 @@ class VulkanLayer {
             deviceMap.erase(device);
 
             // Erase queue maps
-            for (auto it = queueMap.begin(); it != queueMap.end();) {
-                if (it->second == handle) {
-                    it = queueMap.erase(it);
-                } else {
-                    ++it;
-                }
-            }
+            erase_if(queueMap, [handle](auto it) { return it->second == handle; });
+
+            // Erase command buffer maps
+            erase_if(commandBufferMap, [handle](auto it) { return it->second->device == handle; });
+
+            // Assert no more references to this device exist
+            assert(handle.use_count() == 1);
         }
 
         loader->vkDestroyDevice(device, allocator);
