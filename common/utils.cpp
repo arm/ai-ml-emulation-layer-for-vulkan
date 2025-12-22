@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2024-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -58,7 +58,7 @@ std::vector<uint32_t> glslToSpirv(const std::string &glsl) {
     glslang_shader_t *shader = glslang_shader_create(&input);
     Finally f2([&shader]() { glslang_shader_delete(shader); });
 
-#if defined(EXPERIMENTAL_MOLTEN_VK_SUPPORT) || defined(ANDROID)
+#ifdef USE_FLOAT_AS_DOUBLE
     glslang_shader_set_preamble(shader, "#define USE_FLOAT_AS_DOUBLE\n");
 #endif
 

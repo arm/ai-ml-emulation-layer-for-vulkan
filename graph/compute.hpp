@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -299,17 +299,17 @@ class Clamp : public ComputePipeline {
   public:
     Clamp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, VkDevice _device,
           const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
-          const std::shared_ptr<TensorDescriptor> &_output, const double _min, const double _max,
+          const std::shared_ptr<TensorDescriptor> &_output, const real_t _min, const real_t _max,
           const uint32_t _nanMode, const std::string &debugName);
 
   private:
     struct PushConstant {
-        double min;
-        double max;
+        real_t min;
+        real_t max;
         uint32_t nanMode;
     };
 
-    PushConstant createPushConstant(const double min, const double max, const uint32_t nanMode) const;
+    PushConstant createPushConstant(const real_t min, const real_t max, const uint32_t nanMode) const;
 
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
@@ -727,14 +727,14 @@ class Pad : public ComputePipeline {
     Pad(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, VkDevice _device,
         const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
         const std::shared_ptr<TensorDescriptor> &_output, const std::shared_ptr<TensorDescriptor> &_padding,
-        const double _padConst, const std::string &debugName);
+        const real_t _padConst, const std::string &debugName);
 
   private:
     struct PushConstant {
-        double padConst;
+        real_t padConst;
     };
 
-    PushConstant createPushConstant(const double padConst) const;
+    PushConstant createPushConstant(const real_t padConst) const;
 
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output,
@@ -1237,7 +1237,7 @@ class GraphPipeline {
                   const std::string &debugName);
 
     void makeClamp(const std::shared_ptr<TensorDescriptor> &input, const std::shared_ptr<TensorDescriptor> &output,
-                   const double min, const double max, const uint32_t nanMode, const std::string &debugName);
+                   const real_t min, const real_t max, const uint32_t nanMode, const std::string &debugName);
 
     void makeClz(const std::shared_ptr<TensorDescriptor> &input1, const std::shared_ptr<TensorDescriptor> &output,
                  const std::string &debugName);
@@ -1347,7 +1347,7 @@ class GraphPipeline {
                     const int32_t inputZeroPoint, const int32_t outputZeroPoint, const std::string &debugName);
 
     void makePad(const std::shared_ptr<TensorDescriptor> &input, const std::shared_ptr<TensorDescriptor> &output,
-                 const std::shared_ptr<TensorDescriptor> &padding, const double padConst, const std::string &debugName);
+                 const std::shared_ptr<TensorDescriptor> &padding, const real_t padConst, const std::string &debugName);
 
     void makePow(const std::shared_ptr<TensorDescriptor> &input1, const std::shared_ptr<TensorDescriptor> &input2,
                  const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName);
