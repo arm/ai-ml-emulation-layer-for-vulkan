@@ -239,8 +239,9 @@ constexpr std::array<const VkExtensionProperties, 1> extensions{
     VkExtensionProperties{VK_ARM_DATA_GRAPH_EXTENSION_NAME, VK_ARM_DATA_GRAPH_SPEC_VERSION},
 };
 
-constexpr std::array<const VkExtensionProperties, 1> requiredExtensions = {
+constexpr std::array<const VkExtensionProperties, 2> requiredExtensions = {
     VkExtensionProperties{VK_ARM_TENSORS_EXTENSION_NAME, VK_ARM_TENSORS_SPEC_VERSION},
+    VkExtensionProperties{VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME, VK_KHR_SYNCHRONIZATION_2_SPEC_VERSION},
 };
 
 constexpr VkLayerProperties layerProperties = {
