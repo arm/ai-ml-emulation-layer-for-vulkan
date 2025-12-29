@@ -17,7 +17,7 @@ class BDistWheel(bdist_wheel):
         system = platform.system()
         machine = platform.machine()
         if system == "Windows":
-            assert machine == "x86_64"
+            assert machine == "AMD64"
             platformName = "win_amd64"
         elif system == "Linux":
             if machine == "aarch64":
@@ -27,7 +27,7 @@ class BDistWheel(bdist_wheel):
                 platformName = "manyLinux2014_x86_64"
         elif system == "Darwin":
             assert machine == "arm64"
-            platformName = "macosx_10_13_arm64"
+            platformName = "macosx_11_0_arm64"
         return ("py3", "none", platformName)
 
 
