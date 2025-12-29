@@ -25,7 +25,7 @@ def main():
     paths = get_deploy_paths()
     if sys.platform.startswith("linux"):
         print(f"export LD_LIBRARY_PATH={paths['LD_LIBRARY_PATH']}:$LD_LIBRARY_PATH")
-        print(f"export VK_LAYER_PATH={paths['VK_ADD_LAYER_PATH']}:$VK_LAYER_PATH")
+        print(f"export VK_LAYER_PATH={paths['VK_LAYER_PATH']}:$VK_LAYER_PATH")
         print(
             "export VK_INSTANCE_LAYERS=VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation"
         )
