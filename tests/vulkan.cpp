@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -1059,6 +1059,50 @@ TEST_F(MLEmulationLayerForVulkan, GraphConstantARM) {
     const uint8_t ref[5] = {0, 20, 40, 60, 80};
 
     ASSERT_TRUE(outputTensor->compare(&ref[0], sizeof(ref))) << "Output mismatch";
+}
+
+TEST_F(MLEmulationLayerForVulkan, HigherRankGraphConstantARM) {
+    auto device = createDevice();
+
+    auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 3, 3, 1}});
+    std::fill(inputTensor->data(), inputTensor->data() + inputTensor->size(), 1);
+
+    auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 3, 3, 1}});
+    const GraphPipeline::DescriptorMap descriptorMap = {
+        {
+            {
+                0,             // binding
+                {inputTensor}, // tensor
+            },
+            {
+                1,              // binding
+                {outputTensor}, // tensor
+            },
+        },
+    };
+
+    GraphConstants graphConstants;
+
+    const auto spirv = assembleSpirv(fileToString("inlined-higher-rank-constant.spvasm"));
+    auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, graphConstants, spirv);
+
+    graphPipeline->dispatchSubmit();
+
+    std::cout << "INPUT" << std::endl;
+    inputTensor->print();
+
+    std::cout << "OUTPUT" << std::endl;
+    outputTensor->print();
+
+    const uint8_t ref[1][3][3][1] = {
+        {
+            {{24}, {33}, {20}},
+            {{27}, {36}, {21}},
+            {{12}, {15}, {8}},
+        },
+    };
+
+    ASSERT_TRUE(outputTensor->compare(&ref[0][0][0][0], sizeof(ref))) << "Output mismatch";
 }
 
 TEST_F(MLEmulationLayerForVulkan, Maximum) {

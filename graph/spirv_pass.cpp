@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -83,9 +83,9 @@ void GraphPassBase::handleInputsAndOutputs(const Instruction &opGraphEntryPoint)
         const auto resultId = opGraphInputARM->result_id();
 
         // External id from the graph entry point
-        const auto &inputIndex = getConstant(opGraphInputARM->GetOperand(2));
+        const auto &inputIndex = getConstScalar(opGraphInputARM->GetOperand(2));
         const uint32_t arrayIndex =
-            opGraphInputARM->NumOperands() > 3 ? getConstant<uint32_t>(opGraphInputARM->GetOperand(3)) : 0;
+            opGraphInputARM->NumOperands() > 3 ? getConstScalar<uint32_t>(opGraphInputARM->GetOperand(3)) : 0;
         const auto &inputTensor = getTensor(inputs[inputIndex], arrayIndex);
 
         // Map result id to external tensor
@@ -105,9 +105,9 @@ void GraphPassBase::handleInputsAndOutputs(const Instruction &opGraphEntryPoint)
         const auto &instruction = get_def_use_mgr()->GetDef(opGraphSetOutputARM->GetOperand(0).AsId());
 
         // The external tensor id from the graph entry point
-        const auto &outputIndex = getConstant(opGraphSetOutputARM->GetOperand(1));
+        const auto &outputIndex = getConstScalar(opGraphSetOutputARM->GetOperand(1));
         const uint32_t arrayIndex =
-            opGraphSetOutputARM->NumOperands() > 2 ? getConstant<uint32_t>(opGraphSetOutputARM->GetOperand(2)) : 0;
+            opGraphSetOutputARM->NumOperands() > 2 ? getConstScalar<uint32_t>(opGraphSetOutputARM->GetOperand(2)) : 0;
         const auto &outputTensor = getTensor(outputs[outputIndex], arrayIndex);
 
         graphPipeline.makeOutput(outputTensor);
