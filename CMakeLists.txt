@@ -26,13 +26,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     add_compile_definitions(EXPERIMENTAL_MOLTEN_VK_SUPPORT)
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR DEFINED ANDROID_ABI)
-    add_compile_definitions(USE_FLOAT_AS_DOUBLE)
-    add_compile_definitions(real_t=float)
-else()
-    add_compile_definitions(real_t=double)
-endif()
-
 include(CTest)
 configure_file(CTestCustom.cmake CTestCustom.cmake)
 
@@ -52,6 +45,7 @@ endif()
 
 option(VMEL_TESTS_ENABLE "Enable tests" OFF)
 option(VMEL_DISABLE_PRECOMPILE_SHADERS "Disable precompilation of SPIR-V shaders" OFF)
+option(VMEL_USE_FLOAT_AS_DOUBLE "Use float as double precision type" OFF)
 option(VMEL_BUILD_DOCS "Build documentation" OFF)
 
 ###############################################################################
@@ -69,6 +63,14 @@ if(NOT EXISTS ${SPIRV_TOOLS_PATH}/CMakeLists.txt)
 endif()
 
 include(setLayerEntrypoints)
+
+###############################################################################
+# Precision configuration
+###############################################################################
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR DEFINED ANDROID_ABI)
+    set(VMEL_USE_FLOAT_AS_DOUBLE ON CACHE BOOL "Use float as double precision type" FORCE)
+endif()
 
 ###############################################################################
 # ML Emulation Layer for Vulkan

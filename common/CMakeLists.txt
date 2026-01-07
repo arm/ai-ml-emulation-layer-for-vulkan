@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -21,6 +21,13 @@ target_include_directories(VkLayer_Log INTERFACE
 add_library(VkLayer_Common INTERFACE)
 
 target_compile_options(VkLayer_Common INTERFACE ${VMEL_COMPILE_OPTIONS})
+
+if(VMEL_USE_FLOAT_AS_DOUBLE)
+    target_compile_definitions(VkLayer_Common INTERFACE USE_FLOAT_AS_DOUBLE)
+    target_compile_definitions(VkLayer_Common INTERFACE real_t=float)
+else()
+    target_compile_definitions(VkLayer_Common INTERFACE real_t=double)
+endif()
 
 target_include_directories(VkLayer_Common INTERFACE
     include)
