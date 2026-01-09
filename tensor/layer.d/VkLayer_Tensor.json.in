@@ -48,6 +48,7 @@
                     "vkGetPhysicalDeviceFeatures2KHR",
                     "vkGetPhysicalDeviceFormatProperties2",
                     "vkGetPhysicalDeviceProperties2",
+                    "vkGetPhysicalDeviceToolPropertiesEXT",
                     "vkGetTensorMemoryRequirementsARM",
                     "vkSetDebugUtilsObjectNameEXT",
                     "vkUpdateDescriptorSets"

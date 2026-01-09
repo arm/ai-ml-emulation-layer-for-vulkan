@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -209,9 +209,10 @@ class TensorLayer : public VulkanLayerImpl {
             {"vkGetPhysicalDeviceFormatProperties2", PFN_vkVoidFunction(vkGetPhysicalDeviceFormatProperties2)},
             {"vkGetPhysicalDeviceFeatures2", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2)},
             {"vkGetPhysicalDeviceFeatures2KHR", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2KHR)},
-            {"vkCreateDevice", PFN_vkVoidFunction(vkCreateDevice)},
             {"vkGetPhysicalDeviceExternalTensorPropertiesARM",
              PFN_vkVoidFunction(vkGetPhysicalDeviceExternalTensorPropertiesARM)},
+            {"vkGetPhysicalDeviceToolPropertiesEXT", PFN_vkVoidFunction(vkGetPhysicalDeviceToolPropertiesEXT)},
+            {"vkCreateDevice", PFN_vkVoidFunction(vkCreateDevice)},
             // Device functions
             {"vkSetDebugUtilsObjectNameEXT", PFN_vkVoidFunction(vkSetDebugUtilsObjectNameEXT)}};
 
@@ -232,6 +233,7 @@ class TensorLayer : public VulkanLayerImpl {
             {"vkGetPhysicalDeviceFeatures2KHR", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2KHR)},
             {"vkGetPhysicalDeviceExternalTensorPropertiesARM",
              PFN_vkVoidFunction(vkGetPhysicalDeviceExternalTensorPropertiesARM)},
+            {"vkGetPhysicalDeviceToolPropertiesEXT", PFN_vkVoidFunction(vkGetPhysicalDeviceToolPropertiesEXT)},
             {"vkCreateDevice", PFN_vkVoidFunction(vkCreateDevice)}};
 
         if (auto it = vtable.find(name); it != vtable.end()) {
@@ -916,6 +918,52 @@ class TensorLayer : public VulkanLayerImpl {
             return handle->loader->vkSetDebugUtilsObjectNameEXT(device, pNameInfo);
         }
         return VK_SUCCESS;
+    }
+
+    static VkResult VKAPI_CALL vkGetPhysicalDeviceToolPropertiesEXT(VkPhysicalDevice device, uint32_t *pToolCount,
+                                                                    VkPhysicalDeviceToolProperties *pToolProperties) {
+        auto handle = VulkanLayerImpl::getHandle(device);
+
+        VkPhysicalDeviceToolProperties tool = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TOOL_PROPERTIES_EXT,
+                                               nullptr,
+                                               "Tensor Layer",
+                                               "1.0",
+                                               VK_TOOL_PURPOSE_ADDITIONAL_FEATURES_BIT,
+                                               "Tensor Layer",
+                                               "VK_LAYER_ML_Tensor_Emulation"};
+
+        // Query mode
+        if (pToolProperties == nullptr) {
+            VkResult result = handle->loader->vkGetPhysicalDeviceToolPropertiesEXT(device, pToolCount, nullptr);
+
+            if (result == VK_SUCCESS) {
+                *pToolCount += 1;
+            }
+            return result;
+        }
+
+        const uint32_t capacity = *pToolCount;
+        if (capacity == 0) {
+            *pToolCount = 0;
+            return VK_INCOMPLETE;
+        }
+
+        // Reserve one slot
+        uint32_t downstreamCapacity = capacity - 1;
+
+        VkResult result =
+            handle->loader->vkGetPhysicalDeviceToolPropertiesEXT(device, &downstreamCapacity, pToolProperties);
+
+        const uint32_t written = downstreamCapacity;
+
+        if (result == VK_SUCCESS) {
+            pToolProperties[written] = tool;
+            *pToolCount = written + 1;
+            return VK_SUCCESS;
+        }
+
+        *pToolCount = written;
+        return result;
     }
 
     static inline std::unordered_map<std::size_t, std::vector<uint32_t>> spirvCache;
