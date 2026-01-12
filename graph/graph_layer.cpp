@@ -747,7 +747,24 @@ class GraphLayer : public VulkanLayerImpl {
             return VK_INCOMPLETE;
         }
 
-        *pQueueFamilyDataGraphProperties = VkQueueFamilyDataGraphPropertiesARM{};
+        VkPhysicalDeviceDataGraphProcessingEngineARM processingEngine = {
+            VK_PHYSICAL_DEVICE_DATA_GRAPH_PROCESSING_ENGINE_TYPE_DEFAULT_ARM,
+            VK_FALSE,
+        };
+
+        VkPhysicalDeviceDataGraphOperationSupportARM operationSupport = {
+            VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_SPIRV_EXTENDED_INSTRUCTION_SET_ARM,
+            "TOSA.001000.1",
+            {},
+        };
+
+        *pQueueFamilyDataGraphProperties = {
+            VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_PROPERTIES_ARM,
+            nullptr,
+            processingEngine,
+            operationSupport,
+        };
+
         *pQueueFamilyDataGraphPropertyCount = 1;
 
         return VK_SUCCESS;
