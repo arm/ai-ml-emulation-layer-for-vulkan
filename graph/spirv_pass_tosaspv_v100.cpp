@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2025-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -361,8 +361,8 @@ void GraphPassTosaSpv100::handleArgmax(const Instruction *opExtInst, const std::
     assert(opExtInst->NumInOperands() == 5);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &axis = getConstant<uint32_t>(opExtInst->GetInOperand(2));
-    const auto &nanMode = getConstant<uint32_t>(opExtInst->GetInOperand(3));
+    const auto &axis = getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(3));
     const auto &inputId = opExtInst->GetInOperand(4);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", axis=" << axis
@@ -396,7 +396,7 @@ void GraphPassTosaSpv100::handleAvgPool2D(const Instruction *opExtInst, const st
     const auto &kernel = getConstVector(opExtInst->GetInOperand(2));
     const auto &stride = getConstVector(opExtInst->GetInOperand(3));
     const auto &pad = getConstVector(opExtInst->GetInOperand(4));
-    const auto &accType = getConstant<uint32_t>(opExtInst->GetInOperand(5));
+    const auto &accType = getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
     const auto &inputId = opExtInst->GetInOperand(6);
     const auto &inputZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(7));
     const auto &outputZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(8));
@@ -428,9 +428,9 @@ void GraphPassTosaSpv100::handleClamp(const Instruction *opExtInst, const std::s
     assert(opExtInst->NumInOperands() == 6);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &minVal = getConstant<double>(opExtInst->GetInOperand(2));
-    const auto &maxVal = getConstant<double>(opExtInst->GetInOperand(3));
-    const auto &nanMode = getConstant<uint32_t>(opExtInst->GetInOperand(4));
+    const auto &minVal = getConstScalar<double>(opExtInst->GetInOperand(2));
+    const auto &maxVal = getConstScalar<double>(opExtInst->GetInOperand(3));
+    const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(4));
     const auto &inputId = opExtInst->GetInOperand(5);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", minVal=" << minVal
@@ -445,7 +445,7 @@ void GraphPassTosaSpv100::handleConcat(const Instruction *opExtInst, const std::
     assert(opExtInst->NumInOperands() > 2);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &axis = getConstant<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &axis = getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
 
     std::vector<std::shared_ptr<TensorDescriptor>> inputs;
     std::string inputsStr;
@@ -469,7 +469,7 @@ void GraphPassTosaSpv100::handleConv2D(const Instruction *opExtInst, const std::
     const auto &pad = getConstVector(opExtInst->GetInOperand(2));
     const auto &stride = getConstVector(opExtInst->GetInOperand(3));
     const auto &dilation = getConstVector(opExtInst->GetInOperand(4));
-    const auto &accType = getConstant<uint32_t>(opExtInst->GetInOperand(5));
+    const auto &accType = getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
     const auto &localBound = getBoolConstant(opExtInst->GetInOperand(6));
     const auto &inputId = opExtInst->GetInOperand(7);
     const auto &weightId = opExtInst->GetInOperand(8);
@@ -496,7 +496,7 @@ void GraphPassTosaSpv100::handleConv3D(const Instruction *opExtInst, const std::
     const auto &pad = getConstVector(opExtInst->GetInOperand(2));
     const auto &stride = getConstVector(opExtInst->GetInOperand(3));
     const auto &dilation = getConstVector(opExtInst->GetInOperand(4));
-    const auto &accType = getConstant<uint32_t>(opExtInst->GetInOperand(5));
+    const auto &accType = getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
     const auto &localBound = getBoolConstant(opExtInst->GetInOperand(6));
     const auto &inputId = opExtInst->GetInOperand(7);
     const auto &weightId = opExtInst->GetInOperand(8);
@@ -523,7 +523,7 @@ void GraphPassTosaSpv100::handleDepthwiseConv2D(const Instruction *opExtInst, co
     const auto &pad = getConstVector(opExtInst->GetInOperand(2));
     const auto &stride = getConstVector(opExtInst->GetInOperand(3));
     const auto &dilation = getConstVector(opExtInst->GetInOperand(4));
-    const auto &accType = getConstant<uint32_t>(opExtInst->GetInOperand(5));
+    const auto &accType = getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
     const auto &localBound = getBoolConstant(opExtInst->GetInOperand(6));
     const auto &inputId = opExtInst->GetInOperand(7);
     const auto &weightId = opExtInst->GetInOperand(8);
@@ -632,7 +632,7 @@ void GraphPassTosaSpv100::handleMaximum(const Instruction *opExtInst, const std:
     assert(opExtInst->NumInOperands() == 5);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &nanMode = getConstant<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
     const auto &inputId1 = opExtInst->GetInOperand(3);
     const auto &inputId2 = opExtInst->GetInOperand(4);
 
@@ -650,7 +650,7 @@ void GraphPassTosaSpv100::handleMaxPool2D(const Instruction *opExtInst, const st
     const auto &kernel = getConstVector(opExtInst->GetInOperand(2));
     const auto &stride = getConstVector(opExtInst->GetInOperand(3));
     const auto &pad = getConstVector(opExtInst->GetInOperand(4));
-    const auto &nanMode = getConstant<uint32_t>(opExtInst->GetInOperand(5));
+    const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
     const auto &inputId = opExtInst->GetInOperand(6);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", kernel=" << kernel
@@ -665,7 +665,7 @@ void GraphPassTosaSpv100::handleMinimum(const Instruction *opExtInst, const std:
     assert(opExtInst->NumInOperands() == 5);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &nanMode = getConstant<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
     const auto &inputId1 = opExtInst->GetInOperand(3);
     const auto &inputId2 = opExtInst->GetInOperand(4);
 
@@ -730,7 +730,7 @@ void GraphPassTosaSpv100::handleRescale(const Instruction *opExtInst, const std:
 
     const auto &resultId = opExtInst->result_id();
     const auto &scale32 = getBoolConstant(opExtInst->GetInOperand(2));
-    const auto &roundingMode = getConstant<uint32_t>(opExtInst->GetInOperand(3));
+    const auto &roundingMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(3));
     const auto &perChannel = getBoolConstant(opExtInst->GetInOperand(4));
     const auto &inputUnsigned = getBoolConstant(opExtInst->GetInOperand(5));
     const auto &outputUnsigned = getBoolConstant(opExtInst->GetInOperand(6));
@@ -763,7 +763,7 @@ void GraphPassTosaSpv100::handleReduce(
     assert(opExtInst->NumInOperands() == 4);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &axis = getConstant<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &axis = getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
     const auto &inputId = opExtInst->GetInOperand(3);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ", " << debugName << ", axis=" << axis
@@ -777,8 +777,8 @@ void GraphPassTosaSpv100::handleReduceMax(const Instruction *opExtInst, const st
     assert(opExtInst->NumInOperands() == 5);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &axis = getConstant<uint32_t>(opExtInst->GetInOperand(2));
-    const auto &nanMode = getConstant<uint32_t>(opExtInst->GetInOperand(3));
+    const auto &axis = getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(3));
     const auto &inputId = opExtInst->GetInOperand(4);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", axis=" << axis
@@ -792,8 +792,8 @@ void GraphPassTosaSpv100::handleReduceMin(const Instruction *opExtInst, const st
     assert(opExtInst->NumInOperands() == 5);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &axis = getConstant<uint32_t>(opExtInst->GetInOperand(2));
-    const auto &nanMode = getConstant<uint32_t>(opExtInst->GetInOperand(3));
+    const auto &axis = getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(3));
     const auto &inputId = opExtInst->GetInOperand(4);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", axis=" << axis
@@ -821,7 +821,7 @@ void GraphPassTosaSpv100::handleResize(const Instruction *opExtInst, const std::
     assert(opExtInst->NumInOperands() == 7);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &mode = getConstant<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &mode = getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
     const auto &inputId = opExtInst->GetInOperand(3);
     const auto &scale = getConstVector<int32_t>(opExtInst->GetInOperand(4));
     const auto &offset = getConstVector<int32_t>(opExtInst->GetInOperand(5));
@@ -839,7 +839,7 @@ void GraphPassTosaSpv100::handleReverse(const Instruction *opExtInst, const std:
     assert(opExtInst->NumInOperands() == 4);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &axis = getConstant<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &axis = getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
     const auto &inputId = opExtInst->GetInOperand(3);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", axis=" << axis << ", input=%"
@@ -959,7 +959,7 @@ void GraphPassTosaSpv100::handleTransposeConv2D(const Instruction *opExtInst, co
     const auto &resultId = opExtInst->result_id();
     const auto &outPad = getConstVector(opExtInst->GetInOperand(2));
     const auto &stride = getConstVector(opExtInst->GetInOperand(3));
-    const auto &accType = getConstant<uint32_t>(opExtInst->GetInOperand(4));
+    const auto &accType = getConstScalar<uint32_t>(opExtInst->GetInOperand(4));
     const auto &localBound = getBoolConstant(opExtInst->GetInOperand(5));
     const auto &inputId = opExtInst->GetInOperand(6);
     const auto &weightId = opExtInst->GetInOperand(7);
@@ -989,7 +989,7 @@ void GraphPassTosaSpv100::handleMinSad(const Instruction *opExtInst, const std::
     const auto &windowStrides = getConstVector(opExtInst->GetInOperand(5));
     const auto &windowOffsets = getConstVector(opExtInst->GetInOperand(6));
     const auto &padding = getConstVector(opExtInst->GetInOperand(7));
-    const auto &searchPattern = getConstant<uint32_t>(opExtInst->GetInOperand(8));
+    const auto &searchPattern = getConstScalar<uint32_t>(opExtInst->GetInOperand(8));
     const auto &input0Id = opExtInst->GetInOperand(9);
     const auto &input1Id = opExtInst->GetInOperand(10);
 
@@ -1016,7 +1016,7 @@ void GraphPassTosaSpv100::handleMinSadCost(const Instruction *opExtInst, const s
     const auto &windowStrides = getConstVector(opExtInst->GetInOperand(5));
     const auto &windowOffsets = getConstVector(opExtInst->GetInOperand(6));
     const auto &padding = getConstVector(opExtInst->GetInOperand(7));
-    const auto &searchPattern = getConstant<uint32_t>(opExtInst->GetInOperand(8));
+    const auto &searchPattern = getConstScalar<uint32_t>(opExtInst->GetInOperand(8));
     const auto &input0Id = opExtInst->GetInOperand(9);
     const auto &input1Id = opExtInst->GetInOperand(10);
 

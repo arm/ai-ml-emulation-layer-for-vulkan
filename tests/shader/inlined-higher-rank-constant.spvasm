@@ -1,0 +1,90 @@
+;
+; SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+; SPDX-License-Identifier: Apache-2.0
+;
+               OpCapability Int8
+               OpCapability TensorsARM
+               OpCapability ReplicatedCompositesEXT
+               OpCapability GraphARM
+               OpCapability VulkanMemoryModel
+               OpCapability Shader
+               OpCapability Matrix
+               OpExtension "SPV_ARM_tensors"
+               OpExtension "SPV_EXT_replicated_composites"
+               OpExtension "SPV_ARM_graph"
+               OpExtension "SPV_KHR_vulkan_memory_model"
+         %64 = OpExtInstImport "TOSA.001000.1"
+               OpMemoryModel Logical Vulkan
+               OpName %graph_partition_0_arg_0 "graph_partition_0_arg_0"
+               OpName %graph_partition_0_res_0 "graph_partition_0_res_0"
+               OpDecorate %graph_partition_0_arg_0 Binding 0
+               OpDecorate %graph_partition_0_arg_0 DescriptorSet 0
+               OpDecorate %graph_partition_0_res_0 Binding 1
+               OpDecorate %graph_partition_0_res_0 DescriptorSet 0
+      %uchar = OpTypeInt 8 0
+       %uint = OpTypeInt 32 0
+     %uint_4 = OpConstant %uint 4
+%_arr_uint_uint_4 = OpTypeArray %uint %uint_4
+     %uint_1 = OpConstant %uint 1
+     %uint_3 = OpConstant %uint 3
+          %7 = OpConstantComposite %_arr_uint_uint_4 %uint_1 %uint_3 %uint_3 %uint_1
+          %2 = OpTypeTensorARM %uchar %uint_4 %7
+%_ptr_UniformConstant_2 = OpTypePointer UniformConstant %2
+%graph_partition_0_arg_0 = OpVariable %_ptr_UniformConstant_2 UniformConstant
+%graph_partition_0_res_0 = OpVariable %_ptr_UniformConstant_2 UniformConstant
+         %13 = OpTypeGraphARM 1 %2 %2
+     %uint_0 = OpConstant %uint 0
+%_arr_uint_uint_3 = OpTypeArray %uint %uint_3
+         %19 = OpConstantComposite %_arr_uint_uint_3 %uint_3 %uint_3 %uint_1
+         %17 = OpTypeTensorARM %uchar %uint_3 %19
+     %uint_2 = OpConstant %uint 2
+%_arr_uint_uint_2 = OpTypeArray %uint %uint_2
+         %24 = OpConstantComposite %_arr_uint_uint_2 %uint_3 %uint_1
+         %21 = OpTypeTensorARM %uchar %uint_2 %24
+%_arr_uint_uint_1 = OpTypeArray %uint %uint_1
+         %28 = OpConstantComposite %_arr_uint_uint_1 %uint_1
+         %26 = OpTypeTensorARM %uchar %uint_1 %28
+    %uchar_0 = OpConstant %uchar 0
+         %29 = OpConstantComposite %26 %uchar_0
+    %uchar_1 = OpConstant %uchar 1
+         %31 = OpConstantComposite %26 %uchar_1
+    %uchar_2 = OpConstant %uchar 2
+         %33 = OpConstantComposite %26 %uchar_2
+         %25 = OpConstantComposite %21 %29 %31 %33
+    %uchar_3 = OpConstant %uchar 3
+         %36 = OpConstantComposite %26 %uchar_3
+    %uchar_4 = OpConstant %uchar 4
+         %38 = OpConstantComposite %26 %uchar_4
+    %uchar_5 = OpConstant %uchar 5
+         %40 = OpConstantComposite %26 %uchar_5
+         %35 = OpConstantComposite %21 %36 %38 %40
+    %uchar_6 = OpConstant %uchar 6
+         %43 = OpConstantComposite %26 %uchar_6
+    %uchar_7 = OpConstant %uchar 7
+         %45 = OpConstantComposite %26 %uchar_7
+    %uchar_8 = OpConstant %uchar 8
+         %47 = OpConstantComposite %26 %uchar_8
+         %42 = OpConstantComposite %21 %43 %45 %47
+         %20 = OpConstantComposite %17 %25 %35 %42
+         %16 = OpConstantComposite %2 %20
+         %50 = OpConstantComposite %_arr_uint_uint_1 %uint_1
+         %49 = OpTypeTensorARM %uint %uint_1 %50
+         %51 = OpConstantNull %49
+         %52 = OpConstantNull %26
+         %54 = OpConstantComposite %_arr_uint_uint_1 %uint_4
+         %53 = OpTypeTensorARM %uint %uint_1 %54
+         %55 = OpConstantCompositeReplicateEXT %53 %uint_1
+         %57 = OpConstantComposite %_arr_uint_uint_1 %uint_2
+         %56 = OpTypeTensorARM %uint %uint_1 %57
+         %58 = OpConstantCompositeReplicateEXT %56 %uint_1
+       %bool = OpTypeBool
+      %false = OpConstantFalse %bool
+         %62 = OpConstantComposite %_arr_uint_uint_4 %uint_1 %uint_3 %uint_3 %uint_1
+         %61 = OpTypeTensorARM %uint %uint_4 %62
+               OpGraphEntryPointARM %12 "graph_partition_0" %graph_partition_0_arg_0 %graph_partition_0_res_0
+         %12 = OpGraphARM %13
+         %14 = OpGraphInputARM %2 %uint_0
+         %63 = OpExtInst %61 %64 CONV2D %55 %58 %58 %uint_1 %false %14 %16 %51 %52 %52
+         %65 = OpExtInst %2 %64 CAST %63
+               OpGraphSetOutputARM %65 %uint_0
+               OpGraphEndARM

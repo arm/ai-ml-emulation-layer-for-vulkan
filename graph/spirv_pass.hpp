@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -14,6 +14,7 @@
 #include "mlel/float.hpp"
 #include "source/opt/pass.h"
 
+#include <numeric>
 #include <spirv-tools/optimizer.hpp>
 #include <type_traits>
 
@@ -67,28 +68,36 @@ class GraphPassBase : public Pass {
         return getConstVector<T>(operand.AsId());
     }
 
+    template <typename T = uint32_t>
+    void getFlattenedCompositeConstant(const spvtools::opt::analysis::CompositeConstant *composite,
+                                       std::vector<T> &kernel) const {
+        for (const auto &component : composite->GetComponents()) {
+            if (const auto &innerComposite = component->AsCompositeConstant()) {
+                getFlattenedCompositeConstant(innerComposite, kernel);
+            } else {
+                kernel.push_back(getConstScalar<T>(component));
+            }
+        }
+    }
+
     template <typename T = uint32_t> std::vector<T> getConstVector(const uint32_t id) const {
         const auto &constant = context()->get_constant_mgr()->FindDeclaredConstant(id);
         std::vector<T> kernel;
 
         if (const auto &composite = constant->AsCompositeConstant()) {
-            const auto &components = composite->GetComponents();
-
             const auto &instruction = context()->get_def_use_mgr()->GetDef(id);
             bool isSplat = instruction->opcode() == spv::Op::OpConstantCompositeReplicateEXT ||
                            instruction->opcode() == spv::Op::OpSpecConstantCompositeReplicateEXT;
+            getFlattenedCompositeConstant(composite, kernel);
 
-            size_t compositeCount = components.size();
             if (isSplat) {
+                assert(kernel.size() == 1);
                 const auto tensorType = getTensorType(id);
-                const auto dimensions = getConstVector<int64_t>(tensorType->shape_id());
-                assert(dimensions.size() == 1);
-                compositeCount = size_t(dimensions[0]);
-            }
-
-            kernel.reserve(compositeCount);
-            for (size_t i = 0; i < compositeCount; i++) {
-                kernel.push_back(getConstant<T>(components[isSplat ? 0 : i]));
+                const auto &dimensions = getConstVector<int64_t>(tensorType->shape_id());
+                size_t compositeCount =
+                    std::accumulate(dimensions.begin(), dimensions.end(), size_t{1},
+                                    [](size_t acc, int64_t dim) { return acc * static_cast<size_t>(dim); });
+                kernel.resize(compositeCount, kernel.front());
             }
         } else if (const auto &null = constant->AsNullConstant()) {
             if (const auto &tensor = constant->type()->AsTensorARM()) {
@@ -107,12 +116,12 @@ class GraphPassBase : public Pass {
         return kernel;
     }
 
-    template <typename T = int64_t> T getConstant(const Operand &operand, const bool isUnsigned = false) const {
-        return getConstant<T>(context()->get_constant_mgr()->FindDeclaredConstant(operand.AsId()), isUnsigned);
+    template <typename T = int64_t> T getConstScalar(const Operand &operand, const bool isUnsigned = false) const {
+        return getConstScalar<T>(context()->get_constant_mgr()->FindDeclaredConstant(operand.AsId()), isUnsigned);
     }
 
     template <typename T = int64_t>
-    T getConstant(const analysis::Constant *constant, const bool isUnsigned = false) const {
+    T getConstScalar(const analysis::Constant *constant, const bool isUnsigned = false) const {
         const auto &intConstant = constant->AsIntConstant();
         if (intConstant) {
             const auto &type = intConstant->type()->AsInteger();
