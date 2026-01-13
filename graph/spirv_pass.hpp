@@ -94,18 +94,17 @@ class GraphPassBase : public Pass {
                 assert(kernel.size() == 1);
                 const auto tensorType = getTensorType(id);
                 const auto &dimensions = getConstVector<int64_t>(tensorType->shape_id());
-                size_t compositeCount =
-                    std::accumulate(dimensions.begin(), dimensions.end(), size_t{1},
-                                    [](size_t acc, int64_t dim) { return acc * static_cast<size_t>(dim); });
-                kernel.resize(compositeCount, kernel.front());
+                const auto elemCount = static_cast<size_t>(std::abs(
+                    std::accumulate(dimensions.begin(), dimensions.end(), int64_t(1), std::multiplies<int64_t>())));
+                kernel.resize(elemCount, kernel.front());
             }
         } else if (const auto &null = constant->AsNullConstant()) {
             if (const auto &tensor = constant->type()->AsTensorARM()) {
-                // TensorARM rank=1, shape=[array size]
-                // Tensor must be rank 1, and first element of the shape is the number of vector elements
-                const auto &shape = getConstVector<T>(tensor->shape_id());
-                assert(shape.size() == 1);
-                kernel.resize(static_cast<size_t>(shape[0]));
+                // TensorARM: zero-initialize a composite tensor with the total element count
+                const auto &dimensions = getConstVector<int64_t>(tensor->shape_id());
+                const auto elemCount = static_cast<size_t>(std::abs(
+                    std::accumulate(dimensions.begin(), dimensions.end(), int64_t(1), std::multiplies<int64_t>())));
+                kernel.resize(elemCount);
             } else {
                 assert(false);
             }

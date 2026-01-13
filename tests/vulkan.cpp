@@ -1079,7 +1079,7 @@ TEST_F(MLEmulationLayerForVulkan, GraphConstantARM) {
     ASSERT_TRUE(outputTensor->compare(&ref[0], sizeof(ref))) << "Output mismatch";
 }
 
-TEST_F(MLEmulationLayerForVulkan, HigherRankGraphConstantARM) {
+TEST_F(MLEmulationLayerForVulkan, HigherRankConstant) {
     auto device = createDevice();
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 3, 3, 1}});
