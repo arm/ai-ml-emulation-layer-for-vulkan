@@ -277,7 +277,7 @@ On Darwin, `LD_LIBRARY_PATH` is instead `DYLD_LIBRARY_PATH`.
 export PATH=${MOLTEN_VK_PATH}/macOS/bin:${PATH}
 export VK_ICD_FILENAMES=${MOLTEN_VK_PATH}/macOS/share/vulkan/icd.d/MoltenVK_icd.json
 export DYLD_LIBRARY_PATH=${MOLTEN_VK_PATH}/macOS/lib:${SDK_PATH}/deploy/lib
-export VK_ADD_LAYER_PATH=${REPO}/deploy/share/vulkan/explicit_layer.d
+export VK_LAYER_PATH=${REPO}/deploy/share/vulkan/explicit_layer.d
 export VK_INSTANCE_LAYERS=VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation
 ```
 
