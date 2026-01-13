@@ -428,8 +428,8 @@ void GraphPassTosaSpv100::handleClamp(const Instruction *opExtInst, const std::s
     assert(opExtInst->NumInOperands() == 6);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &minVal = getConstScalar<double>(opExtInst->GetInOperand(2));
-    const auto &maxVal = getConstScalar<double>(opExtInst->GetInOperand(3));
+    const auto &minVal = getConstScalar<real_t>(opExtInst->GetInOperand(2));
+    const auto &maxVal = getConstScalar<real_t>(opExtInst->GetInOperand(3));
     const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(4));
     const auto &inputId = opExtInst->GetInOperand(5);
 
@@ -714,7 +714,7 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
     const auto &resultId = opExtInst->result_id();
     const auto &inputId = opExtInst->GetInOperand(2);
     const auto &padding = getOrMakeCompositeTensor(opExtInst->GetInOperand(3).AsId());
-    const auto &padConst = getConstVector<double>(opExtInst->GetInOperand(4));
+    const auto &padConst = getConstVector<real_t>(opExtInst->GetInOperand(4));
 
     graphLog(Severity::Info) << "OpExtInst result=" << resultId << "," << debugName << ", padding=" << padding
                              << ", padConst=" << std::fixed << std::setprecision(0) << padConst << ", input=%"

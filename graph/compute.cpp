@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -725,13 +725,13 @@ SpirvBinary Cast::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCac
 
 Clamp::Clamp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, VkDevice _device,
              const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
-             const std::shared_ptr<TensorDescriptor> &_output, const double _min, const double _max,
+             const std::shared_ptr<TensorDescriptor> &_output, const real_t _min, const real_t _max,
              const uint32_t _nanMode, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output), {&pushConstant, sizeof(pushConstant)},
                       _pipelineCache, createSpirv(_pipelineCache, _output), debugName, {_input->getRank()}),
       pushConstant{createPushConstant(_min, _max, _nanMode)} {}
 
-Clamp::PushConstant Clamp::createPushConstant(const double min, const double max, const uint32_t nanMode) const {
+Clamp::PushConstant Clamp::createPushConstant(const real_t min, const real_t max, const uint32_t nanMode) const {
     PushConstant constant = {
         min,
         max,
@@ -1496,13 +1496,13 @@ SpirvBinary Negate::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
 Pad::Pad(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, VkDevice _device,
          const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
          const std::shared_ptr<TensorDescriptor> &_output, const std::shared_ptr<TensorDescriptor> &_padding,
-         const double _padConst, const std::string &debugName)
+         const real_t _padConst, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output, _padding),
                       {&pushConstant, sizeof(pushConstant)}, _pipelineCache, createSpirv(_pipelineCache, _output),
                       debugName, {_input->getRank()}),
       pushConstant{createPushConstant(_padConst)} {}
 
-Pad::PushConstant Pad::createPushConstant(const double padConst) const {
+Pad::PushConstant Pad::createPushConstant(const real_t padConst) const {
     PushConstant constant = {
         padConst,
     };
@@ -2470,7 +2470,7 @@ void GraphPipeline::makeCeil(const std::shared_ptr<TensorDescriptor> &input1,
 }
 
 void GraphPipeline::makeClamp(const std::shared_ptr<TensorDescriptor> &input,
-                              const std::shared_ptr<TensorDescriptor> &output, const double min, const double max,
+                              const std::shared_ptr<TensorDescriptor> &output, const real_t min, const real_t max,
                               const uint32_t nanMode, const std::string &debugName) {
     auto pipeline = std::make_shared<Clamp>(loader, device, pipelineCache, input, output, min, max, nanMode, debugName);
     pipelines.emplace_back(pipeline);
@@ -2718,7 +2718,7 @@ void GraphPipeline::makeNegate(const std::shared_ptr<TensorDescriptor> &input,
 
 void GraphPipeline::makePad(const std::shared_ptr<TensorDescriptor> &input,
                             const std::shared_ptr<TensorDescriptor> &output,
-                            const std::shared_ptr<TensorDescriptor> &padding, const double padConst,
+                            const std::shared_ptr<TensorDescriptor> &padding, const real_t padConst,
                             const std::string &debugName) {
     auto pipeline = std::make_shared<Pad>(loader, device, pipelineCache, input, output, padding, padConst, debugName);
     pipelines.emplace_back(pipeline);

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -24,6 +24,13 @@ endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     add_compile_definitions(EXPERIMENTAL_MOLTEN_VK_SUPPORT)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR DEFINED ANDROID_ABI)
+    add_compile_definitions(USE_FLOAT_AS_DOUBLE)
+    add_compile_definitions(real_t=float)
+else()
+    add_compile_definitions(real_t=double)
 endif()
 
 include(CTest)
