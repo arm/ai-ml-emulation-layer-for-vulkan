@@ -221,6 +221,9 @@ class Loader {
 
         loader->vkGetPhysicalDeviceFormatProperties2 = reinterpret_cast<PFN_vkGetPhysicalDeviceFormatProperties2>(
             _gipr(_instance, "vkGetPhysicalDeviceFormatProperties2"));
+
+        loader->vkGetPhysicalDeviceToolPropertiesEXT = reinterpret_cast<PFN_vkGetPhysicalDeviceToolPropertiesEXT>(
+            _gipr(_instance, "vkGetPhysicalDeviceToolPropertiesEXT"));
     }
 
     explicit Loader(const VkAllocationCallbacks *_callbacks, VkInstance _instance, PFN_vkGetInstanceProcAddr _gipr,
