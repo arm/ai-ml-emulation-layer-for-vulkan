@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-FileCopyrightText: Copyright 2025-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: Apache-2.0
 #
 import argparse
@@ -40,6 +40,7 @@ class Builder:
         self.target_platform = args.target_platform
         self.cmake_toolchain_for_android = args.cmake_toolchain_for_android
         self.disable_precompile_shaders = args.disable_precompile_shaders
+        self.use_float_as_double = args.use_float_as_double
         self.doc = args.doc
         self.clang_tidy_fix = args.clang_tidy_fix
 
@@ -185,6 +186,10 @@ class Builder:
             cmake_setup_cmd.append("-DCMAKE_EXPORT_COMPILE_COMMANDS=ON")
         if self.disable_precompile_shaders:
             cmake_setup_cmd.append("-DVMEL_DISABLE_PRECOMPILE_SHADERS=ON")
+        cmake_setup_cmd.append(
+            "-DVMEL_USE_FLOAT_AS_DOUBLE="
+            + ("ON" if self.use_float_as_double else "OFF")
+        )
         if self.doc:
             cmake_setup_cmd.append("-DVMEL_BUILD_DOCS=ON")
 
@@ -454,6 +459,12 @@ def parse_arguments():
     parser.add_argument(
         "--disable-precompile-shaders",
         help="Disable precompilation of SPIR-V shaders",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--use-float-as-double",
+        help="Use float as double precision in shader compilation.",
         action="store_true",
         default=False,
     )

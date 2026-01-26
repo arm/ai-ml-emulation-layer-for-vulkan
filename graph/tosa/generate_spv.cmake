@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-FileCopyrightText: Copyright 2025-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -63,6 +63,9 @@ endforeach()
 file(WRITE ${ARGS_OUTPUT_FILE}.comp "${GLSL}")
 
 set(GLSLANG_FLAGS -V --target-env vulkan1.3)
+if(USE_FLOAT_AS_DOUBLE)
+    list(APPEND GLSLANG_FLAGS "-DUSE_FLOAT_AS_DOUBLE=ON")
+endif()
 
 execute_process(
     COMMAND ${ARGS_GLSLANG} ${GLSLANG_FLAGS} -o ${ARGS_OUTPUT_FILE} ${ARGS_OUTPUT_FILE}.comp

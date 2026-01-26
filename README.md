@@ -300,9 +300,9 @@ ways to accomplish this when cross-compiling:
    previously mentioned documentation. Note that we require version > 15.4.0,
    which may not yet be available in Ubuntu’s official package repositories.
 
-3. Disable the shader pre-compilation. This can be done by adding the CMake
-   option `-DVMEL_DISABLE_PRECOMPILE_SHADERS=ON` to CMake Command. By doing so,
-   the shaders would be compiled at runtime.
+3. Disable shader pre-compilation. This can be done by adding the
+   flag `--disable-precompile-shaders` to the build script command. By doing so,
+   the shaders will be compiled at runtime.
 
 An example build flow using the option 1 would be:
 
@@ -393,9 +393,13 @@ pip install ai-ml-emulation-layer-for-vulkan
 - Usage of the 'shaderFloat64' feature requires support from the underlying ICD.
   This relates to high-precision types. Support of it can be checked with:
 
-   ```bash
-   vulkaninfo 2>&1 | grep -e 'shaderFloat64\|deviceName'
-   ```
+  ```bash
+  vulkaninfo 2>&1 | grep -e 'shaderFloat64\|deviceName'
+  ```
+
+  If this feature is not available, add the `--use-float-as-double` flag to
+  the build script command to use 32-bit `float` instead of `double`.
+  This behavior is automatically enabled on Darwin and Android™.
 
 MoltenVK currently does not have full Vulkan® coverage, some notable issues are:
 

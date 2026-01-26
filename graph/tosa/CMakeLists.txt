@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-FileCopyrightText: Copyright 2025-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -105,7 +105,9 @@ function(mlel_generate_glsl)
     # Generate SPV
     add_custom_command(
         OUTPUT ${ARGS_OUTPUT}
-        COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/generate_spv.cmake
+        COMMAND ${CMAKE_COMMAND}
+            -DUSE_FLOAT_AS_DOUBLE=${VMEL_USE_FLOAT_AS_DOUBLE}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/generate_spv.cmake
             GLSLANG "${GLSLANG_CMD}"
             OUTPUT_FILE "${ARGS_OUTPUT}"
             INPUT_FILE "${ARGS_INPUT}"
