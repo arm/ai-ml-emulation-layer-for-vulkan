@@ -128,6 +128,16 @@ template <typename T> class Format : public FormatBase {
     }
 };
 
+class BFloat16Format final : public FormatBase {
+  public:
+    bool isInteger() const override { return false; } // semantic float
+    bool isSigned() const override { return true; }
+    std::string lowest() const override { return "-3.3895313892515355e+38"; }
+    std::string max() const override { return "3.3895313892515355e+38"; }
+    std::string glslType() const override { return "bfloat16_t"; } // BF16 payload storage
+    std::string toInt() const override { return "0x6642"; }        // "fB"
+};
+
 std::shared_ptr<FormatBase> makeFormat(const VkFormat format) {
     switch (format) {
     case VK_FORMAT_R8_SINT:
@@ -143,6 +153,8 @@ std::shared_ptr<FormatBase> makeFormat(const VkFormat format) {
         return std::make_shared<Format<uint16_t>>("uint16_t", "u");
     case VK_FORMAT_R16_SFLOAT:
         return std::make_shared<Format<float16>>("float16_t");
+    case VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM:
+        return std::make_shared<BFloat16Format>();
     case VK_FORMAT_R32_SINT:
         return std::make_shared<Format<int32_t>>("int");
     case VK_FORMAT_R32_UINT:

@@ -64,6 +64,10 @@ std::string accTypeString(uint32_t accType) {
     }
 }
 
+std::string compTypeString(const std::shared_ptr<FormatBase> &type) {
+    return type->toInt() == "0x6642" ? "float" : type->glslType();
+}
+
 } // namespace
 
 /*******************************************************************************
@@ -552,6 +556,7 @@ SpirvBinary Argmax::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                       {"%in_t_type%", inType->toInt()},
                                       {"%in_t_lowest%", inType->lowest()},
                                       {"%in_t%", inType->glslType()},
+                                      {"%in_t_comp%", compTypeString(inType)},
                                   });
 }
 
@@ -671,6 +676,7 @@ SpirvBinary AvgPool2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipeli
                                       {"%in_out_t_max%", inOutType->max()},
                                       {"%in_out_t%", inOutType->glslType()},
                                       {"%in_out_t_type%", inOutType->toInt()},
+                                      {"%in_out_t_comp%", compTypeString(inOutType)},
                                   });
 }
 
@@ -763,6 +769,7 @@ SpirvBinary Clamp::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCa
                                       {"%warpX%", std::to_string(warp1D)},
                                       {"%in_out_t%", inOutType->glslType()},
                                       {"%in_out_t_type%", inOutType->toInt()},
+                                      {"%in_out_t_comp%", compTypeString(inOutType)},
                                   });
 }
 
@@ -1138,6 +1145,8 @@ SpirvBinary ElementwiseBinary::createSpirv(const std::shared_ptr<PipelineCache> 
                                       {"%in_t%", inType->glslType()},
                                       {"%out_t%", outType->glslType()},
                                       {"%in_t_type%", inType->toInt()},
+                                      {"%out_t_type%", outType->toInt()},
+                                      {"%in_t_comp%", compTypeString(inType)},
                                   });
 }
 
@@ -1178,6 +1187,7 @@ SpirvBinary ElementwiseUnary::createSpirv(const std::shared_ptr<PipelineCache> &
                                       {"%warpX%", std::to_string(warp1D)},
                                       {"%operation%", operation},
                                       {"%in_out_t%", inOutType->glslType()},
+                                      {"%in_out_t_type%", inOutType->toInt()},
                                   });
 }
 
@@ -1381,6 +1391,7 @@ SpirvBinary MaxPool2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipeli
                                       {"%in_out_t%", inOutType->glslType()},
                                       {"%in_out_t_lowest%", init},
                                       {"%in_out_t_type%", inOutType->toInt()},
+                                      {"%in_out_t_comp%", compTypeString(inOutType)},
                                   });
 }
 
@@ -1433,6 +1444,7 @@ SpirvBinary Mul::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCach
                                   {
                                       {"%warpX%", std::to_string(warp1D)},
                                       {"%in_t_type%", inType->toInt()},
+                                      {"%out_t_type%", outType->toInt()},
                                       {"%in_t%", inType->glslType()},
                                       {"%out_t%", outType->glslType()},
                                   });
@@ -1483,6 +1495,7 @@ SpirvBinary Negate::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                   {
                                       {"%warpX%", std::to_string(warp1D)},
                                       {"%in_out_t%", inOutType->glslType()},
+                                      {"%in_out_t_type%", inOutType->toInt()},
                                       {"%acc_t%", accType},
                                       {"%in_out_t_lowest%", inOutType->lowest()},
                                       {"%in_out_t_max%", inOutType->max()},
@@ -1587,6 +1600,7 @@ SpirvBinary Reduce::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                       {"%operation%", operation},
                                       {"%in_out_t%", inOutType->glslType()},
                                       {"%in_out_t_type%", inOutType->toInt()},
+                                      {"%in_out_t_comp%", compTypeString(inOutType)},
                                   });
 }
 
@@ -1754,6 +1768,7 @@ SpirvBinary Resize::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                       {"%in_t%", inType->glslType()},
                                       {"%out_t%", outType->glslType()},
                                       {"%out_t_type%", outType->toInt()},
+                                      {"%out_t_comp%", compTypeString(outType)},
                                   });
 }
 

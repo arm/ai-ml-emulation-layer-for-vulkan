@@ -1,10 +1,12 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #define IN_T %in_t%
 #define TYPE_IN %in_t_type%
+
+#define COMP_T %in_t_comp%
 
 layout(local_size_x = %warpX%) in;
 
@@ -32,7 +34,7 @@ void main() {
         inputIndex[i + 1] = index[i];
     }
 
-    IN_T maxValue = IN_T(%in_t_lowest%);
+    COMP_T maxValue = COMP_T(%in_t_lowest%);
     int32_t maxIndex = 0;
 
     uint[RANK_IN] inputShape;
@@ -40,10 +42,12 @@ void main() {
 
     for (int32_t i = 0; i < inputShape[pushConstants.axis]; i++) {
         inputIndex[pushConstants.axis] = i;
-        IN_T value;
-        tensorReadARM(inputData, inputIndex, value);
+        IN_T valueRaw;
+        tensorReadARM(inputData, inputIndex, valueRaw);
 
-        #if IS_FLOAT(TYPE_IN)
+        COMP_T value = DECODE_STORAGE_TO_COMP(valueRaw, TYPE_IN, COMP_T);
+
+        #if IS_FLOAT(TYPE_IN) || IS_BFLOAT(TYPE_IN)
         if (isnan(value)) {
             if (pushConstants.nanMode == NAN_MODE_IGNORE) {
                 continue;

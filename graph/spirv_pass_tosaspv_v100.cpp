@@ -11,6 +11,7 @@
 #include "spirv_pass_tosaspv_v100.hpp"
 #include "graph_log.hpp"
 
+#include <cstring>
 #include <spirv/unified1/ArmMotionEngine.100.h>
 #include <spirv/unified1/TOSA.001000.1.h>
 
@@ -427,9 +428,25 @@ void GraphPassTosaSpv100::handleClamp(const Instruction *opExtInst, const std::s
     // OpExtInst <result id> <OpExtInstImport id> CLAMP minVal maxVal nanMode input
     assert(opExtInst->NumInOperands() == 6);
 
+    auto getClampBound = [&](const Operand &operand) -> double {
+        const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(operand.AsId());
+        const auto *floatConstant = constant->AsFloatConstant();
+        if (floatConstant != nullptr) {
+            const auto *type = floatConstant->type()->AsFloat();
+            if (type != nullptr && type->width() == 16 && type->encoding() == spv::FPEncoding::BFloat16KHR) {
+                const uint32_t bits = uint32_t(uint16_t(floatConstant->words()[0])) << 16;
+                float value = 0.0F;
+                std::memcpy(&value, &bits, sizeof(value));
+                return double(value);
+            }
+        }
+
+        return getConstScalar<double>(constant);
+    };
+
     const auto &resultId = opExtInst->result_id();
-    const auto &minVal = getConstScalar<real_t>(opExtInst->GetInOperand(2));
-    const auto &maxVal = getConstScalar<real_t>(opExtInst->GetInOperand(3));
+    const auto minVal = getClampBound(opExtInst->GetInOperand(2));
+    const auto maxVal = getClampBound(opExtInst->GetInOperand(3));
     const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(4));
     const auto &inputId = opExtInst->GetInOperand(5);
 
@@ -713,14 +730,41 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
 
     const auto &resultId = opExtInst->result_id();
     const auto &inputId = opExtInst->GetInOperand(2);
+    const auto output = getTensor(*opExtInst);
     const auto &padding = getOrMakeCompositeTensor(opExtInst->GetInOperand(3).AsId());
-    const auto &padConst = getConstVector<real_t>(opExtInst->GetInOperand(4));
+    real_t padConst = 0.0;
+
+    // BF16 constants are stored as raw bf16 payload bits and must not be decoded as IEEE fp16.
+    if (output->getFormat() == VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM) {
+        const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(opExtInst->GetInOperand(4).AsId());
+        const auto *scalar = constant;
+
+        if (const auto *composite = constant->AsCompositeConstant()) {
+            assert(composite->GetComponents().size() == 1);
+            scalar = composite->GetComponents()[0];
+        }
+
+        const auto *floatConstant = scalar->AsFloatConstant();
+        if (floatConstant == nullptr || floatConstant->type()->AsFloat() == nullptr ||
+            floatConstant->type()->AsFloat()->width() != 16) {
+            throw std::runtime_error("Unsupported BF16 PAD constant encoding");
+        }
+
+        const uint16_t bf16 = uint16_t(floatConstant->words()[0]);
+        const uint32_t fp32Bits = uint32_t(bf16) << 16;
+        float fp32Value = 0.0f;
+        std::memcpy(&fp32Value, &fp32Bits, sizeof(fp32Bits));
+        padConst = real_t(fp32Value);
+    } else {
+        const auto &padConstVector = getConstVector<real_t>(opExtInst->GetInOperand(4));
+        padConst = padConstVector[0];
+    }
 
     graphLog(Severity::Info) << "OpExtInst result=" << resultId << "," << debugName << ", padding=" << padding
                              << ", padConst=" << std::fixed << std::setprecision(0) << padConst << ", input=%"
                              << inputId.AsId() << std::endl;
 
-    graphPipeline.makePad(getTensor(inputId), getTensor(*opExtInst), padding, padConst[0], debugName);
+    graphPipeline.makePad(getTensor(inputId), output, padding, padConst, debugName);
 }
 
 void GraphPassTosaSpv100::handleRescale(const Instruction *opExtInst, const std::string &debugName) {

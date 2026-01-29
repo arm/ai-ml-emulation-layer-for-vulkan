@@ -1,10 +1,13 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define IN_OUT_T %in_out_t%
+#define STORAGE_T %in_out_t%
 #define TYPE_IN_OUT %in_out_t_type%
+
+#define COMP_T %in_out_t_comp%
+#define IN_OUT_T COMP_T
 
 layout(local_size_x = %warpX%) in;
 
@@ -15,32 +18,33 @@ layout(push_constant) uniform PushConstants {
 
 layout(constant_id = 0) const uint32_t RANK = RANK_MAX;
 
-layout(set = 0, binding = 0) uniform tensorARM<IN_OUT_T, RANK> outputData;
-layout(set = 1, binding = 0) uniform tensorARM<IN_OUT_T, RANK> inputData;
+layout(set = 0, binding = 0) uniform tensorARM<STORAGE_T, RANK> outputData;
+layout(set = 1, binding = 0) uniform tensorARM<STORAGE_T, RANK> inputData;
 
 void main() {
     uint[RANK] index;
     getIndex(outputData, index);
 
     const uint dim = index[pushConstants.axis];
-
-    IN_OUT_T result = IN_OUT_T(%init%);
+    COMP_T result = COMP_T(%init%);
 
     uint[RANK] inputShape;
     getShape(inputShape, inputData);
 
     for (uint i = 0; i < inputShape[pushConstants.axis]; i++) {
         index[pushConstants.axis] = i;
-        IN_OUT_T value;
-        tensorReadARM(inputData, index, value);
 
-#if IS_FLOAT(TYPE_IN_OUT)
+        STORAGE_T rawValue;
+        tensorReadARM(inputData, index, rawValue);
+
+        COMP_T value = DECODE_STORAGE_TO_COMP(rawValue, TYPE_IN_OUT, COMP_T);
+
+#if (IS_FLOAT(TYPE_IN_OUT) || IS_BFLOAT(TYPE_IN_OUT))
         if (isnan(value)) {
             if (pushConstants.nanMode == NAN_MODE_IGNORE) {
                 // Ignore value and continue
                 continue;
-            }
-            if (pushConstants.nanMode == NAN_MODE_PROPAGATE) {
+            } else {
                 // If any value is NaN, then the result must be NaN
                 result = value;
                 break;
@@ -48,9 +52,17 @@ void main() {
         }
 #endif
 
-        result = IN_OUT_T(%operation%);
+#if (IS_FLOAT(TYPE_IN_OUT) || IS_BFLOAT(TYPE_IN_OUT))
+        if (pushConstants.nanMode == NAN_MODE_IGNORE && isnan(result)) {
+            result = value;
+            continue;
+        }
+#endif
+
+        result = %operation%;
     }
 
     index[pushConstants.axis] = dim;
-    tensorWriteARM(outputData, index, result);
+
+    tensorWriteARM(outputData, index, ENCODE_COMP_TO_STORAGE(result, STORAGE_T, TYPE_IN_OUT));
 }

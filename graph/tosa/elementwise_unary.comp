@@ -1,9 +1,10 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #define IN_OUT_T %in_out_t%
+#define TYPE_IN_OUT %in_out_t_type%
 
 layout(local_size_x = %warpX%) in;
 
@@ -183,14 +184,21 @@ float sin_hybrid(float x) {
     return sin(x);  // builtin for the rest
 }
 
-
 void main() {
     uint[RANK] index;
     getIndex(outputData, index);
 
-    IN_OUT_T value1;
-    tensorReadARM(inputData1, index, value1);
+    IN_OUT_T inValueStorage;
+    tensorReadARM(inputData1, index, inValueStorage);
 
+#if IS_BFLOAT(TYPE_IN_OUT)
+    float value1 = DECODE_STORAGE_TO_COMP(inValueStorage, TYPE_IN_OUT, float);
+    float outValue = isnan(value1) ? value1 : float(%operation%);
+    IN_OUT_T value = ENCODE_COMP_TO_STORAGE(outValue, IN_OUT_T, TYPE_IN_OUT);
+#else
+    IN_OUT_T value1 = inValueStorage;
     IN_OUT_T value = isnan(float(value1)) ? IN_OUT_T(value1) : IN_OUT_T(%operation%);
+#endif
+
     tensorWriteARM(outputData, index, value);
 }

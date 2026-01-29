@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -27,10 +27,24 @@ void main() {
     tensorReadARM(inputData, index, value);
 
 #if IS_BOOL(TYPE_OUT)
-    OUT_T outValue = OUT_T(value);
+    #if IS_BFLOAT(TYPE_IN)
+        OUT_T outValue = OUT_T(decode_to_f32(value) != 0.0);
+    #else
+        OUT_T outValue = OUT_T(value);
+    #endif
+#elif IS_BFLOAT(TYPE_OUT)
+    #if IS_BOOL(TYPE_IN)
+        OUT_T outValue = encode_from_f32_rne(value ? 1.0 : 0.0, OUT_T(0));
+    #elif IS_BFLOAT(TYPE_IN)
+        OUT_T outValue = value;
+    #else
+        OUT_T outValue = encode_from_f32_rne(float(value), OUT_T(0));
+    #endif
 #elif IS_FLOAT(TYPE_OUT)
     #if IS_BOOL(TYPE_IN)
         OUT_T outValue = OUT_T(value ? 1.0 : 0.0);
+    #elif IS_BFLOAT(TYPE_IN)
+        OUT_T outValue = OUT_T(decode_to_f32(value));
     #else
         OUT_T outValue = OUT_T(0.0);
         if (TYPE_IN_MIN < TYPE_OUT_MIN && TYPE_IN_MAX > TYPE_OUT_MAX) {
@@ -48,8 +62,13 @@ void main() {
 #else
     #if IS_BOOL(TYPE_IN)
         OUT_T outValue = OUT_T(value ? 1 : 0);
-    #elif IS_FLOAT(TYPE_IN)
-        OUT_T outValue = OUT_T(clamp(round(IN_T(value)), TYPE_OUT_MIN, TYPE_OUT_MAX));
+    #elif IS_FLOAT(TYPE_IN) || IS_BFLOAT(TYPE_IN)
+        #if IS_BFLOAT(TYPE_IN)
+            float fvalue = decode_to_f32(value);
+        #else
+            float fvalue = float(value);
+        #endif
+        OUT_T outValue = OUT_T(clamp(round(fvalue), float(TYPE_OUT_MIN), float(TYPE_OUT_MAX)));
     #else
         OUT_T outValue = OUT_T(value);
     #endif

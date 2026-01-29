@@ -1,9 +1,10 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #define IN_OUT_T %in_out_t%
+#define TYPE_IN_OUT %in_out_t_type%
 
 layout(local_size_x = %warpX%) in;
 
@@ -38,8 +39,9 @@ void main() {
     }
 
     IN_OUT_T value;
+
     if (isPad) {
-        value = IN_OUT_T(pushConstants.padConst);
+        value = ENCODE_COMP_TO_STORAGE(float(pushConstants.padConst), IN_OUT_T, TYPE_IN_OUT);
     } else {
         tensorReadARM(inputData, inputIndex, value);
     }
