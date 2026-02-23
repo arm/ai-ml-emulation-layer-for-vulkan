@@ -206,6 +206,7 @@ class TensorLayer : public VulkanLayerImpl {
             {"vk_layerGetPhysicalDeviceProcAddr", PFN_vkVoidFunction(vk_layerGetPhysicalDeviceProcAddr)},
             // PhysicalDevice functions
             {"vkGetPhysicalDeviceProperties2", PFN_vkVoidFunction(vkGetPhysicalDeviceProperties2)},
+            {"vkGetPhysicalDeviceProperties2KHR", PFN_vkVoidFunction(vkGetPhysicalDeviceProperties2KHR)},
             {"vkGetPhysicalDeviceFormatProperties2", PFN_vkVoidFunction(vkGetPhysicalDeviceFormatProperties2)},
             {"vkGetPhysicalDeviceFeatures2", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2)},
             {"vkGetPhysicalDeviceFeatures2KHR", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2KHR)},
@@ -228,6 +229,7 @@ class TensorLayer : public VulkanLayerImpl {
             {"vk_layerGetPhysicalDeviceProcAddr", PFN_vkVoidFunction(vk_layerGetPhysicalDeviceProcAddr)},
             // PhysicalDevice functions
             {"vkGetPhysicalDeviceProperties2", PFN_vkVoidFunction(vkGetPhysicalDeviceProperties2)},
+            {"vkGetPhysicalDeviceProperties2KHR", PFN_vkVoidFunction(vkGetPhysicalDeviceProperties2KHR)},
             {"vkGetPhysicalDeviceFormatProperties2", PFN_vkVoidFunction(vkGetPhysicalDeviceFormatProperties2)},
             {"vkGetPhysicalDeviceFeatures2", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2)},
             {"vkGetPhysicalDeviceFeatures2KHR", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2KHR)},
@@ -886,6 +888,11 @@ class TensorLayer : public VulkanLayerImpl {
                 VkShaderStageFlagBits::VK_SHADER_STAGE_COMPUTE_BIT; // EL only supports tensors in compute shaders
             insertType(tensorProps);
         }
+    }
+
+    static void VKAPI_CALL vkGetPhysicalDeviceProperties2KHR(VkPhysicalDevice physicalDevice,
+                                                             VkPhysicalDeviceProperties2 *pProperties) {
+        vkGetPhysicalDeviceProperties2(physicalDevice, pProperties);
     }
 
     static VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *createInfo,
