@@ -1166,7 +1166,7 @@ class GraphLayer : public VulkanLayerImpl {
         default:
             break;
         }
-        return deviceHandle->physicalDevice->instance->loader->vkSetDebugUtilsObjectNameEXT(device, pNameInfo);
+        return deviceHandle->loader->vkSetDebugUtilsObjectNameEXT(device, pNameInfo);
     }
 
     static VkResult VKAPI_CALL vkGetPhysicalDeviceToolPropertiesEXT(VkPhysicalDevice device, uint32_t *pToolCount,
