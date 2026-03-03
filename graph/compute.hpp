@@ -21,6 +21,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace mlsdk::el::compute {
@@ -1197,6 +1198,10 @@ class GraphPipeline {
 
     void makeOutput(const std::shared_ptr<TensorDescriptor> &tensor);
 
+    /***************************************************************************
+     * Tosa Ops
+     ***************************************************************************/
+
     void makeAbs(const std::shared_ptr<TensorDescriptor> &input, const std::shared_ptr<TensorDescriptor> &output,
                  const std::string &debugName);
 
@@ -1436,9 +1441,9 @@ class GraphPipeline {
                              const std::vector<uint32_t> &stride, const int8_t inputZeroPoint,
                              const int8_t weightZeroPoint, const uint32_t accType, const std::string &debugName);
 
-    /*******************************************************************************
+    /***************************************************************************
      * Motion Engine Ops
-     *******************************************************************************/
+     ***************************************************************************/
     void makeMinSadCost(const std::shared_ptr<TensorDescriptor> &inTemplate,
                         const std::shared_ptr<TensorDescriptor> &inSearch,
                         const std::shared_ptr<TensorDescriptor> &outVectors,
@@ -1463,6 +1468,11 @@ class GraphPipeline {
                     const std::vector<uint32_t> &padding, const std::string &debugName);
 
   private:
+    template <typename PipelineT, typename... Args> void makePipeline(Args &&...args) {
+        auto pipeline = std::make_shared<PipelineT>(loader, device, pipelineCache, std::forward<Args>(args)...);
+        pipelines.emplace_back(std::move(pipeline));
+    }
+
     std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> loader;
     VkPhysicalDevice physicalDevice;
     VkDevice device;
