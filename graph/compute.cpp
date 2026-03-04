@@ -2384,35 +2384,33 @@ void GraphPipeline::makeOutput(const std::shared_ptr<TensorDescriptor> &tensor) 
     makeAndConnectVirtualTensor(tensor, &outputs);
 }
 
+/*******************************************************************************
+ * Tosa Ops
+ *******************************************************************************/
+
 void GraphPipeline::makeAbs(const std::shared_ptr<TensorDescriptor> &input,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline =
-        std::make_shared<ElementwiseUnary>(loader, device, pipelineCache, input, output, debugName, "abs(value1)");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseUnary>(input, output, debugName, "abs(value1)");
 }
 
 void GraphPipeline::makeAdd(const std::shared_ptr<TensorDescriptor> &input1,
                             const std::shared_ptr<TensorDescriptor> &input2,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseBinary>(loader, device, pipelineCache, input1, input2, output,
-                                                        NanPropagationMode::Propagate, debugName, "value1 + value2");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
+                                    "value1 + value2");
 }
 
 void GraphPipeline::makeArgmax(const std::shared_ptr<TensorDescriptor> &input,
                                const std::shared_ptr<TensorDescriptor> &output, const uint32_t axis,
                                const uint32_t nanMode, const std::string &debugName) {
-    auto pipeline = std::make_shared<Argmax>(loader, device, pipelineCache, input, output, axis, nanMode, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Argmax>(input, output, axis, nanMode, debugName);
 }
 
 void GraphPipeline::makeArithmeticRightShift(const std::shared_ptr<TensorDescriptor> &input1,
                                              const std::shared_ptr<TensorDescriptor> &input2,
                                              const std::shared_ptr<TensorDescriptor> &output, const bool round,
                                              const std::string &debugName) {
-    auto pipeline =
-        std::make_shared<ArithmeticRightShift>(loader, device, pipelineCache, input1, input2, output, round, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<ArithmeticRightShift>(input1, input2, output, round, debugName);
 }
 
 void GraphPipeline::makeAvgPool2D(const std::shared_ptr<TensorDescriptor> &input,
@@ -2420,67 +2418,54 @@ void GraphPipeline::makeAvgPool2D(const std::shared_ptr<TensorDescriptor> &input
                                   const std::vector<uint32_t> &stride, const std::vector<uint32_t> &pad,
                                   const uint32_t accType, const int8_t inputZeroPoint, const int8_t outputZeroPoint,
                                   const std::string &debugName) {
-    auto pipeline = std::make_shared<AvgPool2D>(loader, device, pipelineCache, input, output, kernel, stride, pad,
-                                                accType, inputZeroPoint, outputZeroPoint, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<AvgPool2D>(input, output, kernel, stride, pad, accType, inputZeroPoint, outputZeroPoint, debugName);
 }
 
 void GraphPipeline::makeBitwiseAnd(const std::shared_ptr<TensorDescriptor> &input1,
                                    const std::shared_ptr<TensorDescriptor> &input2,
                                    const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseBinary>(loader, device, pipelineCache, input1, input2, output,
-                                                        NanPropagationMode::Propagate, debugName, "value1 & value2");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
+                                    "value1 & value2");
 }
 
 void GraphPipeline::makeBitwiseNot(const std::shared_ptr<TensorDescriptor> &input,
                                    const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline =
-        std::make_shared<ElementwiseUnary>(loader, device, pipelineCache, input, output, debugName, "~value1");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseUnary>(input, output, debugName, "~value1");
 }
 
 void GraphPipeline::makeBitwiseOr(const std::shared_ptr<TensorDescriptor> &input1,
                                   const std::shared_ptr<TensorDescriptor> &input2,
                                   const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseBinary>(loader, device, pipelineCache, input1, input2, output,
-                                                        NanPropagationMode::Propagate, debugName, "value1 | value2");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
+                                    "value1 | value2");
 }
 
 void GraphPipeline::makeBitwiseXor(const std::shared_ptr<TensorDescriptor> &input1,
                                    const std::shared_ptr<TensorDescriptor> &input2,
                                    const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseBinary>(loader, device, pipelineCache, input1, input2, output,
-                                                        NanPropagationMode::Propagate, debugName, "value1 ^ value2");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
+                                    "value1 ^ value2");
 }
 
 void GraphPipeline::makeCast(const std::shared_ptr<TensorDescriptor> &input,
                              const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<Cast>(loader, device, pipelineCache, input, output, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Cast>(input, output, debugName);
 }
 
 void GraphPipeline::makeCeil(const std::shared_ptr<TensorDescriptor> &input1,
                              const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline =
-        std::make_shared<ElementwiseUnary>(loader, device, pipelineCache, input1, output, debugName, "ceil(value1)");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseUnary>(input1, output, debugName, "ceil(value1)");
 }
 
 void GraphPipeline::makeClamp(const std::shared_ptr<TensorDescriptor> &input,
                               const std::shared_ptr<TensorDescriptor> &output, const real_t min, const real_t max,
                               const uint32_t nanMode, const std::string &debugName) {
-    auto pipeline = std::make_shared<Clamp>(loader, device, pipelineCache, input, output, min, max, nanMode, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Clamp>(input, output, min, max, nanMode, debugName);
 }
 
 void GraphPipeline::makeClz(const std::shared_ptr<TensorDescriptor> &input1,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline =
-        std::make_shared<ElementwiseUnary>(loader, device, pipelineCache, input1, output, debugName, "clz(value1)");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseUnary>(input1, output, debugName, "clz(value1)");
 }
 
 void GraphPipeline::makeConcat(const std::vector<std::shared_ptr<TensorDescriptor>> &_inputs,
@@ -2488,8 +2473,7 @@ void GraphPipeline::makeConcat(const std::vector<std::shared_ptr<TensorDescripto
                                const std::string &debugName) {
     uint32_t offset = 0;
     for (const auto &input : _inputs) {
-        auto pipeline = std::make_shared<Concat>(loader, device, pipelineCache, input, output, axis, offset, debugName);
-        pipelines.emplace_back(pipeline);
+        makePipeline<Concat>(input, output, axis, offset, debugName);
         offset += static_cast<uint32_t>(input->getDimensions()[axis]);
     }
 }
@@ -2501,9 +2485,8 @@ void GraphPipeline::makeConv2D(const std::shared_ptr<TensorDescriptor> &input,
                                const std::vector<uint32_t> &stride, const std::vector<uint32_t> &dilation,
                                const int8_t inputZeroPoint, const int8_t weightZeroPoint, const uint32_t accType,
                                const std::string &debugName) {
-    auto pipeline = std::make_shared<Conv2D>(loader, device, pipelineCache, input, output, weights, biases, pad, stride,
-                                             dilation, inputZeroPoint, weightZeroPoint, accType, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Conv2D>(input, output, weights, biases, pad, stride, dilation, inputZeroPoint, weightZeroPoint,
+                         accType, debugName);
 }
 
 void GraphPipeline::makeConv3D(const std::shared_ptr<TensorDescriptor> &input,
@@ -2513,16 +2496,13 @@ void GraphPipeline::makeConv3D(const std::shared_ptr<TensorDescriptor> &input,
                                const std::vector<uint32_t> &stride, const std::vector<uint32_t> &dilation,
                                const int8_t inputZeroPoint, const int8_t weightZeroPoint, const uint32_t accType,
                                const std::string &debugName) {
-    auto pipeline = std::make_shared<Conv3D>(loader, device, pipelineCache, input, output, weights, biases, pad, stride,
-                                             dilation, inputZeroPoint, weightZeroPoint, accType, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Conv3D>(input, output, weights, biases, pad, stride, dilation, inputZeroPoint, weightZeroPoint,
+                         accType, debugName);
 }
 
 void GraphPipeline::makeCos(const std::shared_ptr<TensorDescriptor> &input1,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline =
-        std::make_shared<ElementwiseUnary>(loader, device, pipelineCache, input1, output, debugName, "cos(value1)");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseUnary>(input1, output, debugName, "cos(value1)");
 }
 
 void GraphPipeline::makeDepthwiseConv2D(
@@ -2530,32 +2510,25 @@ void GraphPipeline::makeDepthwiseConv2D(
     const std::shared_ptr<TensorDescriptor> &weights, const std::shared_ptr<TensorDescriptor> &biases,
     const std::vector<uint32_t> &pad, const std::vector<uint32_t> &stride, const std::vector<uint32_t> &dilation,
     const int8_t inputZeroPoint, const int8_t weightZeroPoint, const uint32_t accType, const std::string &debugName) {
-    auto pipeline =
-        std::make_shared<DepthwiseConv2D>(loader, device, pipelineCache, input, output, weights, biases, pad, stride,
-                                          dilation, inputZeroPoint, weightZeroPoint, accType, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<DepthwiseConv2D>(input, output, weights, biases, pad, stride, dilation, inputZeroPoint,
+                                  weightZeroPoint, accType, debugName);
 }
 
 void GraphPipeline::makeEqual(const std::shared_ptr<TensorDescriptor> &input1,
                               const std::shared_ptr<TensorDescriptor> &input2,
                               const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseBinary>(loader, device, pipelineCache, input1, input2, output,
-                                                        NanPropagationMode::Propagate, debugName, "value1 == value2");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
+                                    "value1 == value2");
 }
 
 void GraphPipeline::makeErf(const std::shared_ptr<TensorDescriptor> &input,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline =
-        std::make_shared<ElementwiseUnary>(loader, device, pipelineCache, input, output, debugName, "erf(value1)");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseUnary>(input, output, debugName, "erf(value1)");
 }
 
 void GraphPipeline::makeExp(const std::shared_ptr<TensorDescriptor> &input,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline =
-        std::make_shared<ElementwiseUnary>(loader, device, pipelineCache, input, output, debugName, "exp(value1)");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseUnary>(input, output, debugName, "exp(value1)");
 }
 
 void GraphPipeline::makeFft2D(const std::shared_ptr<TensorDescriptor> &inputReal,
@@ -2563,197 +2536,160 @@ void GraphPipeline::makeFft2D(const std::shared_ptr<TensorDescriptor> &inputReal
                               const std::shared_ptr<TensorDescriptor> &outputReal,
                               const std::shared_ptr<TensorDescriptor> &outputImag, const bool inverse,
                               const std::string &debugName) {
-    auto pipeline = std::make_shared<Fft2D>(loader, device, pipelineCache, inputReal, inputImag, outputReal, outputImag,
-                                            inverse, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Fft2D>(inputReal, inputImag, outputReal, outputImag, inverse, debugName);
 }
 
 void GraphPipeline::makeFloor(const std::shared_ptr<TensorDescriptor> &input1,
                               const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline =
-        std::make_shared<ElementwiseUnary>(loader, device, pipelineCache, input1, output, debugName, "floor(value1)");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseUnary>(input1, output, debugName, "floor(value1)");
 }
 
 void GraphPipeline::makeGather(const std::shared_ptr<TensorDescriptor> &values,
                                const std::shared_ptr<TensorDescriptor> &indices,
                                const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<Gather>(loader, device, pipelineCache, values, indices, output, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Gather>(values, indices, output, debugName);
 }
 
 void GraphPipeline::makeGreater(const std::shared_ptr<TensorDescriptor> &input1,
                                 const std::shared_ptr<TensorDescriptor> &input2,
                                 const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseBinary>(loader, device, pipelineCache, input1, input2, output,
-                                                        NanPropagationMode::Propagate, debugName, "value1 > value2");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
+                                    "value1 > value2");
 }
 
 void GraphPipeline::makeGreaterEqual(const std::shared_ptr<TensorDescriptor> &input1,
                                      const std::shared_ptr<TensorDescriptor> &input2,
                                      const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseBinary>(loader, device, pipelineCache, input1, input2, output,
-                                                        NanPropagationMode::Propagate, debugName, "value1 >= value2");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
+                                    "value1 >= value2");
 }
 
 void GraphPipeline::makeIntdiv(const std::shared_ptr<TensorDescriptor> &input1,
                                const std::shared_ptr<TensorDescriptor> &input2,
                                const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseBinary>(loader, device, pipelineCache, input1, input2, output,
-                                                        NanPropagationMode::Propagate, debugName, "value1 / value2");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
+                                    "value1 / value2");
 }
 
 void GraphPipeline::makeLog(const std::shared_ptr<TensorDescriptor> &input1,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseUnary>(loader, device, pipelineCache, input1, output, debugName,
-                                                       "log_guarded(value1)");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseUnary>(input1, output, debugName, "log_guarded(value1)");
 }
 
 void GraphPipeline::makeLogicalAnd(const std::shared_ptr<TensorDescriptor> &input1,
                                    const std::shared_ptr<TensorDescriptor> &input2,
                                    const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseBinary>(loader, device, pipelineCache, input1, input2, output,
-                                                        NanPropagationMode::Propagate, debugName, "value1 && value2");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
+                                    "value1 && value2");
 }
 
 void GraphPipeline::makeLogicalLeftShift(const std::shared_ptr<TensorDescriptor> &input1,
                                          const std::shared_ptr<TensorDescriptor> &input2,
                                          const std::shared_ptr<TensorDescriptor> &output,
                                          const std::string &debugName) {
-    auto pipeline =
-        std::make_shared<ElementwiseBinary>(loader, device, pipelineCache, input1, input2, output,
-                                            NanPropagationMode::Propagate, debugName, "uint(value1) << uint(value2)");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
+                                    "uint(value1) << uint(value2)");
 }
 
 void GraphPipeline::makeLogicalNot(const std::shared_ptr<TensorDescriptor> &input,
                                    const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline =
-        std::make_shared<ElementwiseUnary>(loader, device, pipelineCache, input, output, debugName, "!value1");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseUnary>(input, output, debugName, "!value1");
 }
 
 void GraphPipeline::makeLogicalRightShift(const std::shared_ptr<TensorDescriptor> &input1,
                                           const std::shared_ptr<TensorDescriptor> &input2,
                                           const std::shared_ptr<TensorDescriptor> &output,
                                           const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseBinary>(loader, device, pipelineCache, input1, input2, output,
-                                                        NanPropagationMode::Propagate, debugName,
-                                                        "zeroExtend(value1) >> uint(value2)");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
+                                    "zeroExtend(value1) >> uint(value2)");
 }
 
 void GraphPipeline::makeLogicalOr(const std::shared_ptr<TensorDescriptor> &input1,
                                   const std::shared_ptr<TensorDescriptor> &input2,
                                   const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseBinary>(loader, device, pipelineCache, input1, input2, output,
-                                                        NanPropagationMode::Propagate, debugName, "value1 || value2");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
+                                    "value1 || value2");
 }
 
 void GraphPipeline::makeLogicalXor(const std::shared_ptr<TensorDescriptor> &input1,
                                    const std::shared_ptr<TensorDescriptor> &input2,
                                    const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseBinary>(loader, device, pipelineCache, input1, input2, output,
-                                                        NanPropagationMode::Propagate, debugName, "value1 ^^ value2");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
+                                    "value1 ^^ value2");
 }
 
 void GraphPipeline::makeMatmul(const std::shared_ptr<TensorDescriptor> &input1,
                                const std::shared_ptr<TensorDescriptor> &input2,
                                const std::shared_ptr<TensorDescriptor> &output, const int32_t inputZeroPoint1,
                                const int32_t inputZeroPoint2, const std::string &debugName) {
-    auto pipeline = std::make_shared<Matmul>(loader, device, pipelineCache, input1, input2, output, inputZeroPoint1,
-                                             inputZeroPoint2, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Matmul>(input1, input2, output, inputZeroPoint1, inputZeroPoint2, debugName);
 }
 
 void GraphPipeline::makeMaxPool2D(const std::shared_ptr<TensorDescriptor> &input,
                                   const std::shared_ptr<TensorDescriptor> &output, const std::vector<uint32_t> &kernel,
                                   const std::vector<uint32_t> &stride, const std::vector<uint32_t> &pad,
                                   const uint32_t nanMode, const std::string &debugName) {
-    auto pipeline = std::make_shared<MaxPool2D>(loader, device, pipelineCache, input, output, kernel, stride, pad,
-                                                nanMode, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<MaxPool2D>(input, output, kernel, stride, pad, nanMode, debugName);
 }
 
 void GraphPipeline::makeMaximum(const std::shared_ptr<TensorDescriptor> &input1,
                                 const std::shared_ptr<TensorDescriptor> &input2,
                                 const std::shared_ptr<TensorDescriptor> &output, const uint32_t nanMode,
                                 const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseBinary>(loader, device, pipelineCache, input1, input2, output, nanMode,
-                                                        debugName, "applyMax(value1, value2, pushConstants.nanMode)");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseBinary>(input1, input2, output, nanMode, debugName,
+                                    "applyMax(value1, value2, pushConstants.nanMode)");
 }
 
 void GraphPipeline::makeMinimum(const std::shared_ptr<TensorDescriptor> &input1,
                                 const std::shared_ptr<TensorDescriptor> &input2,
                                 const std::shared_ptr<TensorDescriptor> &output, const uint32_t nanMode,
                                 const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseBinary>(loader, device, pipelineCache, input1, input2, output, nanMode,
-                                                        debugName, "applyMin(value1, value2, pushConstants.nanMode)");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseBinary>(input1, input2, output, nanMode, debugName,
+                                    "applyMin(value1, value2, pushConstants.nanMode)");
 }
 
 void GraphPipeline::makeMul(const std::shared_ptr<TensorDescriptor> &input1,
                             const std::shared_ptr<TensorDescriptor> &input2,
                             const std::shared_ptr<TensorDescriptor> &output, const uint32_t shift,
                             const std::string &debugName) {
-    auto pipeline = std::make_shared<Mul>(loader, device, pipelineCache, input1, input2, output, shift, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Mul>(input1, input2, output, shift, debugName);
 }
 
 void GraphPipeline::makeNegate(const std::shared_ptr<TensorDescriptor> &input,
                                const std::shared_ptr<TensorDescriptor> &output, const int32_t inputZeroPoint,
                                const int32_t outputZeroPoint, const std::string &debugName) {
-    auto pipeline = std::make_shared<Negate>(loader, device, pipelineCache, input, output, inputZeroPoint,
-                                             outputZeroPoint, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Negate>(input, output, inputZeroPoint, outputZeroPoint, debugName);
 }
 
 void GraphPipeline::makePad(const std::shared_ptr<TensorDescriptor> &input,
                             const std::shared_ptr<TensorDescriptor> &output,
                             const std::shared_ptr<TensorDescriptor> &padding, const real_t padConst,
                             const std::string &debugName) {
-    auto pipeline = std::make_shared<Pad>(loader, device, pipelineCache, input, output, padding, padConst, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Pad>(input, output, padding, padConst, debugName);
 }
 
 void GraphPipeline::makePow(const std::shared_ptr<TensorDescriptor> &input1,
                             const std::shared_ptr<TensorDescriptor> &input2,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline =
-        std::make_shared<ElementwiseBinary>(loader, device, pipelineCache, input1, input2, output,
-                                            NanPropagationMode::Propagate, debugName, "power(value1, value2)");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
+                                    "power(value1, value2)");
 }
 
 void GraphPipeline::makeReciprocal(const std::shared_ptr<TensorDescriptor> &input,
                                    const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline =
-        std::make_shared<ElementwiseUnary>(loader, device, pipelineCache, input, output, debugName, "1.0 / value1");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseUnary>(input, output, debugName, "1.0 / value1");
 }
 
 void GraphPipeline::makeReduceAll(const std::shared_ptr<TensorDescriptor> &input,
                                   const std::shared_ptr<TensorDescriptor> &output, const uint32_t axis,
                                   const std::string &debugName) {
-    auto pipeline = std::make_shared<Reduce>(loader, device, pipelineCache, input, output, axis,
-                                             NanPropagationMode::Propagate, debugName, "true", "result && value");
-    pipelines.emplace_back(pipeline);
+    makePipeline<Reduce>(input, output, axis, NanPropagationMode::Propagate, debugName, "true", "result && value");
 }
 
 void GraphPipeline::makeReduceAny(const std::shared_ptr<TensorDescriptor> &input,
                                   const std::shared_ptr<TensorDescriptor> &output, const uint32_t axis,
                                   const std::string &debugName) {
-    auto pipeline = std::make_shared<Reduce>(loader, device, pipelineCache, input, output, axis,
-                                             NanPropagationMode::Propagate, debugName, "false", "result || value");
-    pipelines.emplace_back(pipeline);
+    makePipeline<Reduce>(input, output, axis, NanPropagationMode::Propagate, debugName, "false", "result || value");
 }
 
 void GraphPipeline::makeReduceMax(const std::shared_ptr<TensorDescriptor> &input,
@@ -2762,9 +2698,7 @@ void GraphPipeline::makeReduceMax(const std::shared_ptr<TensorDescriptor> &input
     auto inOutType = makeFormat(output->getFormat());
     const std::string init =
         "(pushConstants.nanMode == NAN_MODE_IGNORE) ? IN_OUT_T(NAN) : IN_OUT_T(" + inOutType->lowest() + ')';
-    auto pipeline = std::make_shared<Reduce>(loader, device, pipelineCache, input, output, axis, nanMode, debugName,
-                                             init, "max(result, value)");
-    pipelines.emplace_back(pipeline);
+    makePipeline<Reduce>(input, output, axis, nanMode, debugName, init, "max(result, value)");
 }
 
 void GraphPipeline::makeReduceMin(const std::shared_ptr<TensorDescriptor> &input,
@@ -2773,25 +2707,19 @@ void GraphPipeline::makeReduceMin(const std::shared_ptr<TensorDescriptor> &input
     auto inOutType = makeFormat(output->getFormat());
     const std::string init =
         "(pushConstants.nanMode == NAN_MODE_IGNORE) ? IN_OUT_T(NAN) : IN_OUT_T(" + inOutType->max() + ')';
-    auto pipeline = std::make_shared<Reduce>(loader, device, pipelineCache, input, output, axis, nanMode, debugName,
-                                             init, "min(result, value)");
-    pipelines.emplace_back(pipeline);
+    makePipeline<Reduce>(input, output, axis, nanMode, debugName, init, "min(result, value)");
 }
 
 void GraphPipeline::makeReduceProduct(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output, const uint32_t axis,
                                       const std::string &debugName) {
-    auto pipeline = std::make_shared<Reduce>(loader, device, pipelineCache, input, output, axis,
-                                             NanPropagationMode::Propagate, debugName, "1", "result * value");
-    pipelines.emplace_back(pipeline);
+    makePipeline<Reduce>(input, output, axis, NanPropagationMode::Propagate, debugName, "1", "result * value");
 }
 
 void GraphPipeline::makeReduceSum(const std::shared_ptr<TensorDescriptor> &input,
                                   const std::shared_ptr<TensorDescriptor> &output, const uint32_t axis,
                                   const std::string &debugName) {
-    auto pipeline = std::make_shared<Reduce>(loader, device, pipelineCache, input, output, axis,
-                                             NanPropagationMode::Propagate, debugName, "0", "result + value");
-    pipelines.emplace_back(pipeline);
+    makePipeline<Reduce>(input, output, axis, NanPropagationMode::Propagate, debugName, "0", "result + value");
 }
 
 void GraphPipeline::makeRescale(const std::shared_ptr<TensorDescriptor> &input,
@@ -2800,118 +2728,96 @@ void GraphPipeline::makeRescale(const std::shared_ptr<TensorDescriptor> &input,
                                 const std::shared_ptr<TensorDescriptor> &shift, const bool scale32,
                                 const bool doubleRound, const bool perChannel, const bool inputUnsigned,
                                 const bool outputUnsigned, const std::string &debugName) {
-    auto pipeline = std::make_shared<Rescale>(loader, device, pipelineCache, input, output, inputZeroPoint,
-                                              outputZeroPoint, multiplier, shift, scale32, doubleRound, perChannel,
-                                              inputUnsigned, outputUnsigned, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Rescale>(input, output, inputZeroPoint, outputZeroPoint, multiplier, shift, scale32, doubleRound,
+                          perChannel, inputUnsigned, outputUnsigned, debugName);
 }
 
 void GraphPipeline::makeReshape(const std::shared_ptr<TensorDescriptor> &input,
                                 const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<Reshape>(loader, device, pipelineCache, input, output, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Reshape>(input, output, debugName);
 }
 
 void GraphPipeline::makeResize(const std::shared_ptr<TensorDescriptor> &input,
                                const std::shared_ptr<TensorDescriptor> &output, const std::vector<int32_t> &scale,
                                const std::vector<int32_t> &offset, const std::vector<int32_t> &border,
                                const uint32_t mode, const std::string &debugName) {
-    auto pipeline =
-        std::make_shared<Resize>(loader, device, pipelineCache, input, output, scale, offset, border, mode, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Resize>(input, output, scale, offset, border, mode, debugName);
 }
 
 void GraphPipeline::makeReverse(const std::shared_ptr<TensorDescriptor> &input,
                                 const std::shared_ptr<TensorDescriptor> &output, const uint32_t axis,
                                 const std::string &debugName) {
-    auto pipeline = std::make_shared<Reverse>(loader, device, pipelineCache, input, output, axis, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Reverse>(input, output, axis, debugName);
 }
 
 void GraphPipeline::makeRfft2D(const std::shared_ptr<TensorDescriptor> &input,
                                const std::shared_ptr<TensorDescriptor> &outputReal,
                                const std::shared_ptr<TensorDescriptor> &outputImag, const std::string &debugName) {
-    auto pipeline = std::make_shared<Rfft2D>(loader, device, pipelineCache, input, outputReal, outputImag, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Rfft2D>(input, outputReal, outputImag, debugName);
 }
 
 void GraphPipeline::makeRsqrt(const std::shared_ptr<TensorDescriptor> &input1,
                               const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseUnary>(loader, device, pipelineCache, input1, output, debugName,
-                                                       "inversesqrt(value1)");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseUnary>(input1, output, debugName, "inversesqrt(value1)");
 }
 
 void GraphPipeline::makeScatter(const std::shared_ptr<TensorDescriptor> &input,
                                 const std::shared_ptr<TensorDescriptor> &values,
                                 const std::shared_ptr<TensorDescriptor> &indices,
                                 const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<Scatter>(loader, device, pipelineCache, input, values, indices, output, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Scatter>(input, values, indices, output, debugName);
 }
 
 void GraphPipeline::makeSelect(const std::shared_ptr<TensorDescriptor> &input1,
                                const std::shared_ptr<TensorDescriptor> &input2,
                                const std::shared_ptr<TensorDescriptor> &input3,
                                const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<Select>(loader, device, pipelineCache, input1, input2, input3, output, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Select>(input1, input2, input3, output, debugName);
 }
 
 void GraphPipeline::makeSigmoid(const std::shared_ptr<TensorDescriptor> &input,
                                 const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseUnary>(loader, device, pipelineCache, input, output, debugName,
-                                                       "1.0 / (1.0 + exp(-value1))");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseUnary>(input, output, debugName, "1.0 / (1.0 + exp(-value1))");
 }
 
 void GraphPipeline::makeSin(const std::shared_ptr<TensorDescriptor> &input1,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseUnary>(loader, device, pipelineCache, input1, output, debugName,
-                                                       "sin_hybrid(value1)");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseUnary>(input1, output, debugName, "sin_hybrid(value1)");
 }
 
 void GraphPipeline::makeSlice(const std::shared_ptr<TensorDescriptor> &input,
                               const std::shared_ptr<TensorDescriptor> &output, const std::vector<uint32_t> &start,
                               const std::string &debugName) {
-    auto pipeline = std::make_shared<Slice>(loader, device, pipelineCache, input, output, start, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Slice>(input, output, start, debugName);
 }
 
 void GraphPipeline::makeSub(const std::shared_ptr<TensorDescriptor> &input1,
                             const std::shared_ptr<TensorDescriptor> &input2,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseBinary>(loader, device, pipelineCache, input1, input2, output,
-                                                        NanPropagationMode::Propagate, debugName, "value1 - value2");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
+                                    "value1 - value2");
 }
 
 void GraphPipeline::makeTable(const std::shared_ptr<TensorDescriptor> &input,
                               const std::shared_ptr<TensorDescriptor> &output,
                               const std::shared_ptr<TensorDescriptor> &table, const std::string &debugName) {
-    auto pipeline = std::make_shared<Table>(loader, device, pipelineCache, input, output, table, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Table>(input, output, table, debugName);
 }
 
 void GraphPipeline::makeTanh(const std::shared_ptr<TensorDescriptor> &input1,
                              const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<ElementwiseUnary>(loader, device, pipelineCache, input1, output, debugName,
-                                                       "tanh_clamped(value1)");
-    pipelines.emplace_back(pipeline);
+    makePipeline<ElementwiseUnary>(input1, output, debugName, "tanh_clamped(value1)");
 }
 
 void GraphPipeline::makeTile(const std::shared_ptr<TensorDescriptor> &input,
                              const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    auto pipeline = std::make_shared<Tile>(loader, device, pipelineCache, input, output, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Tile>(input, output, debugName);
 }
 
 void GraphPipeline::makeTranspose(const std::shared_ptr<TensorDescriptor> &input,
                                   const std::shared_ptr<TensorDescriptor> &output, const std::vector<uint32_t> &perms,
                                   const std::string &debugName) {
-    auto pipeline = std::make_shared<Transpose>(loader, device, pipelineCache, input, output, perms, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<Transpose>(input, output, perms, debugName);
 }
 
 void GraphPipeline::makeTransposeConv2D(const std::shared_ptr<TensorDescriptor> &input,
@@ -2921,10 +2827,13 @@ void GraphPipeline::makeTransposeConv2D(const std::shared_ptr<TensorDescriptor> 
                                         const std::vector<uint32_t> &pad, const std::vector<uint32_t> &stride,
                                         const int8_t inputZeroPoint, const int8_t weightZeroPoint,
                                         const uint32_t accType, const std::string &debugName) {
-    auto pipeline = std::make_shared<TransposeConv2D>(loader, device, pipelineCache, input, output, weights, biases,
-                                                      pad, stride, inputZeroPoint, weightZeroPoint, accType, debugName);
-    pipelines.emplace_back(pipeline);
+    makePipeline<TransposeConv2D>(input, output, weights, biases, pad, stride, inputZeroPoint, weightZeroPoint, accType,
+                                  debugName);
 }
+
+/*******************************************************************************
+ * Motion Engine Ops
+ *******************************************************************************/
 
 void GraphPipeline::makeMinSadCost(
     const std::shared_ptr<TensorDescriptor> &inTemplate, const std::shared_ptr<TensorDescriptor> &inSearch,
@@ -2933,12 +2842,9 @@ void GraphPipeline::makeMinSadCost(
     const std::vector<uint32_t> &inputStrides, const std::vector<uint32_t> &windowStrides,
     const std::vector<uint32_t> &windowOffsets, const std::vector<uint32_t> &padding, const uint32_t searchPattern,
     const std::string &debugName) {
-    auto pipeline =
-        std::make_shared<BlockMatch>(loader, device, pipelineCache, inTemplate, inSearch, outVectors, outCosts,
-                                     kernelSizes, searchWindowSizes, inputStrides, windowStrides, windowOffsets,
-                                     padding, searchPattern, BlockMatch::SearchType::MIN_SAD_COST, debugName);
-
-    pipelines.emplace_back(pipeline);
+    makePipeline<BlockMatch>(inTemplate, inSearch, outVectors, outCosts, kernelSizes, searchWindowSizes, inputStrides,
+                             windowStrides, windowOffsets, padding, searchPattern, BlockMatch::SearchType::MIN_SAD_COST,
+                             debugName);
 }
 
 void GraphPipeline::makeMinSad(const std::shared_ptr<TensorDescriptor> &inTemplate,
@@ -2948,11 +2854,9 @@ void GraphPipeline::makeMinSad(const std::shared_ptr<TensorDescriptor> &inTempla
                                const std::vector<uint32_t> &inputStrides, const std::vector<uint32_t> &windowStrides,
                                const std::vector<uint32_t> &windowOffsets, const std::vector<uint32_t> &padding,
                                const uint32_t searchPattern, const std::string &debugName) {
-    auto pipeline = std::make_shared<BlockMatch>(
-        loader, device, pipelineCache, inTemplate, inSearch, outVectors, std::nullopt, kernelSizes, searchWindowSizes,
-        inputStrides, windowStrides, windowOffsets, padding, searchPattern, BlockMatch::SearchType::MIN_SAD, debugName);
-
-    pipelines.emplace_back(pipeline);
+    makePipeline<BlockMatch>(inTemplate, inSearch, outVectors, std::nullopt, kernelSizes, searchWindowSizes,
+                             inputStrides, windowStrides, windowOffsets, padding, searchPattern,
+                             BlockMatch::SearchType::MIN_SAD, debugName);
 }
 
 void GraphPipeline::makeRawSad(const std::shared_ptr<TensorDescriptor> &inTemplate,
@@ -2962,11 +2866,8 @@ void GraphPipeline::makeRawSad(const std::shared_ptr<TensorDescriptor> &inTempla
                                const std::vector<uint32_t> &inputStrides, const std::vector<uint32_t> &windowStrides,
                                const std::vector<uint32_t> &windowOffsets, const std::vector<uint32_t> &padding,
                                const std::string &debugName) {
-    auto pipeline = std::make_shared<BlockMatch>(loader, device, pipelineCache, inTemplate, inSearch, std::nullopt,
-                                                 outCosts, kernelSizes, searchWindowSizes, inputStrides, windowStrides,
-                                                 windowOffsets, padding, 0, BlockMatch::SearchType::RAW_SAD, debugName);
-
-    pipelines.emplace_back(pipeline);
+    makePipeline<BlockMatch>(inTemplate, inSearch, std::nullopt, outCosts, kernelSizes, searchWindowSizes, inputStrides,
+                             windowStrides, windowOffsets, padding, 0, BlockMatch::SearchType::RAW_SAD, debugName);
 }
 
 } // namespace mlsdk::el::compute
