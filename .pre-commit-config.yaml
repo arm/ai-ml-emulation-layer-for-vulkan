@@ -1,5 +1,5 @@
 #
-# SPDX-FileCopyrightText: Copyright 2022-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-FileCopyrightText: Copyright 2022-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: Apache-2.0
 #
 fail_fast: false
@@ -7,7 +7,7 @@ default_install_hook_types: [pre-commit, pre-push]
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: v6.0.0
     hooks:
       - id: check-yaml
         stages: [pre-commit]
@@ -27,23 +27,23 @@ repos:
         args: ['--maxkb=100']
         stages: [pre-commit]
   - repo: https://github.com/Lucas-C/pre-commit-hooks
-    rev: v1.5.5
+    rev: v1.5.6
     hooks:
       - id: remove-tabs
         args: [--whitespaces-count, '4']
   - repo: https://github.com/asottile/reorder_python_imports
-    rev: v3.12.0
+    rev: v3.16.0
     hooks:
       - id: reorder-python-imports
         pass_filenames: true
         stages: [pre-commit]
   - repo: https://github.com/psf/black
-    rev: 22.10.0
+    rev: 26.1.0
     hooks:
       - id: black
         stages: [pre-commit]
   - repo: https://github.com/fsfe/reuse-tool.git
-    rev: v5.1.1
+    rev: v6.2.0
     hooks:
       - id: reuse
         stages: [pre-commit]
