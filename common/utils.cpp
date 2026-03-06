@@ -138,6 +138,16 @@ class BFloat16Format final : public FormatBase {
     std::string toInt() const override { return "0x6642"; }        // "fB"
 };
 
+class Float8E5M2Format final : public FormatBase {
+  public:
+    bool isInteger() const override { return false; } // semantic float
+    bool isSigned() const override { return true; }
+    std::string lowest() const override { return "-57344"; }          // IEEE-like f8e5m2 finite minimum
+    std::string max() const override { return "57344"; }              // IEEE-like f8e5m2 finite maximum
+    std::string glslType() const override { return "float8_e5m2_t"; } // FP8 payload storage
+    std::string toInt() const override { return "0x664D"; }           // "fM"
+};
+
 std::shared_ptr<FormatBase> makeFormat(const VkFormat format) {
     switch (format) {
     case VK_FORMAT_R8_SINT:
@@ -155,6 +165,8 @@ std::shared_ptr<FormatBase> makeFormat(const VkFormat format) {
         return std::make_shared<Format<float16>>("float16_t");
     case VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM:
         return std::make_shared<BFloat16Format>();
+    case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM:
+        return std::make_shared<Float8E5M2Format>();
     case VK_FORMAT_R32_SINT:
         return std::make_shared<Format<int32_t>>("int");
     case VK_FORMAT_R32_UINT:

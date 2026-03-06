@@ -5,6 +5,7 @@
 
 #define IN_OUT_T %in_out_t%
 #define TYPE_IN_OUT %in_out_t_type%
+#define COMP_T %in_out_t_comp%
 
 layout(local_size_x = %warpX%) in;
 
@@ -191,9 +192,9 @@ void main() {
     IN_OUT_T inValueStorage;
     tensorReadARM(inputData1, index, inValueStorage);
 
-#if IS_BFLOAT(TYPE_IN_OUT)
-    float value1 = DECODE_STORAGE_TO_COMP(inValueStorage, TYPE_IN_OUT, float);
-    float outValue = isnan(value1) ? value1 : float(%operation%);
+#if IS_REDUCED_FLOAT(TYPE_IN_OUT)
+    COMP_T value1 = DECODE_STORAGE_TO_COMP(inValueStorage, TYPE_IN_OUT, COMP_T);
+    COMP_T outValue = isnan(float(value1)) ? value1 : COMP_T(%operation%);
     IN_OUT_T value = ENCODE_COMP_TO_STORAGE(outValue, IN_OUT_T, TYPE_IN_OUT);
 #else
     IN_OUT_T value1 = inValueStorage;

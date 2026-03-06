@@ -26,15 +26,19 @@
 #define TYPE_HALF 0x6632   // "f2"
 #define TYPE_FLOAT 0x6634  // "f4"
 #define TYPE_BFLOAT16 0x6642 // "fB"
+#define TYPE_FLOAT8_E5M2 0x664D // "fM"
 #define TYPE_DOUBLE 0x6638 // "f8"
 
 // Bfloat type
 #define bfloat16_t uint16_t
+#define float8_e5m2_t uint8_t
 
 #define IS_BOOL(t) (t == TYPE_BOOL)
 #define IS_INTEGER(t) ((t >> 8) == 0x69)
-#define IS_FLOAT(t) (((t >> 8) == 0x66) && ((t & 0xFF) != 0x42))
+#define IS_FLOAT8(t) (t == TYPE_FLOAT8_E5M2)
+#define IS_FLOAT(t) (((t >> 8) == 0x66) && ((t & 0xFF) != 0x42) && ((t & 0xFF) != 0x4D))
 #define IS_BFLOAT(t) (((t >> 8) == 0x66) && ((t & 0xFF) == 0x42))
+#define IS_REDUCED_FLOAT(t) (IS_BFLOAT(t) || IS_FLOAT8(t))
 
 // Remaping types due to some platforms not supporting higher precision types in buffers/push constants
 #ifdef USE_FLOAT_AS_DOUBLE
@@ -182,6 +186,52 @@ float decode_to_f32(bfloat16_t x)
     return uintBitsToFloat(u);
 }
 
+float16_t decode_to_f16(float8_e5m2_t x)
+{
+    const uint packed = uint(x) << 8;
+    return float16_t(unpackHalf2x16(packed).x);
+}
+
+float16_t decode_to_f16(bfloat16_t x)
+{
+    return float16_t(decode_to_f32(x));
+}
+
+float16_t decode_to_f16(float16_t x)
+{
+    return x;
+}
+
+float16_t decode_to_f16(float x)
+{
+    return float16_t(x);
+}
+
+float16_t decode_to_f16(bool x)
+{
+    return x ? float16_t(1.0) : float16_t(0.0);
+}
+
+float16_t decode_to_f16(int8_t x)
+{
+    return float16_t(x);
+}
+
+float16_t decode_to_f16(int16_t x)
+{
+    return float16_t(x);
+}
+
+float16_t decode_to_f16(int x)
+{
+    return float16_t(x);
+}
+
+float16_t decode_to_f16(int64_t x)
+{
+    return float16_t(x);
+}
+
 float decode_to_f32(float16_t x)
 {
     return float(x);
@@ -229,6 +279,34 @@ bfloat16_t encode_from_f32_trunc(float x, bfloat16_t)
     return encode_from_f32_trunc(x);
 }
 
+float8_e5m2_t encode_from_f32_to_float8_e5m2_trunc(float x)
+{
+    uint sign = (floatBitsToUint(x) >> 24) & 0x80u;
+
+    if (isnan(x)) {
+        // Use a quiet NaN payload in e5m2 format.
+        return float8_e5m2_t(sign | 0x7Du);
+    }
+
+    if (isinf(x) || x > 57344.0 || x < -57344.0) {
+        return float8_e5m2_t(sign | 0x7Cu);
+    }
+
+    uint packed = packHalf2x16(vec2(x, 0.0));
+    return float8_e5m2_t(packed >> 8);
+}
+
+float8_e5m2_t encode_from_f32_trunc(float x, float8_e5m2_t)
+{
+    return encode_from_f32_to_float8_e5m2_trunc(x);
+}
+
+float8_e5m2_t encode_from_f16_trunc(float16_t x, float8_e5m2_t)
+{
+    uint packed = packHalf2x16(vec2(float(x), 0.0));
+    return float8_e5m2_t(packed >> 8);
+}
+
 float16_t encode_from_f32_trunc(float x, float16_t)
 {
     return float16_t(x);
@@ -268,6 +346,57 @@ float16_t encode_from_f32_rne(float x, float16_t)
     return float16_t(x);
 }
 
+float8_e5m2_t encode_from_f32_rne(float x, float8_e5m2_t)
+{
+    // Keep matching current float8 policy: truncation conversion.
+    return encode_from_f32_to_float8_e5m2_trunc(x);
+}
+
+float8_e5m2_t encode_from_f16_rne(float16_t x, float8_e5m2_t)
+{
+    return encode_from_f16_trunc(x, float8_e5m2_t(0));
+}
+
+bfloat16_t encode_from_f16_rne(float16_t x, bfloat16_t)
+{
+    return encode_from_f32_rne(float(x), bfloat16_t(0));
+}
+
+float16_t encode_from_f16_rne(float16_t x, float16_t)
+{
+    return x;
+}
+
+float encode_from_f16_rne(float16_t x, float)
+{
+    return float(x);
+}
+
+int8_t encode_from_f16_rne(float16_t x, int8_t)
+{
+    return int8_t(x);
+}
+
+int16_t encode_from_f16_rne(float16_t x, int16_t)
+{
+    return int16_t(x);
+}
+
+int encode_from_f16_rne(float16_t x, int)
+{
+    return int(x);
+}
+
+int64_t encode_from_f16_rne(float16_t x, int64_t)
+{
+    return int64_t(x);
+}
+
+bool encode_from_f16_rne(float16_t x, bool)
+{
+    return x != float16_t(0.0);
+}
+
 float encode_from_f32_rne(float x, float)
 {
     return x;
@@ -301,6 +430,56 @@ bool encode_from_f32_rne(float x, bool)
 bfloat16_t encode_from_f32(float x, bfloat16_t)
 {
     return encode_from_f32_trunc(x);
+}
+
+float8_e5m2_t encode_from_f32(float x, float8_e5m2_t)
+{
+    return encode_from_f32_to_float8_e5m2_trunc(x);
+}
+
+float8_e5m2_t encode_from_f16(float16_t x, float8_e5m2_t)
+{
+    return encode_from_f16_trunc(x, float8_e5m2_t(0));
+}
+
+bfloat16_t encode_from_f16(float16_t x, bfloat16_t)
+{
+    return encode_from_f32(float(x), bfloat16_t(0));
+}
+
+float16_t encode_from_f16(float16_t x, float16_t)
+{
+    return x;
+}
+
+float encode_from_f16(float16_t x, float)
+{
+    return float(x);
+}
+
+int8_t encode_from_f16(float16_t x, int8_t)
+{
+    return int8_t(x);
+}
+
+int16_t encode_from_f16(float16_t x, int16_t)
+{
+    return int16_t(x);
+}
+
+int encode_from_f16(float16_t x, int)
+{
+    return int(x);
+}
+
+int64_t encode_from_f16(float16_t x, int64_t)
+{
+    return int64_t(x);
+}
+
+bool encode_from_f16(float16_t x, bool)
+{
+    return x != float16_t(0.0);
 }
 
 float16_t encode_from_f32(float x, float16_t)
@@ -340,15 +519,22 @@ bool encode_from_f32(float x, bool)
 
 // Decode a storage scalar into compute type.
 #define DECODE_STORAGE_TO_COMP(rawValue, typeTag, compType)                                                           \
-    ((IS_BFLOAT(typeTag)) ? compType(decode_to_f32(rawValue)) : compType(rawValue))
+    (IS_FLOAT8(typeTag) ? compType(decode_to_f16(rawValue))                                                           \
+                        : ((IS_BFLOAT(typeTag)) ? compType(decode_to_f32(rawValue)) : compType(rawValue)))
 
 // Encode a compute scalar into storage type with truncation semantics for bf16.
 #define ENCODE_COMP_TO_STORAGE(compValue, storageType, typeTag)                                                       \
-    ((IS_BFLOAT(typeTag)) ? storageType(encode_from_f32(float(compValue), storageType(0))) : storageType(compValue))
+    (IS_FLOAT8(typeTag) ? storageType(encode_from_f16(float16_t(compValue), storageType(0)))                         \
+                        : ((IS_BFLOAT(typeTag))                                                                       \
+                               ? storageType(encode_from_f32(float(compValue), storageType(0)))                      \
+                               : storageType(compValue)))
 
 // Encode a compute scalar into storage type with RNE semantics for bf16.
 #define ENCODE_COMP_TO_STORAGE_RNE(compValue, storageType, typeTag)                                                   \
-    ((IS_BFLOAT(typeTag)) ? storageType(encode_from_f32_rne(float(compValue), storageType(0))) : storageType(compValue))
+    (IS_FLOAT8(typeTag) ? storageType(encode_from_f16_rne(float16_t(compValue), storageType(0)))                     \
+                        : ((IS_BFLOAT(typeTag))                                                                       \
+                               ? storageType(encode_from_f32_rne(float(compValue), storageType(0)))                  \
+                               : storageType(compValue)))
 
 // Shared conversion overloads for convolution-family shaders.
 #define DEFINE_CONV_ACC_CASTS(ACC_TYPE, OUT_TYPE)                                                                     \
@@ -359,8 +545,10 @@ bool encode_from_f32(float x, bool)
     ACC_TYPE to_acc(int v)        { return ACC_TYPE(v); }                                                             \
     ACC_TYPE to_acc(int64_t v)    { return ACC_TYPE(v); }                                                             \
     ACC_TYPE to_acc(bfloat16_t v) { return ACC_TYPE(decode_to_f32(v)); }                                              \
+    ACC_TYPE to_acc(float8_e5m2_t v) { return ACC_TYPE(decode_to_f16(v)); }                                           \
                                                                                                                        \
     OUT_TYPE acc_to_out(ACC_TYPE v, bfloat16_t) { return OUT_TYPE(encode_from_f32(float(v), bfloat16_t(0))); }      \
+    OUT_TYPE acc_to_out(ACC_TYPE v, float8_e5m2_t) { return OUT_TYPE(encode_from_f32(float(v), float8_e5m2_t(0))); }\
     OUT_TYPE acc_to_out(ACC_TYPE v, float16_t)  { return OUT_TYPE(v); }                                               \
     OUT_TYPE acc_to_out(ACC_TYPE v, float)      { return OUT_TYPE(v); }                                               \
     OUT_TYPE acc_to_out(ACC_TYPE v, int8_t)     { return OUT_TYPE(v); }                                               \

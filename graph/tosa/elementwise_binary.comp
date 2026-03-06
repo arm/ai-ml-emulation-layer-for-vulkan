@@ -13,7 +13,7 @@
 #if IS_BFLOAT(TYPE_IN)
     #define OUT_COMP_T float
 #else
-    #define OUT_COMP_T OUT_T
+    #define OUT_COMP_T COMP_T
 #endif
 
 layout(local_size_x = %warpX%) in;
@@ -45,7 +45,7 @@ bool max(bool a, bool b){
     return a || b;
 }
 
-#if IS_FLOAT(TYPE_IN) || IS_BFLOAT(TYPE_IN)
+#if IS_FLOAT(TYPE_IN) || IS_REDUCED_FLOAT(TYPE_IN)
 OUT_COMP_T power(COMP_T base, COMP_T exponent) {
     // Positive numbers can be passed directly to pow()
     if (base >= COMP_T(0)) {
@@ -72,45 +72,51 @@ OUT_COMP_T power(IN_T base, IN_T exponent) {
 }
 #endif
 
+#if IS_FLOAT8(TYPE_IN)
+OUT_COMP_T power(IN_T base, IN_T exponent) {
+    return power(COMP_T(decode_to_f16(base)), COMP_T(decode_to_f16(exponent)));
+}
+#endif
+
 #endif
 
 OUT_COMP_T applyMin(COMP_T a, COMP_T b, uint nanMode)
 {
-#if IS_FLOAT(TYPE_IN) || IS_BFLOAT(TYPE_IN)
-#if IS_BFLOAT(TYPE_IN)
-    return OUT_COMP_T(tosa_min_nan_f32(a, b, nanMode));
+#if IS_FLOAT(TYPE_IN) || IS_REDUCED_FLOAT(TYPE_IN)
+#if IS_REDUCED_FLOAT(TYPE_IN)
+    return OUT_COMP_T(tosa_min_nan_f32(float(a), float(b), nanMode));
 #else
-    if (isnan(a)) {
-        return (nanMode == NAN_MODE_PROPAGATE) ? OUT_T(a) : OUT_T(b);
+    if (isnan(float(a))) {
+        return (nanMode == NAN_MODE_PROPAGATE) ? OUT_COMP_T(a) : OUT_COMP_T(b);
     }
-    else if (isnan(b)) {
-        return (nanMode == NAN_MODE_PROPAGATE) ? OUT_T(b) : OUT_T(a);
+    else if (isnan(float(b))) {
+        return (nanMode == NAN_MODE_PROPAGATE) ? OUT_COMP_T(b) : OUT_COMP_T(a);
     }
 
-    return OUT_T(min(a, b));
+    return OUT_COMP_T(min(a, b));
 #endif
 #else
-    return OUT_T(min(a, b));
+    return OUT_COMP_T(min(a, b));
 #endif
 }
 
 OUT_COMP_T applyMax(COMP_T a, COMP_T b, uint nanMode)
 {
-#if IS_FLOAT(TYPE_IN) || IS_BFLOAT(TYPE_IN)
-#if IS_BFLOAT(TYPE_IN)
-    return OUT_COMP_T(tosa_max_nan_f32(a, b, nanMode));
+#if IS_FLOAT(TYPE_IN) || IS_REDUCED_FLOAT(TYPE_IN)
+#if IS_REDUCED_FLOAT(TYPE_IN)
+    return OUT_COMP_T(tosa_max_nan_f32(float(a), float(b), nanMode));
 #else
-    if (isnan(a)) {
-        return (nanMode == NAN_MODE_PROPAGATE) ? OUT_T(a) : OUT_T(b);
+    if (isnan(float(a))) {
+        return (nanMode == NAN_MODE_PROPAGATE) ? OUT_COMP_T(a) : OUT_COMP_T(b);
     }
-    else if (isnan(b)) {
-        return (nanMode == NAN_MODE_PROPAGATE) ? OUT_T(b) : OUT_T(a);
+    else if (isnan(float(b))) {
+        return (nanMode == NAN_MODE_PROPAGATE) ? OUT_COMP_T(b) : OUT_COMP_T(a);
     }
 
-    return OUT_T(max(a, b));
+    return OUT_COMP_T(max(a, b));
 #endif
 #else
-    return OUT_T(max(a, b));
+    return OUT_COMP_T(max(a, b));
 #endif
 }
 
