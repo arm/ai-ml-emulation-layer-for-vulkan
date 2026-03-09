@@ -629,16 +629,15 @@ class GraphLayer : public VulkanLayerImpl {
         const auto memoryRequirements = session->memoryPlanner->getGraphPipelineSessionMemoryRequirements();
         if (memoryRequirements.size > 0) {
             (*bindPointRequirementCount)++;
-        }
-
-        if (bindPointRequirements != nullptr) {
-            bindPointRequirements[0] = VkDataGraphPipelineSessionBindPointRequirementARM{
-                VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENTS_INFO_ARM, // type
-                nullptr,                                                                        // next
-                VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM,                        // bind point
-                VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM,                      // bind point type
-                1,                                                                              // number of resources
-            };
+            if (bindPointRequirements != nullptr) {
+                bindPointRequirements[0] = VkDataGraphPipelineSessionBindPointRequirementARM{
+                    VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENT_ARM, // type
+                    nullptr,                                                                  // next
+                    VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM,                  // bind point
+                    VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM,                // bind point type
+                    1,                                                                        // number of resources
+                };
+            }
         }
 
         return VK_SUCCESS;
