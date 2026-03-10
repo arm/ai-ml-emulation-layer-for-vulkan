@@ -1,18 +1,17 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #define IN_T %in_t%
 #define OUT_T %out_t%
+#define TYPE_IN %in_t_type%
 #define TYPE_OUT %out_t_type%
 
-#if TYPE_OUT == TYPE_INT64
-    #define VEC4 dvec4
-#elif TYPE_OUT == TYPE_INT32
-    #define VEC4 ivec4
+#if IS_BFLOAT(TYPE_IN) || IS_BFLOAT(TYPE_OUT)
+    #define COMP_T float
 #else
-    #define VEC4 vec4
+    #define COMP_T OUT_T
 #endif
 
 layout(local_size_x = %warpX%) in;
@@ -34,7 +33,7 @@ void main() {
     uint oy = index[1];
     uint ox = index[2];
 
-    OUT_T acc = OUT_T(0);
+    COMP_T acc = COMP_T(0);
 
     const uint IC = tensorSizeARM(inputData1, 2);
     for (uint c = 0; c < IC; c += 4) {
@@ -46,15 +45,15 @@ void main() {
         tensorReadARM(inputData2, uint[](on, c + 1, ox), value21);
         tensorReadARM(inputData2, uint[](on, c + 2, ox), value22);
         tensorReadARM(inputData2, uint[](on, c + 3, ox), value23);
-
-        VEC4 val1 = VEC4(value1[0], value1[1], value1[2], value1[3]) - pushConstants.inputZeroPoint1;
-        VEC4 val2 = VEC4(value20, value21, value22, value23) - pushConstants.inputZeroPoint2;
-        VEC4 mul = val1 * val2;
+        IN_T value2[4] = {value20, value21, value22, value23};
 
         for (uint idx = 0; idx < 4 && c + idx < IC; ++idx) {
-            acc += OUT_T(mul[idx]);
+            COMP_T val1 = DECODE_STORAGE_TO_COMP(value1[idx], TYPE_IN, COMP_T) - COMP_T(pushConstants.inputZeroPoint1);
+            COMP_T val2 = DECODE_STORAGE_TO_COMP(value2[idx], TYPE_IN, COMP_T) - COMP_T(pushConstants.inputZeroPoint2);
+            acc += val1 * val2;
         }
     }
 
-    tensorWriteARM(outputData, index, acc);
+    OUT_T outValue = ENCODE_COMP_TO_STORAGE(acc, OUT_T, TYPE_OUT);
+    tensorWriteARM(outputData, index, outValue);
 }

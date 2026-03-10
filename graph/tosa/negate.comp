@@ -1,12 +1,19 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define IN_OUT_T %in_out_t%
+#define STORAGE_T %in_out_t%
 #define ACC_T %acc_t%
+#define TYPE_IN_OUT %in_out_t_type%
 #define MIN %in_out_t_lowest%
 #define MAX %in_out_t_max%
+
+#if IS_BFLOAT(TYPE_IN_OUT)
+    #define COMP_T float
+#else
+    #define COMP_T ACC_T
+#endif
 
 layout(local_size_x = %warpX%) in;
 
@@ -17,18 +24,25 @@ layout(push_constant) uniform PushConstants {
 
 layout(constant_id = 0) const uint32_t RANK = RANK_MAX;
 
-layout(set = 0, binding = 0) uniform tensorARM<IN_OUT_T, RANK> outputData;
-layout(set = 1, binding = 0) uniform tensorARM<IN_OUT_T, RANK> inputData;
+layout(set = 0, binding = 0) uniform tensorARM<STORAGE_T, RANK> outputData;
+layout(set = 1, binding = 0) uniform tensorARM<STORAGE_T, RANK> inputData;
 
 void main() {
     uint[RANK] index;
     getIndex(outputData, index);
 
-    IN_OUT_T value;
-    tensorReadARM(inputData, index, value);
+    STORAGE_T valueRaw;
+    tensorReadARM(inputData, index, valueRaw);
 
-    ACC_T res = ACC_T(pushConstants.inputZeroPoint) - ACC_T(value) + ACC_T(pushConstants.outputZeroPoint);
-    res = isnan(float(value)) ? value : isinf(float(value)) ? -value : clamp(res, ACC_T(MIN), ACC_T(MAX));
+    COMP_T value = DECODE_STORAGE_TO_COMP(valueRaw, TYPE_IN_OUT, COMP_T);
+    COMP_T res = COMP_T(pushConstants.inputZeroPoint) - value + COMP_T(pushConstants.outputZeroPoint);
 
-    tensorWriteARM(outputData, index, IN_OUT_T(res));
+#if IS_BFLOAT(TYPE_IN_OUT)
+    COMP_T outValue = isnan(float(value)) ? value : (isinf(float(value)) ? COMP_T(-value) : res);
+#else
+    COMP_T outValue =
+        isnan(float(value)) ? value : (isinf(float(value)) ? COMP_T(-value) : clamp(res, COMP_T(MIN), COMP_T(MAX)));
+#endif
+
+    tensorWriteARM(outputData, index, ENCODE_COMP_TO_STORAGE(outValue, STORAGE_T, TYPE_IN_OUT));
 }

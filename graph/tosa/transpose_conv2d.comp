@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -8,6 +8,8 @@
 #define WEIGHT_T %weight_t%
 #define TYPE_ACC %acc_t_type%
 #define ACC_T %acc_t%
+
+DEFINE_CONV_ACC_CASTS(ACC_T, OUT_T)
 
 #if TYPE_ACC == TYPE_INT64
     #define VEC4 dvec4
@@ -42,27 +44,37 @@ void main() {
 
     OUT_T tempAcc;
     tensorReadARM(biasesData, uint[](tensorSizeARM(biasesData, 0) == 1 ? 0 : oc), tempAcc);
-    ACC_T acc = ACC_T(tempAcc);
+    ACC_T acc = to_acc(tempAcc);
 
     for (uint ky = 0; ky < tensorSizeARM(weightsData, 1); ky++) {
         for (uint kx = 0; kx < tensorSizeARM(weightsData, 2); kx++) {
-            uint iy = oy - pushConstants.pad[0] - ky;
-            uint ix = ox - pushConstants.pad[2] - kx;
+            int iy = int(oy) - pushConstants.pad[0] - int(ky);
+            int ix = int(ox) - pushConstants.pad[2] - int(kx);
 
             if (((iy % pushConstants.stride[0]) == 0) && ((ix % pushConstants.stride[1]) == 0)) {
                 iy /= pushConstants.stride[0];
                 ix /= pushConstants.stride[1];
 
-                if ((iy < tensorSizeARM(inputData, 1)) && (ix < tensorSizeARM(inputData, 2))) {
+                if ((iy >= 0) && (ix >= 0) &&
+                    (uint(iy) < tensorSizeARM(inputData, 1)) &&
+                    (uint(ix) < tensorSizeARM(inputData, 2))) {
                     const uint IC = tensorSizeARM(inputData, 3);
                     for (uint ic = 0; ic < IC; ic += 4) {
                         IN_T tempValue[4];
-                        tensorReadARM(inputData, uint[](n, iy, ix, ic), tempValue);
-                        VEC4 value = VEC4(tempValue[0], tempValue[1], tempValue[2], tempValue[3]);
+                        tensorReadARM(inputData, uint[](n, uint(iy), uint(ix), ic), tempValue);
+                        VEC4 value = VEC4(
+                            to_acc(tempValue[0]),
+                            to_acc(tempValue[1]),
+                            to_acc(tempValue[2]),
+                            to_acc(tempValue[3]));
 
                         WEIGHT_T tempWeight[4];
                         tensorReadARM(weightsData, uint[](oc, ky, kx, ic), tempWeight);
-                        VEC4 weight = VEC4(tempWeight[0], tempWeight[1], tempWeight[2], tempWeight[3]);
+                        VEC4 weight = VEC4(
+                            to_acc(tempWeight[0]),
+                            to_acc(tempWeight[1]),
+                            to_acc(tempWeight[2]),
+                            to_acc(tempWeight[3]));
 
                         VEC4 outValue = value - pushConstants.inputZeroPoint;
                         VEC4 outWeight = weight - pushConstants.weightZeroPoint;
@@ -77,5 +89,5 @@ void main() {
         }
     }
 
-    tensorWriteARM(outputData, index, OUT_T(acc));
+    tensorWriteARM(outputData, index, OUT_T(acc_to_out(acc, OUT_T(0))));
 }

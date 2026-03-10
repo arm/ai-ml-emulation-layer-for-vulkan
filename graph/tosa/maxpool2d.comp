@@ -1,10 +1,12 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define IN_OUT_T %in_out_t%
+#define STORAGE_T %in_out_t%
 #define TYPE_IN_OUT %in_out_t_type%
+
+#define IN_OUT_T %in_out_t_comp%
 
 layout(local_size_x = %warpX%) in;
 
@@ -15,8 +17,8 @@ layout(push_constant) uniform PushConstants {
     uint nanMode;
 } pushConstants;
 
-layout(set = 0, binding = 0) uniform tensorARM<IN_OUT_T, 4> outputData;
-layout(set = 1, binding = 0) uniform tensorARM<IN_OUT_T, 4> inputData;
+layout(set = 0, binding = 0) uniform tensorARM<STORAGE_T, 4> outputData;
+layout(set = 1, binding = 0) uniform tensorARM<STORAGE_T, 4> inputData;
 
 void main() {
     uint[4] index;
@@ -37,10 +39,12 @@ void main() {
             uint x = ix + kx;
 
             if (y < tensorSizeARM(inputData, 1) && x < tensorSizeARM(inputData, 2)) {
-                IN_OUT_T value;
-                tensorReadARM(inputData, uint[](on, y, x, oc), value);
+                STORAGE_T valueRaw;
+                tensorReadARM(inputData, uint[](on, y, x, oc), valueRaw);
 
-#if IS_FLOAT(TYPE_IN_OUT)
+                IN_OUT_T value = DECODE_STORAGE_TO_COMP(valueRaw, TYPE_IN_OUT, IN_OUT_T);
+
+#if IS_FLOAT(TYPE_IN_OUT) || IS_BFLOAT(TYPE_IN_OUT)
                 if (isnan(value)) {
                     if (pushConstants.nanMode == NAN_MODE_IGNORE) {
                         // Ignore value and continue
@@ -48,7 +52,7 @@ void main() {
                     }
                     else {
                         // If any value is NaN, then the result must be NaN
-                        tensorWriteARM(outputData, index, value);
+                        tensorWriteARM(outputData, index, ENCODE_COMP_TO_STORAGE(value, STORAGE_T, TYPE_IN_OUT));
                         return;
                     }
                 }
@@ -58,5 +62,5 @@ void main() {
         }
     }
 
-    tensorWriteARM(outputData, index, acc);
+    tensorWriteARM(outputData, index, ENCODE_COMP_TO_STORAGE(acc, STORAGE_T, TYPE_IN_OUT));
 }

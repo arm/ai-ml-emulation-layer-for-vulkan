@@ -1,9 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define IN_OUT_T %in_out_t%
+#define STORAGE_T %in_out_t%
 #define TYPE_IN_OUT %in_out_t_type%
 
 layout(local_size_x = %warpX%) in;
@@ -16,24 +16,38 @@ layout(push_constant) uniform PushConstants {
 
 layout(constant_id = 0) const uint32_t RANK = RANK_MAX;
 
-layout(set = 0, binding = 0) uniform tensorARM<IN_OUT_T, RANK> outputData;
-layout(set = 1, binding = 0) uniform tensorARM<IN_OUT_T, RANK> inputData;
+layout(set = 0, binding = 0) uniform tensorARM<STORAGE_T, RANK> outputData;
+layout(set = 1, binding = 0) uniform tensorARM<STORAGE_T, RANK> inputData;
+
+#define COMP_T %in_out_t_comp%
 
 void main() {
     uint[RANK] index;
     getIndex(outputData, index);
 
-    IN_OUT_T value;
-    tensorReadARM(inputData, index, value);
+    STORAGE_T valueRaw;
+    tensorReadARM(inputData, index, valueRaw);
 
-#if IS_FLOAT(TYPE_IN_OUT)
-    // In the NaN ignoring mode, if the input is a NaN, the output is the specified minimum value.
-    if (isnan(value) && (pushConstants.nanMode == NAN_MODE_IGNORE)) {
-        value = IN_OUT_T(pushConstants.min);
+    COMP_T value = DECODE_STORAGE_TO_COMP(valueRaw, TYPE_IN_OUT, COMP_T);
+    COMP_T minValue = COMP_T(pushConstants.min);
+    COMP_T maxValue = COMP_T(pushConstants.max);
+
+#if IS_BFLOAT(TYPE_IN_OUT)
+    if (minValue > maxValue) {
+        minValue = decode_to_f32(bfloat16_t(uint16_t(pushConstants.min)));
+        maxValue = decode_to_f32(bfloat16_t(uint16_t(pushConstants.max)));
     }
 #endif
 
-    // In the NaN propagating mode, if the input is a NaN, the output must be a NaN.
-    value = isnan(float(value)) ? value : clamp(value, IN_OUT_T(pushConstants.min), IN_OUT_T(pushConstants.max));
-    tensorWriteARM(outputData, index, value);
+#if IS_FLOAT(TYPE_IN_OUT) || IS_BFLOAT(TYPE_IN_OUT)
+    if (isnan(value) && (pushConstants.nanMode == NAN_MODE_IGNORE)) {
+        value = minValue;
+    }
+
+    value = isnan(float(value)) ? value : clamp(value, minValue, maxValue);
+#else
+    value = clamp(value, minValue, maxValue);
+#endif
+
+    tensorWriteARM(outputData, index, ENCODE_COMP_TO_STORAGE(value, STORAGE_T, TYPE_IN_OUT));
 }

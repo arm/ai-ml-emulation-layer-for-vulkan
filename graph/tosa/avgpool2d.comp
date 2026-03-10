@@ -1,13 +1,15 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define IN_OUT_T %in_out_t%
+#define STORAGE_T %in_out_t%
 #define TYPE_IN_OUT %in_out_t_type%
 #define ACC_T %acc_t%
 #define MIN %in_out_t_lowest%
 #define MAX %in_out_t_max%
+
+#define IN_OUT_T %in_out_t_comp%
 
 layout(local_size_x = %warpX%) in;
 
@@ -19,8 +21,8 @@ layout(push_constant) uniform PushConstants {
     int32_t outputZeroPoint;
 } pushConstants;
 
-layout(set = 0, binding = 0) uniform tensorARM<IN_OUT_T, 4> outputData;
-layout(set = 1, binding = 0) uniform tensorARM<IN_OUT_T, 4> inputData;
+layout(set = 0, binding = 0) uniform tensorARM<STORAGE_T, 4> outputData;
+layout(set = 1, binding = 0) uniform tensorARM<STORAGE_T, 4> inputData;
 
 void main() {
     uint[4] index;
@@ -44,8 +46,10 @@ void main() {
 
             if (y < tensorSizeARM(inputData, 1) && x < tensorSizeARM(inputData, 2)) {
                 uint[4] index = uint[](on, y, x, oc);
-                IN_OUT_T value;
-                tensorReadARM(inputData, index, value);
+                STORAGE_T valueRaw;
+                tensorReadARM(inputData, index, valueRaw);
+
+                IN_OUT_T value = DECODE_STORAGE_TO_COMP(valueRaw, TYPE_IN_OUT, IN_OUT_T);
 
                 acc += ACC_T(value) - ACC_T(pushConstants.inputZeroPoint);
                 count++;
@@ -53,7 +57,7 @@ void main() {
         }
     }
 
-#if IS_FLOAT(TYPE_IN_OUT)
+#if IS_FLOAT(TYPE_IN_OUT) || IS_BFLOAT(TYPE_IN_OUT)
     acc /= ACC_T(count);
 #else
     // Divide and round
@@ -67,5 +71,5 @@ void main() {
     acc = clamp(acc, MIN, MAX);
 #endif
 
-    tensorWriteARM(outputData, index, IN_OUT_T(acc));
+    tensorWriteARM(outputData, index, ENCODE_COMP_TO_STORAGE(float(acc), STORAGE_T, TYPE_IN_OUT));
 }

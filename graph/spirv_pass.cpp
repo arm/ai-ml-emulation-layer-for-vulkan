@@ -14,6 +14,36 @@
 using namespace mlsdk::el::log;
 using namespace mlsdk::el::compute;
 
+namespace {
+
+bool isBFloat16(const spvtools::opt::analysis::Float *f) {
+    return f && f->width() == 16 && f->encoding() == spv::FPEncoding::BFloat16KHR;
+}
+
+void flattenBFloat16Composite(const spvtools::opt::analysis::CompositeConstant *composite,
+                              std::vector<uint16_t> &values) {
+    for (const auto &component : composite->GetComponents()) {
+        if (const auto *innerComposite = component->AsCompositeConstant()) {
+            flattenBFloat16Composite(innerComposite, values);
+            continue;
+        }
+
+        const auto *floatConstant = component->AsFloatConstant();
+        if (floatConstant == nullptr || !isBFloat16(floatConstant->type()->AsFloat())) {
+            throw std::runtime_error("Unsupported BF16 composite constant encoding");
+        }
+
+        values.push_back(uint16_t(floatConstant->words()[0]));
+    }
+}
+
+size_t tensorElementCount(const std::vector<int64_t> &dimensions) {
+    return std::accumulate(dimensions.begin(), dimensions.end(), size_t{1},
+                           [](size_t acc, int64_t dim) { return acc * static_cast<size_t>(dim); });
+}
+
+} // namespace
+
 /*******************************************************************************
  * Base Graph Pass
  *******************************************************************************/
@@ -340,6 +370,29 @@ std::shared_ptr<TensorDescriptor> GraphPassBase::makeCompositeTensor(const uint3
     case VK_FORMAT_R16_SFLOAT:
         return graphPipeline.makeConstCompositeTensor(format, dimensions,
                                                       getConstVector<float16>(instruction->result_id()).data());
+    case VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM: {
+        const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(instruction->result_id());
+        std::vector<uint16_t> bf16Values;
+
+        if (const auto *composite = constant->AsCompositeConstant()) {
+            const bool isSplat = instruction->opcode() == spv::Op::OpConstantCompositeReplicateEXT ||
+                                 instruction->opcode() == spv::Op::OpSpecConstantCompositeReplicateEXT;
+            flattenBFloat16Composite(composite, bf16Values);
+
+            if (isSplat) {
+                assert(bf16Values.size() == 1);
+                size_t compositeCount = tensorElementCount(dimensions);
+                bf16Values.resize(compositeCount, bf16Values.front());
+            }
+        } else if (constant->AsNullConstant()) {
+            size_t compositeCount = tensorElementCount(dimensions);
+            bf16Values.resize(compositeCount, 0);
+        } else {
+            throw std::runtime_error("Unsupported BF16 constant kind for composite tensor");
+        }
+
+        return graphPipeline.makeConstCompositeTensor(format, dimensions, bf16Values.data());
+    }
     case VK_FORMAT_R32_SFLOAT:
         return graphPipeline.makeConstCompositeTensor(format, dimensions,
                                                       getConstVector<float>(instruction->result_id()).data());
@@ -377,7 +430,11 @@ VkFormat GraphPassBase::getVkFormat(const analysis::Type *type) const {
     if (floatType) {
         switch (floatType->width()) {
         case 16:
-            return VK_FORMAT_R16_SFLOAT;
+            if (isBFloat16(floatType)) {
+                return VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM;
+            } else {
+                return VK_FORMAT_R16_SFLOAT;
+            }
         case 32:
             return VK_FORMAT_R32_SFLOAT;
         case 64:

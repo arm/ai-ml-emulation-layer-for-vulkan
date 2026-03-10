@@ -1,10 +1,11 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #define IN_T %in_t%
 #define OUT_T %out_t%
+#define TYPE_IN %in_t_type%
 #define TYPE_OUT %out_t_type%
 
 #define NEAREST     1
@@ -37,6 +38,8 @@ layout(push_constant) uniform PushConstants {
 layout(set = 0, binding = 0) uniform tensorARM<OUT_T, 4> outputData;
 layout(set = 1, binding = 0) uniform tensorARM<IN_T, 4> inputData;
 
+#define COMP_T %out_t_comp%
+
 int idivFloor(int numerator, int denominator) {
     int result = numerator / denominator;
 
@@ -51,7 +54,7 @@ void main() {
     uint[4] index;
     getIndex4(outputData, index);
 
-    OUT_T acc = OUT_T(0);
+    COMP_T acc = COMP_T(0);
 
     uint n = index[0];
     uint oy = index[1];
@@ -65,9 +68,9 @@ void main() {
         tensorSizeARM(inputData, 3)
     };
 
-#if IS_FLOAT(TYPE_OUT)
-    OUT_T unit_y = OUT_T(1.0);
-    OUT_T unit_x = OUT_T(1.0);
+#if IS_FLOAT(TYPE_OUT) || IS_BFLOAT(TYPE_OUT)
+    COMP_T unit_y = COMP_T(1.0);
+    COMP_T unit_x = COMP_T(1.0);
 #else
     int16_t unit_y = int16_t(pushConstants.scale.y.n);
     int16_t unit_x = int16_t(pushConstants.scale.x.n);
@@ -81,9 +84,9 @@ void main() {
     int16_t ix = int16_t(idivFloor(x, pushConstants.scale.x.n));
     int16_t rx = int16_t(x - ix * pushConstants.scale.x.n);
 
-#if IS_FLOAT(TYPE_OUT)
-    OUT_T dy = OUT_T(ry) / OUT_T(pushConstants.scale.y.n);
-    OUT_T dx = OUT_T(rx) / OUT_T(pushConstants.scale.x.n);
+#if IS_FLOAT(TYPE_OUT) || IS_BFLOAT(TYPE_OUT)
+    COMP_T dy = COMP_T(ry) / COMP_T(pushConstants.scale.y.n);
+    COMP_T dx = COMP_T(rx) / COMP_T(pushConstants.scale.x.n);
 #else
     int16_t dy = ry;
     int16_t dx = rx;
@@ -107,12 +110,12 @@ void main() {
         IN_T v11;
         tensorReadARM(inputData, uint[](n, iy1, ix1, c), v11);
 
-        acc  = OUT_T(v00) * OUT_T(unit_y - dy) * OUT_T(unit_x - dx);
-        acc += OUT_T(v01) * OUT_T(unit_y - dy) * OUT_T(dx);
-        acc += OUT_T(v10) * OUT_T(dy) * OUT_T(unit_x - dx);
-        acc += OUT_T(v11) * OUT_T(dy) * OUT_T(dx);
+        acc  = DECODE_STORAGE_TO_COMP(v00, TYPE_IN, COMP_T) * COMP_T(unit_y - dy) * COMP_T(unit_x - dx);
+        acc += DECODE_STORAGE_TO_COMP(v01, TYPE_IN, COMP_T) * COMP_T(unit_y - dy) * COMP_T(dx);
+        acc += DECODE_STORAGE_TO_COMP(v10, TYPE_IN, COMP_T) * COMP_T(dy) * COMP_T(unit_x - dx);
+        acc += DECODE_STORAGE_TO_COMP(v11, TYPE_IN, COMP_T) * COMP_T(dy) * COMP_T(dx);
     } else if (pushConstants.mode == NEAREST) {
-#if IS_FLOAT(TYPE_OUT)
+#if IS_FLOAT(TYPE_OUT) || IS_BFLOAT(TYPE_OUT)
         int32_t iy = (dy >= 0.5) ? iy1 : iy0;
         int32_t ix = (dx >= 0.5) ? ix1 : ix0;
 #else
@@ -123,8 +126,10 @@ void main() {
         IN_T value;
         tensorReadARM(inputData, uint[](n, iy, ix, c), value);
 
-        acc = OUT_T(value);
+        acc = DECODE_STORAGE_TO_COMP(value, TYPE_IN, COMP_T);
     }
 
-    tensorWriteARM(outputData, uint[](n, oy, ox, c), acc);
+    OUT_T outputValue = ENCODE_COMP_TO_STORAGE(acc, OUT_T, TYPE_OUT);
+
+    tensorWriteARM(outputData, uint[](n, oy, ox, c), outputValue);
 }

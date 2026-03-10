@@ -1,11 +1,12 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #define IN_T %in_t%
 #define OUT_T %out_t%
 #define TYPE_IN %in_t_type%
+#define TYPE_OUT %out_t_type%
 
 layout(local_size_x = %warpX%) in;
 
@@ -40,7 +41,11 @@ void main() {
     applyBroadcast(inputShape2, index, inputIndex2);
     tensorReadARM(inputData2, inputIndex2, value2);
 
-#if IS_FLOAT(TYPE_IN)
+#if IS_BFLOAT(TYPE_IN)
+    float f1 = DECODE_STORAGE_TO_COMP(value1, TYPE_IN, float);
+    float f2 = DECODE_STORAGE_TO_COMP(value2, TYPE_IN, float);
+    OUT_T result = ENCODE_COMP_TO_STORAGE_RNE(f1 * f2, OUT_T, TYPE_OUT);
+#elif IS_FLOAT(TYPE_IN)
     OUT_T result = OUT_T(value1) * OUT_T(value2);
 #else
     int64_t result = int64_t(value1) * int64_t(value2);

@@ -1,11 +1,20 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #define IN_T %in_t%
 #define OUT_T %out_t%
 #define TYPE_IN %in_t_type%
+#define TYPE_OUT %out_t_type%
+
+#define COMP_T %in_t_comp%
+
+#if IS_BFLOAT(TYPE_IN)
+    #define OUT_COMP_T float
+#else
+    #define OUT_COMP_T OUT_T
+#endif
 
 layout(local_size_x = %warpX%) in;
 
@@ -36,57 +45,73 @@ bool max(bool a, bool b){
     return a || b;
 }
 
-#if IS_FLOAT(TYPE_IN)
-OUT_T power(IN_T base, IN_T exponent) {
+#if IS_FLOAT(TYPE_IN) || IS_BFLOAT(TYPE_IN)
+OUT_COMP_T power(COMP_T base, COMP_T exponent) {
     // Positive numbers can be passed directly to pow()
-    if (base >= IN_T(0)) {
-        return OUT_T(pow(base, exponent));
-    }
-    // Most ICD produce NaN for all negative numbers, whereas we want to handle
-    // the special cases where then exponent is power of 1.0 or power of 2.0
-    else {
+    if (base >= COMP_T(0)) {
+        return OUT_COMP_T(pow(base, exponent));
+    } else {
         // If exponent is power of 2.0, then output should be a positive number
-        if (mod(exponent, IN_T(2.0)) == 0.0) {
-            return OUT_T(pow(-base, exponent));
+        if (mod(exponent, COMP_T(2.0)) == COMP_T(0.0)) {
+            return OUT_COMP_T(pow(-base, exponent));
         }
         // If exponent is power of 1.0, then output should be a negative number
-        else if (mod(exponent, IN_T(1.0)) == 0.0) {
-            return OUT_T(-pow(-base, exponent));
+        else if (mod(exponent, COMP_T(1.0)) == COMP_T(0.0)) {
+            return OUT_COMP_T(-pow(-base, exponent));
         }
         // Else output should be NaN
         else {
-            return OUT_T(NAN);
+            return OUT_COMP_T(NAN);
         }
     }
 }
+
+#if IS_BFLOAT(TYPE_IN)
+OUT_COMP_T power(IN_T base, IN_T exponent) {
+    return power(decode_to_f32(base), decode_to_f32(exponent));
+}
 #endif
 
-OUT_T applyMin(IN_T a, IN_T b, uint nanMode)
+#endif
+
+OUT_COMP_T applyMin(COMP_T a, COMP_T b, uint nanMode)
 {
-#if IS_FLOAT(TYPE_IN)
+#if IS_FLOAT(TYPE_IN) || IS_BFLOAT(TYPE_IN)
+#if IS_BFLOAT(TYPE_IN)
+    return OUT_COMP_T(tosa_min_nan_f32(a, b, nanMode));
+#else
     if (isnan(a)) {
-        return nanMode == NAN_MODE_PROPAGATE ? OUT_T(a) : OUT_T(b);
+        return (nanMode == NAN_MODE_PROPAGATE) ? OUT_T(a) : OUT_T(b);
     }
     else if (isnan(b)) {
-        return nanMode == NAN_MODE_PROPAGATE ? OUT_T(b) : OUT_T(a);
+        return (nanMode == NAN_MODE_PROPAGATE) ? OUT_T(b) : OUT_T(a);
     }
-#endif
 
     return OUT_T(min(a, b));
+#endif
+#else
+    return OUT_T(min(a, b));
+#endif
 }
 
-OUT_T applyMax(IN_T a, IN_T b, uint nanMode)
+OUT_COMP_T applyMax(COMP_T a, COMP_T b, uint nanMode)
 {
-#if IS_FLOAT(TYPE_IN)
+#if IS_FLOAT(TYPE_IN) || IS_BFLOAT(TYPE_IN)
+#if IS_BFLOAT(TYPE_IN)
+    return OUT_COMP_T(tosa_max_nan_f32(a, b, nanMode));
+#else
     if (isnan(a)) {
-        return nanMode == NAN_MODE_PROPAGATE ? OUT_T(a) : OUT_T(b);
+        return (nanMode == NAN_MODE_PROPAGATE) ? OUT_T(a) : OUT_T(b);
     }
     else if (isnan(b)) {
-        return nanMode == NAN_MODE_PROPAGATE ? OUT_T(b) : OUT_T(a);
+        return (nanMode == NAN_MODE_PROPAGATE) ? OUT_T(b) : OUT_T(a);
     }
-#endif
 
     return OUT_T(max(a, b));
+#endif
+#else
+    return OUT_T(max(a, b));
+#endif
 }
 
 void main() {
@@ -96,24 +121,24 @@ void main() {
     // Input 1 tensorARM
     uint[RANK_IN] inputShape1;
     uint[RANK_IN] inputIndex1;
-    IN_T value1;
+    IN_T value1Raw;
 
     getShape(inputShape1, inputData1);
     applyBroadcast(inputShape1, index, inputIndex1);
-    tensorReadARM(inputData1, inputIndex1, value1);
+    tensorReadARM(inputData1, inputIndex1, value1Raw);
 
     // Input 2 tensorARM
     uint[RANK_IN] inputShape2;
     uint[RANK_IN] inputIndex2;
-    IN_T value2;
+    IN_T value2Raw;
 
     getShape(inputShape2, inputData2);
     applyBroadcast(inputShape2, index, inputIndex2);
-    tensorReadARM(inputData2, inputIndex2, value2);
+    tensorReadARM(inputData2, inputIndex2, value2Raw);
 
-    // Output
-    OUT_T value;
-    value = OUT_T(%operation%);
+    COMP_T value1 = DECODE_STORAGE_TO_COMP(value1Raw, TYPE_IN, COMP_T);
+    COMP_T value2 = DECODE_STORAGE_TO_COMP(value2Raw, TYPE_IN, COMP_T);
+    OUT_T value = ENCODE_COMP_TO_STORAGE_RNE(%operation%, OUT_T, TYPE_OUT);
 
     tensorWriteARM(outputData, index, value);
 }

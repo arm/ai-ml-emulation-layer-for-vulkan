@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -25,11 +25,16 @@
 #define TYPE_INT64 0x6938  // "i8"
 #define TYPE_HALF 0x6632   // "f2"
 #define TYPE_FLOAT 0x6634  // "f4"
+#define TYPE_BFLOAT16 0x6642 // "fB"
 #define TYPE_DOUBLE 0x6638 // "f8"
+
+// Bfloat type
+#define bfloat16_t uint16_t
 
 #define IS_BOOL(t) (t == TYPE_BOOL)
 #define IS_INTEGER(t) ((t >> 8) == 0x69)
-#define IS_FLOAT(t) ((t >> 8) == 0x66)
+#define IS_FLOAT(t) (((t >> 8) == 0x66) && ((t & 0xFF) != 0x42))
+#define IS_BFLOAT(t) (((t >> 8) == 0x66) && ((t & 0xFF) == 0x42))
 
 // Remaping types due to some platforms not supporting higher precision types in buffers/push constants
 #ifdef USE_FLOAT_AS_DOUBLE
@@ -169,3 +174,218 @@
                                                                                                                        \
         offsetToIndex(shape, offset, index);                                                                           \
     }
+
+// BF16 <-> FP32 conversions (bf16 stored as the top 16 bits of IEEE754 fp32)
+float decode_to_f32(bfloat16_t x)
+{
+    uint u = uint(x) << 16;
+    return uintBitsToFloat(u);
+}
+
+float decode_to_f32(float16_t x)
+{
+    return float(x);
+}
+
+float decode_to_f32(float x)
+{
+    return x;
+}
+
+float decode_to_f32(bool x)
+{
+    return x ? 1.0 : 0.0;
+}
+
+float decode_to_f32(int8_t x)
+{
+    return float(x);
+}
+
+float decode_to_f32(int16_t x)
+{
+    return float(x);
+}
+
+float decode_to_f32(int x)
+{
+    return float(x);
+}
+
+float decode_to_f32(int64_t x)
+{
+    return float(x);
+}
+
+// Truncation per rule: take top 16 bits of fp32
+bfloat16_t encode_from_f32_trunc(float x)
+{
+    uint u = floatBitsToUint(x);
+    return bfloat16_t(u >> 16);
+}
+
+bfloat16_t encode_from_f32_trunc(float x, bfloat16_t)
+{
+    return encode_from_f32_trunc(x);
+}
+
+float16_t encode_from_f32_trunc(float x, float16_t)
+{
+    return float16_t(x);
+}
+
+// Round-to-nearest-even conversion with Inf/NaN handling preserved.
+bfloat16_t f32_to_bf16_rne(float x)
+{
+    uint u = floatBitsToUint(x);
+    uint exp = u & 0x7F800000u;
+    uint mantissa = u & 0x007FFFFFu;
+
+    if (exp == 0x7F800000u) {
+        if (mantissa != 0u) {
+            return bfloat16_t((u >> 16) | 0x0040u);
+        }
+        return bfloat16_t(u >> 16);
+    }
+
+    uint lsb = (u >> 16) & 1u;
+    u += 0x7FFFu + lsb;
+    return bfloat16_t(u >> 16);
+}
+
+bfloat16_t encode_from_f32_rne(float x)
+{
+    return f32_to_bf16_rne(x);
+}
+
+bfloat16_t encode_from_f32_rne(float x, bfloat16_t)
+{
+    return encode_from_f32_rne(x);
+}
+
+float16_t encode_from_f32_rne(float x, float16_t)
+{
+    return float16_t(x);
+}
+
+float encode_from_f32_rne(float x, float)
+{
+    return x;
+}
+
+int8_t encode_from_f32_rne(float x, int8_t)
+{
+    return int8_t(x);
+}
+
+int16_t encode_from_f32_rne(float x, int16_t)
+{
+    return int16_t(x);
+}
+
+int encode_from_f32_rne(float x, int)
+{
+    return int(x);
+}
+
+int64_t encode_from_f32_rne(float x, int64_t)
+{
+    return int64_t(x);
+}
+
+bool encode_from_f32_rne(float x, bool)
+{
+    return x != 0.0;
+}
+
+bfloat16_t encode_from_f32(float x, bfloat16_t)
+{
+    return encode_from_f32_trunc(x);
+}
+
+float16_t encode_from_f32(float x, float16_t)
+{
+    return float16_t(x);
+}
+
+float encode_from_f32(float x, float)
+{
+    return x;
+}
+
+int8_t encode_from_f32(float x, int8_t)
+{
+    return int8_t(x);
+}
+
+int16_t encode_from_f32(float x, int16_t)
+{
+    return int16_t(x);
+}
+
+int encode_from_f32(float x, int)
+{
+    return int(x);
+}
+
+int64_t encode_from_f32(float x, int64_t)
+{
+    return int64_t(x);
+}
+
+bool encode_from_f32(float x, bool)
+{
+    return x != 0.0;
+}
+
+// Decode a storage scalar into compute type.
+#define DECODE_STORAGE_TO_COMP(rawValue, typeTag, compType)                                                           \
+    ((IS_BFLOAT(typeTag)) ? compType(decode_to_f32(rawValue)) : compType(rawValue))
+
+// Encode a compute scalar into storage type with truncation semantics for bf16.
+#define ENCODE_COMP_TO_STORAGE(compValue, storageType, typeTag)                                                       \
+    ((IS_BFLOAT(typeTag)) ? storageType(encode_from_f32(float(compValue), storageType(0))) : storageType(compValue))
+
+// Encode a compute scalar into storage type with RNE semantics for bf16.
+#define ENCODE_COMP_TO_STORAGE_RNE(compValue, storageType, typeTag)                                                   \
+    ((IS_BFLOAT(typeTag)) ? storageType(encode_from_f32_rne(float(compValue), storageType(0))) : storageType(compValue))
+
+// Shared conversion overloads for convolution-family shaders.
+#define DEFINE_CONV_ACC_CASTS(ACC_TYPE, OUT_TYPE)                                                                     \
+    ACC_TYPE to_acc(float16_t v)  { return ACC_TYPE(v); }                                                             \
+    ACC_TYPE to_acc(float v)      { return ACC_TYPE(v); }                                                             \
+    ACC_TYPE to_acc(int8_t v)     { return ACC_TYPE(v); }                                                             \
+    ACC_TYPE to_acc(int16_t v)    { return ACC_TYPE(v); }                                                             \
+    ACC_TYPE to_acc(int v)        { return ACC_TYPE(v); }                                                             \
+    ACC_TYPE to_acc(int64_t v)    { return ACC_TYPE(v); }                                                             \
+    ACC_TYPE to_acc(bfloat16_t v) { return ACC_TYPE(decode_to_f32(v)); }                                              \
+                                                                                                                       \
+    OUT_TYPE acc_to_out(ACC_TYPE v, bfloat16_t) { return OUT_TYPE(encode_from_f32(float(v), bfloat16_t(0))); }      \
+    OUT_TYPE acc_to_out(ACC_TYPE v, float16_t)  { return OUT_TYPE(v); }                                               \
+    OUT_TYPE acc_to_out(ACC_TYPE v, float)      { return OUT_TYPE(v); }                                               \
+    OUT_TYPE acc_to_out(ACC_TYPE v, int8_t)     { return OUT_TYPE(v); }                                               \
+    OUT_TYPE acc_to_out(ACC_TYPE v, int16_t)    { return OUT_TYPE(v); }                                               \
+    OUT_TYPE acc_to_out(ACC_TYPE v, int)        { return OUT_TYPE(v); }                                               \
+    OUT_TYPE acc_to_out(ACC_TYPE v, int64_t)    { return OUT_TYPE(v); }
+
+float tosa_min_nan_f32(float a, float b, uint nanMode)
+{
+    if (isnan(a)) {
+        return (nanMode == NAN_MODE_PROPAGATE) ? a : b;
+    }
+    if (isnan(b)) {
+        return (nanMode == NAN_MODE_PROPAGATE) ? b : a;
+    }
+    return min(a, b);
+}
+
+float tosa_max_nan_f32(float a, float b, uint nanMode)
+{
+    if (isnan(a)) {
+        return (nanMode == NAN_MODE_PROPAGATE) ? a : b;
+    }
+    if (isnan(b)) {
+        return (nanMode == NAN_MODE_PROPAGATE) ? b : a;
+    }
+    return max(a, b);
+}
