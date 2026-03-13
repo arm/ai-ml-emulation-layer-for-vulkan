@@ -34,28 +34,26 @@ void main() {
     for (uint i = 0; i < inputShape[pushConstants.axis]; i++) {
         index[pushConstants.axis] = i;
 
+#if IS_BFLOAT(TYPE_IN_OUT)
         STORAGE_T rawValue;
         tensorReadARM(inputData, index, rawValue);
-
         COMP_T value = DECODE_STORAGE_TO_COMP(rawValue, TYPE_IN_OUT, COMP_T);
+#else
+        COMP_T value;
+        tensorReadARM(inputData, index, value);
+#endif
 
 #if (IS_FLOAT(TYPE_IN_OUT) || IS_BFLOAT(TYPE_IN_OUT))
         if (isnan(value)) {
             if (pushConstants.nanMode == NAN_MODE_IGNORE) {
                 // Ignore value and continue
                 continue;
-            } else {
+            }
+            if (pushConstants.nanMode == NAN_MODE_PROPAGATE) {
                 // If any value is NaN, then the result must be NaN
                 result = value;
                 break;
             }
-        }
-#endif
-
-#if (IS_FLOAT(TYPE_IN_OUT) || IS_BFLOAT(TYPE_IN_OUT))
-        if (pushConstants.nanMode == NAN_MODE_IGNORE && isnan(result)) {
-            result = value;
-            continue;
         }
 #endif
 
@@ -64,5 +62,9 @@ void main() {
 
     index[pushConstants.axis] = dim;
 
+#if IS_BFLOAT(TYPE_IN_OUT)
     tensorWriteARM(outputData, index, ENCODE_COMP_TO_STORAGE(result, STORAGE_T, TYPE_IN_OUT));
+#else
+    tensorWriteARM(outputData, index, STORAGE_T(result));
+#endif
 }
