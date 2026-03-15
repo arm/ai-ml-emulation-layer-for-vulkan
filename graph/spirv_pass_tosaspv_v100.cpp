@@ -736,7 +736,8 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
 
     // Reduced-float constants are stored as raw payload bits.
     if (output->getFormat() == VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM ||
-        output->getFormat() == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM) {
+        output->getFormat() == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM ||
+        output->getFormat() == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM) {
         const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(opExtInst->GetInOperand(4).AsId());
         const auto *scalar = constant;
 
@@ -758,7 +759,7 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
             float fp32Value = 0.0f;
             std::memcpy(&fp32Value, &fp32Bits, sizeof(fp32Bits));
             padConst = real_t(fp32Value);
-        } else {
+        } else if (output->getFormat() == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM) {
             if (floatType == nullptr || floatType->width() != 8 ||
                 floatType->encoding() != spv::FPEncoding::Float8E5M2EXT) {
                 throw std::runtime_error("Unsupported FLOAT8E5M2 PAD constant encoding");
@@ -767,6 +768,17 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
             const uint8_t f8 = uint8_t(floatConstant->words()[0]);
             const auto &fp = reinterpret_cast<const float8_e5m2 &>(f8);
             padConst = real_t(fp);
+        } else if (output->getFormat() == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM) {
+            if (floatType == nullptr || floatType->width() != 8 ||
+                floatType->encoding() != spv::FPEncoding::Float8E4M3EXT) {
+                throw std::runtime_error("Unsupported FLOAT8E4M3 PAD constant encoding");
+            }
+
+            const uint8_t f8 = uint8_t(floatConstant->words()[0]);
+            const auto &fp = reinterpret_cast<const float8_e4m3 &>(f8);
+            padConst = real_t(fp);
+        } else {
+            throw std::runtime_error("Unsupported ouput format for PAD operation");
         }
     } else {
         const auto &padConstVector = getConstVector<real_t>(opExtInst->GetInOperand(4));

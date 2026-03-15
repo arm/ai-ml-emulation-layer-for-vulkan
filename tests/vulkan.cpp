@@ -1535,7 +1535,7 @@ TEST_F(MLEmulationLayerForVulkan, CopyLargeNonPackedTensor) {
 }
 
 template <typename T> void checkFloat(T v) {
-    float8 f8{v};
+    float8_e4m3 f8{v};
     float16 f16{v};
     float32 f32{v};
     float64 f64{v};
@@ -1558,7 +1558,7 @@ template <typename T> void checkFloat(T v) {
 }
 
 TEST_F(MLEmulationLayerForVulkan, Float) {
-    ASSERT_EQ(sizeof(float8), 1);
+    ASSERT_EQ(sizeof(float8_e4m3), 1);
     ASSERT_EQ(sizeof(float16), 2);
     ASSERT_EQ(sizeof(float32), 4);
     ASSERT_EQ(sizeof(float64), 8);
@@ -1578,7 +1578,7 @@ TEST_F(MLEmulationLayerForVulkan, Float) {
     checkFloat(int64_t(7));
     checkFloat(uint64_t(8));
 
-    checkFloat(float8(10.5));
+    checkFloat(float8_e4m3(10.5));
     checkFloat(float16(11.5));
     checkFloat(float32(12.5));
     checkFloat(float64(13.5));

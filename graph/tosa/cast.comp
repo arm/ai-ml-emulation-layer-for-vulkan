@@ -28,7 +28,7 @@ void main() {
 
 #if IS_BOOL(TYPE_OUT)
     #if IS_FLOAT8(TYPE_IN)
-        OUT_T outValue = OUT_T(float(decode_to_f16(value)) != 0.0);
+        OUT_T outValue = OUT_T(float(decode_float8_to_f16(uint8_t(value), TYPE_IN)) != 0.0);
     #elif IS_BFLOAT(TYPE_IN)
         OUT_T outValue = OUT_T(decode_to_f32(value) != 0.0);
     #else
@@ -38,7 +38,7 @@ void main() {
     #if IS_BOOL(TYPE_IN)
         OUT_T outValue = encode_from_f32_rne(value ? 1.0 : 0.0, OUT_T(0));
     #elif IS_FLOAT8(TYPE_IN)
-        OUT_T outValue = encode_from_f32_rne(float(decode_to_f16(value)), OUT_T(0));
+        OUT_T outValue = encode_from_f32_rne(float(decode_float8_to_f16(uint8_t(value), TYPE_IN)), OUT_T(0));
     #elif IS_BFLOAT(TYPE_IN)
         OUT_T outValue = value;
     #else
@@ -46,19 +46,19 @@ void main() {
     #endif
 #elif IS_FLOAT8(TYPE_OUT)
     #if IS_BOOL(TYPE_IN)
-        OUT_T outValue = encode_from_f16(value ? float16_t(1.0) : float16_t(0.0), OUT_T(0));
+        OUT_T outValue = OUT_T(encode_from_f16_to_float8_trunc_by_type(value ? float16_t(1.0) : float16_t(0.0), TYPE_OUT));
     #elif IS_FLOAT8(TYPE_IN)
-        OUT_T outValue = encode_from_f16(decode_to_f16(value), OUT_T(0));
+        OUT_T outValue = OUT_T(encode_from_f16_to_float8_trunc_by_type(decode_float8_to_f16(uint8_t(value), TYPE_IN), TYPE_OUT));
     #elif IS_BFLOAT(TYPE_IN)
-        OUT_T outValue = encode_from_f32(decode_to_f32(value), OUT_T(0));
+        OUT_T outValue = OUT_T(encode_from_f32_to_float8_trunc_by_type(decode_to_f32(value), TYPE_OUT));
     #else
-        OUT_T outValue = encode_from_f32(float(value), OUT_T(0));
+        OUT_T outValue = OUT_T(encode_from_f32_to_float8_trunc_by_type(float(value), TYPE_OUT));
     #endif
 #elif IS_FLOAT(TYPE_OUT)
     #if IS_BOOL(TYPE_IN)
         OUT_T outValue = OUT_T(value ? 1.0 : 0.0);
     #elif IS_FLOAT8(TYPE_IN)
-        OUT_T outValue = OUT_T(decode_to_f16(value));
+        OUT_T outValue = OUT_T(decode_float8_to_f16(uint8_t(value), TYPE_IN));
     #elif IS_BFLOAT(TYPE_IN)
         OUT_T outValue = OUT_T(decode_to_f32(value));
     #else
@@ -80,7 +80,7 @@ void main() {
         OUT_T outValue = OUT_T(value ? 1 : 0);
     #elif IS_FLOAT(TYPE_IN) || IS_REDUCED_FLOAT(TYPE_IN)
         #if IS_FLOAT8(TYPE_IN)
-            float fvalue = float(decode_to_f16(value));
+            float fvalue = float(decode_float8_to_f16(uint8_t(value), TYPE_IN));
         #elif IS_BFLOAT(TYPE_IN)
             float fvalue = decode_to_f32(value);
         #else

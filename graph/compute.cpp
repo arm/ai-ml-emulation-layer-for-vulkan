@@ -71,6 +71,9 @@ std::string compTypeString(const std::shared_ptr<FormatBase> &type) {
     if (type->toInt() == "0x664D") {
         return "float16_t";
     }
+    if (type->toInt() == "0x664E") {
+        return "float16_t";
+    }
     return type->glslType();
 }
 
