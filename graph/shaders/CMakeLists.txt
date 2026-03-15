@@ -6,9 +6,10 @@
 # Generate shaders
 ###############################################################################
 
-# Get a list of all shader, excluding the common header
-file(GLOB SOURCES "*.comp")
-list(FILTER SOURCES EXCLUDE REGEX common.comp)
+# Get a list of all shaders under graph_op/, excluding the shared common header.
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/graph_op/*.comp")
+list(FILTER SOURCES EXCLUDE REGEX "/common\\.comp$")
+list(SORT SOURCES)
 
 # Merge common header with GLSL sources
 set(GLSL_SOURCES "")
@@ -19,8 +20,8 @@ foreach(SOURCE ${SOURCES})
 
     add_custom_command(
         OUTPUT "${OUT_FILE}"
-        COMMAND ${CMAKE_COMMAND} -E cat "${CMAKE_CURRENT_SOURCE_DIR}/common.comp" "${SOURCE}" > "${OUT_FILE}"
-        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/common.comp" "${SOURCE}")
+        COMMAND ${CMAKE_COMMAND} -E cat "${CMAKE_CURRENT_SOURCE_DIR}/graph_op/common.comp" "${SOURCE}" > "${OUT_FILE}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/graph_op/common.comp" "${SOURCE}")
     add_custom_target("mlel_generate_shader_${NAME}" DEPENDS "${OUT_FILE}")
     add_dependencies(mlel_generate_shader_comp "mlel_generate_shader_${NAME}")
 

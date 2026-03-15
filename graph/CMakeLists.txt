@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -6,7 +6,7 @@
 # Graph layer
 ###############################################################################
 
-add_subdirectory(tosa)
+add_subdirectory(shaders)
 
 add_library(VkLayer_Graph SHARED)
 

@@ -35,6 +35,28 @@ uint zeroExtend(int16_t v) { return uint16_t(v); }
 
 uint zeroExtend(int32_t v) { return v; }
 
+float tosa_min_nan_f32(float a, float b, uint nanMode)
+{
+    if (isnan(a)) {
+        return (nanMode == NAN_MODE_PROPAGATE) ? a : b;
+    }
+    if (isnan(b)) {
+        return (nanMode == NAN_MODE_PROPAGATE) ? b : a;
+    }
+    return min(a, b);
+}
+
+float tosa_max_nan_f32(float a, float b, uint nanMode)
+{
+    if (isnan(a)) {
+        return (nanMode == NAN_MODE_PROPAGATE) ? a : b;
+    }
+    if (isnan(b)) {
+        return (nanMode == NAN_MODE_PROPAGATE) ? b : a;
+    }
+    return max(a, b);
+}
+
 // I don't think min or max will ever actually be used with bool inputs, but `applyMax` and `applyMin` are always
 // defined. Since builtin min and max do not support bool inputs, we define them here.
 bool min(bool a, bool b){

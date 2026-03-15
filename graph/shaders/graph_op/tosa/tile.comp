@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2024 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,10 +9,6 @@ layout(local_size_x = %warpX%) in;
 
 layout(constant_id = 0) const uint32_t RANK = RANK_MAX;
 
-layout(push_constant) uniform PushConstants {
-    uint perms[RANK];
-} pushConstants;
-
 layout(set = 0, binding = 0) uniform tensorARM<IN_OUT_T, RANK> outputData;
 layout(set = 1, binding = 0) uniform tensorARM<IN_OUT_T, RANK> inputData;
 
@@ -20,9 +16,12 @@ void main() {
     uint[RANK] index;
     getIndex(outputData, index);
 
-    uint inputIndex[RANK];
-    for (uint i = 0; i < inputIndex.length(); i++) {
-        inputIndex[pushConstants.perms[i]] = index[i];
+    uint[RANK] inputShape;
+    getShape(inputShape, inputData);
+
+    uint[RANK] inputIndex;
+    for (uint i = 0; i < RANK; i++) {
+        inputIndex[i] = index[i] % inputShape[i];
     }
 
     IN_OUT_T value;

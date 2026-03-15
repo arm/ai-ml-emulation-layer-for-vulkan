@@ -651,25 +651,3 @@ bool encode_from_f32(float x, bool)
     OUT_TYPE acc_to_out(ACC_TYPE v, int16_t)    { return OUT_TYPE(v); }                                               \
     OUT_TYPE acc_to_out(ACC_TYPE v, int)        { return OUT_TYPE(v); }                                               \
     OUT_TYPE acc_to_out(ACC_TYPE v, int64_t)    { return OUT_TYPE(v); }
-
-float tosa_min_nan_f32(float a, float b, uint nanMode)
-{
-    if (isnan(a)) {
-        return (nanMode == NAN_MODE_PROPAGATE) ? a : b;
-    }
-    if (isnan(b)) {
-        return (nanMode == NAN_MODE_PROPAGATE) ? b : a;
-    }
-    return min(a, b);
-}
-
-float tosa_max_nan_f32(float a, float b, uint nanMode)
-{
-    if (isnan(a)) {
-        return (nanMode == NAN_MODE_PROPAGATE) ? a : b;
-    }
-    if (isnan(b)) {
-        return (nanMode == NAN_MODE_PROPAGATE) ? b : a;
-    }
-    return max(a, b);
-}
