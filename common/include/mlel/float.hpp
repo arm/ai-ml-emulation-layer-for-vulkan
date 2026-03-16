@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2024-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -32,7 +32,6 @@ template <std::size_t EXPONENT, std::size_t MANTISSA> class FloatingPoint;
 
 using float8_e4m3 = FloatingPoint<4, 3>;
 using float8_e5m2 = FloatingPoint<5, 2>;
-using float8 = float8_e4m3;
 using float16 = FloatingPoint<5, 10>;
 using float32 = FloatingPoint<8, 23>;
 using float64 = FloatingPoint<11, 52>;

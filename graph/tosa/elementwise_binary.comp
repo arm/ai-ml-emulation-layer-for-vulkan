@@ -74,7 +74,8 @@ OUT_COMP_T power(IN_T base, IN_T exponent) {
 
 #if IS_FLOAT8(TYPE_IN)
 OUT_COMP_T power(IN_T base, IN_T exponent) {
-    return power(COMP_T(decode_to_f16(base)), COMP_T(decode_to_f16(exponent)));
+    return power(COMP_T(decode_float8_to_f16(uint8_t(base), TYPE_IN)),
+                 COMP_T(decode_float8_to_f16(uint8_t(exponent), TYPE_IN)));
 }
 #endif
 

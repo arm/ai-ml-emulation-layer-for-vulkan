@@ -6,10 +6,12 @@
 #define IN_T %in_t%
 #define OUT_T %out_t%
 #define WEIGHT_T %weight_t%
+#define TYPE_IN %in_t_type%
+#define TYPE_OUT %out_t_type%
 #define TYPE_ACC %acc_t_type%
 #define ACC_T %acc_t%
 
-DEFINE_CONV_ACC_CASTS(ACC_T, OUT_T)
+DEFINE_CONV_ACC_CASTS(ACC_T, OUT_T, TYPE_IN, TYPE_OUT)
 
 #if TYPE_ACC == TYPE_INT64
     #define VEC4 dvec4
