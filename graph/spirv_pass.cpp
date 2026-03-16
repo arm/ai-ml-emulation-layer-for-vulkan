@@ -20,6 +20,10 @@ bool isBFloat16(const spvtools::opt::analysis::Float *f) {
     return f && f->width() == 16 && f->encoding() == spv::FPEncoding::BFloat16KHR;
 }
 
+bool isFloat8E5M2(const spvtools::opt::analysis::Float *f) {
+    return f && f->width() == 8 && f->encoding() == spv::FPEncoding::Float8E5M2EXT;
+}
+
 void flattenBFloat16Composite(const spvtools::opt::analysis::CompositeConstant *composite,
                               std::vector<uint16_t> &values) {
     for (const auto &component : composite->GetComponents()) {
@@ -40,6 +44,23 @@ void flattenBFloat16Composite(const spvtools::opt::analysis::CompositeConstant *
 size_t tensorElementCount(const std::vector<int64_t> &dimensions) {
     return std::accumulate(dimensions.begin(), dimensions.end(), size_t{1},
                            [](size_t acc, int64_t dim) { return acc * static_cast<size_t>(dim); });
+}
+
+void flattenFloat8E5M2Composite(const spvtools::opt::analysis::CompositeConstant *composite,
+                                std::vector<uint8_t> &values) {
+    for (const auto &component : composite->GetComponents()) {
+        if (const auto *innerComposite = component->AsCompositeConstant()) {
+            flattenFloat8E5M2Composite(innerComposite, values);
+            continue;
+        }
+
+        const auto *floatConstant = component->AsFloatConstant();
+        if (floatConstant == nullptr || !isFloat8E5M2(floatConstant->type()->AsFloat())) {
+            throw std::runtime_error("Unsupported FLOAT8E5M2 composite constant encoding");
+        }
+
+        values.push_back(uint8_t(floatConstant->words()[0]));
+    }
 }
 
 } // namespace
@@ -393,6 +414,33 @@ std::shared_ptr<TensorDescriptor> GraphPassBase::makeCompositeTensor(const uint3
 
         return graphPipeline.makeConstCompositeTensor(format, dimensions, bf16Values.data());
     }
+    case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM: {
+        const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(instruction->result_id());
+        std::vector<uint8_t> f8e5m2Values;
+
+        if (const auto *composite = constant->AsCompositeConstant()) {
+            const bool isSplat = instruction->opcode() == spv::Op::OpConstantCompositeReplicateEXT ||
+                                 instruction->opcode() == spv::Op::OpSpecConstantCompositeReplicateEXT;
+            flattenFloat8E5M2Composite(composite, f8e5m2Values);
+
+            if (isSplat) {
+                assert(f8e5m2Values.size() == 1);
+                size_t compositeCount =
+                    std::accumulate(dimensions.begin(), dimensions.end(), size_t{1},
+                                    [](size_t acc, int64_t dim) { return acc * static_cast<size_t>(dim); });
+                f8e5m2Values.resize(compositeCount, f8e5m2Values.front());
+            }
+        } else if (constant->AsNullConstant()) {
+            size_t compositeCount =
+                std::accumulate(dimensions.begin(), dimensions.end(), size_t{1},
+                                [](size_t acc, int64_t dim) { return acc * static_cast<size_t>(dim); });
+            f8e5m2Values.resize(compositeCount, 0);
+        } else {
+            throw std::runtime_error("Unsupported FLOAT8E5M2 constant kind for composite tensor");
+        }
+
+        return graphPipeline.makeConstCompositeTensor(format, dimensions, f8e5m2Values.data());
+    }
     case VK_FORMAT_R32_SFLOAT:
         return graphPipeline.makeConstCompositeTensor(format, dimensions,
                                                       getConstVector<float>(instruction->result_id()).data());
@@ -428,6 +476,9 @@ VkFormat GraphPassBase::getVkFormat(const analysis::Type *type) const {
 
     const auto &floatType = type->AsFloat();
     if (floatType) {
+        if (isFloat8E5M2(floatType)) {
+            return VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM;
+        }
         switch (floatType->width()) {
         case 16:
             if (isBFloat16(floatType)) {

@@ -65,7 +65,13 @@ std::string accTypeString(uint32_t accType) {
 }
 
 std::string compTypeString(const std::shared_ptr<FormatBase> &type) {
-    return type->toInt() == "0x6642" ? "float" : type->glslType();
+    if (type->toInt() == "0x6642") {
+        return "float";
+    }
+    if (type->toInt() == "0x664D") {
+        return "float16_t";
+    }
+    return type->glslType();
 }
 
 } // namespace
@@ -1188,6 +1194,7 @@ SpirvBinary ElementwiseUnary::createSpirv(const std::shared_ptr<PipelineCache> &
                                       {"%operation%", operation},
                                       {"%in_out_t%", inOutType->glslType()},
                                       {"%in_out_t_type%", inOutType->toInt()},
+                                      {"%in_out_t_comp%", compTypeString(inOutType)},
                                   });
 }
 
@@ -1324,6 +1331,7 @@ SpirvBinary Matmul::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                   {
                                       {"%warpX%", std::to_string(warp1D)},
                                       {"%in_t%", inType->glslType()},
+                                      {"%in_t_type%", inType->toInt()},
                                       {"%out_t%", outType->glslType()},
                                       {"%out_t_type%", outType->toInt()},
                                   });
@@ -1547,6 +1555,7 @@ SpirvBinary Pad::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCach
                                   {
                                       {"%warpX%", std::to_string(warp1D)},
                                       {"%in_out_t%", inOutType->glslType()},
+                                      {"%in_out_t_type%", inOutType->toInt()},
                                   });
 }
 

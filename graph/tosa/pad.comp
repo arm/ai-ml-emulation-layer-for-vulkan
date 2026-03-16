@@ -41,7 +41,11 @@ void main() {
     IN_OUT_T value;
 
     if (isPad) {
+#if IS_REDUCED_FLOAT(TYPE_IN_OUT)
         value = ENCODE_COMP_TO_STORAGE(pushConstants.padConst, IN_OUT_T, TYPE_IN_OUT);
+#else
+        value = IN_OUT_T(pushConstants.padConst);
+#endif
     } else {
         tensorReadARM(inputData, inputIndex, value);
     }

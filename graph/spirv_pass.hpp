@@ -153,6 +153,15 @@ class GraphPassBase : public Pass {
             const auto &type = floatConstant->type()->AsFloat();
 
             switch (type->width()) {
+            case 8: {
+                if (type->encoding() == spv::FPEncoding::Float8E5M2EXT) {
+                    const uint8_t value = uint8_t(floatConstant->words()[0]);
+                    const auto &fp = reinterpret_cast<const float8_e5m2 &>(value);
+                    return T(fp);
+                }
+                throw std::runtime_error(std::string("Unsupported 8-bit float encoding: ") +
+                                         std::to_string(static_cast<uint32_t>(type->encoding())));
+            }
             case 16: {
                 const uint16_t value = uint16_t(floatConstant->words()[0]);
                 const auto &fp = reinterpret_cast<const float16 &>(value);

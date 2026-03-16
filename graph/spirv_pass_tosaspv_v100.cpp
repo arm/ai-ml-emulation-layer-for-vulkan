@@ -734,8 +734,9 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
     const auto &padding = getOrMakeCompositeTensor(opExtInst->GetInOperand(3).AsId());
     real_t padConst = 0.0;
 
-    // BF16 constants are stored as raw bf16 payload bits and must not be decoded as IEEE fp16.
-    if (output->getFormat() == VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM) {
+    // Reduced-float constants are stored as raw payload bits.
+    if (output->getFormat() == VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM ||
+        output->getFormat() == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM) {
         const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(opExtInst->GetInOperand(4).AsId());
         const auto *scalar = constant;
 
@@ -745,16 +746,28 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
         }
 
         const auto *floatConstant = scalar->AsFloatConstant();
-        if (floatConstant == nullptr || floatConstant->type()->AsFloat() == nullptr ||
-            floatConstant->type()->AsFloat()->width() != 16) {
-            throw std::runtime_error("Unsupported BF16 PAD constant encoding");
-        }
+        const auto *floatType = floatConstant == nullptr ? nullptr : floatConstant->type()->AsFloat();
+        if (output->getFormat() == VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM) {
+            if (floatType == nullptr || floatType->width() != 16 ||
+                floatType->encoding() != spv::FPEncoding::BFloat16KHR) {
+                throw std::runtime_error("Unsupported BF16 PAD constant encoding");
+            }
 
-        const uint16_t bf16 = uint16_t(floatConstant->words()[0]);
-        const uint32_t fp32Bits = uint32_t(bf16) << 16;
-        float fp32Value = 0.0f;
-        std::memcpy(&fp32Value, &fp32Bits, sizeof(fp32Bits));
-        padConst = real_t(fp32Value);
+            const uint16_t bf16 = uint16_t(floatConstant->words()[0]);
+            const uint32_t fp32Bits = uint32_t(bf16) << 16;
+            float fp32Value = 0.0f;
+            std::memcpy(&fp32Value, &fp32Bits, sizeof(fp32Bits));
+            padConst = real_t(fp32Value);
+        } else {
+            if (floatType == nullptr || floatType->width() != 8 ||
+                floatType->encoding() != spv::FPEncoding::Float8E5M2EXT) {
+                throw std::runtime_error("Unsupported FLOAT8E5M2 PAD constant encoding");
+            }
+
+            const uint8_t f8 = uint8_t(floatConstant->words()[0]);
+            const auto &fp = reinterpret_cast<const float8_e5m2 &>(f8);
+            padConst = real_t(fp);
+        }
     } else {
         const auto &padConstVector = getConstVector<real_t>(opExtInst->GetInOperand(4));
         padConst = padConstVector[0];

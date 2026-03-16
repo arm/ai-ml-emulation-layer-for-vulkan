@@ -44,7 +44,7 @@ void main() {
 
                 IN_OUT_T value = DECODE_STORAGE_TO_COMP(valueRaw, TYPE_IN_OUT, IN_OUT_T);
 
-#if IS_FLOAT(TYPE_IN_OUT) || IS_BFLOAT(TYPE_IN_OUT)
+#if IS_FLOAT(TYPE_IN_OUT) || IS_REDUCED_FLOAT(TYPE_IN_OUT)
                 if (isnan(value)) {
                     if (pushConstants.nanMode == NAN_MODE_IGNORE) {
                         // Ignore value and continue

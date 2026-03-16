@@ -27,7 +27,9 @@ void main() {
     tensorReadARM(inputData, index, value);
 
 #if IS_BOOL(TYPE_OUT)
-    #if IS_BFLOAT(TYPE_IN)
+    #if IS_FLOAT8(TYPE_IN)
+        OUT_T outValue = OUT_T(float(decode_to_f16(value)) != 0.0);
+    #elif IS_BFLOAT(TYPE_IN)
         OUT_T outValue = OUT_T(decode_to_f32(value) != 0.0);
     #else
         OUT_T outValue = OUT_T(value);
@@ -35,14 +37,28 @@ void main() {
 #elif IS_BFLOAT(TYPE_OUT)
     #if IS_BOOL(TYPE_IN)
         OUT_T outValue = encode_from_f32_rne(value ? 1.0 : 0.0, OUT_T(0));
+    #elif IS_FLOAT8(TYPE_IN)
+        OUT_T outValue = encode_from_f32_rne(float(decode_to_f16(value)), OUT_T(0));
     #elif IS_BFLOAT(TYPE_IN)
         OUT_T outValue = value;
     #else
         OUT_T outValue = encode_from_f32_rne(float(value), OUT_T(0));
     #endif
+#elif IS_FLOAT8(TYPE_OUT)
+    #if IS_BOOL(TYPE_IN)
+        OUT_T outValue = encode_from_f16(value ? float16_t(1.0) : float16_t(0.0), OUT_T(0));
+    #elif IS_FLOAT8(TYPE_IN)
+        OUT_T outValue = encode_from_f16(decode_to_f16(value), OUT_T(0));
+    #elif IS_BFLOAT(TYPE_IN)
+        OUT_T outValue = encode_from_f32(decode_to_f32(value), OUT_T(0));
+    #else
+        OUT_T outValue = encode_from_f32(float(value), OUT_T(0));
+    #endif
 #elif IS_FLOAT(TYPE_OUT)
     #if IS_BOOL(TYPE_IN)
         OUT_T outValue = OUT_T(value ? 1.0 : 0.0);
+    #elif IS_FLOAT8(TYPE_IN)
+        OUT_T outValue = OUT_T(decode_to_f16(value));
     #elif IS_BFLOAT(TYPE_IN)
         OUT_T outValue = OUT_T(decode_to_f32(value));
     #else
@@ -62,8 +78,10 @@ void main() {
 #else
     #if IS_BOOL(TYPE_IN)
         OUT_T outValue = OUT_T(value ? 1 : 0);
-    #elif IS_FLOAT(TYPE_IN) || IS_BFLOAT(TYPE_IN)
-        #if IS_BFLOAT(TYPE_IN)
+    #elif IS_FLOAT(TYPE_IN) || IS_REDUCED_FLOAT(TYPE_IN)
+        #if IS_FLOAT8(TYPE_IN)
+            float fvalue = float(decode_to_f16(value));
+        #elif IS_BFLOAT(TYPE_IN)
             float fvalue = decode_to_f32(value);
         #else
             float fvalue = float(value);

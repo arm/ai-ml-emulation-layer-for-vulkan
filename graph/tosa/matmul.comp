@@ -8,7 +8,9 @@
 #define TYPE_IN %in_t_type%
 #define TYPE_OUT %out_t_type%
 
-#if IS_BFLOAT(TYPE_IN) || IS_BFLOAT(TYPE_OUT)
+#if IS_FLOAT8(TYPE_IN) || IS_FLOAT8(TYPE_OUT)
+    #define COMP_T float16_t
+#elif IS_BFLOAT(TYPE_IN) || IS_BFLOAT(TYPE_OUT)
     #define COMP_T float
 #else
     #define COMP_T OUT_T
