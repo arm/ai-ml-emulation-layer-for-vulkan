@@ -2,6 +2,31 @@
 
 ---
 
+## Version 0.9.0 – *Datatype Support & API Coverage*
+
+### New Datatypes
+
+- Added BF16 and FP8 (`fp8e4m3`, `fp8e5m2`) support across SPIR-V™ passes and
+  kernel execution paths.
+
+### Tensor & Graph API coverage
+
+- Added interception coverage for additional Vulkan® instance and physical-device
+  query paths, including `vkGetPhysicalDeviceProperties2KHR`.
+- Added support for `VK_EXT_tooling_info` and completed missing instance
+  intercept-initialization paths.
+- Updated graph/tensor behavior with higher-rank constant support and queue
+  family property fixes.
+- Added `VK_KHR_SYNCHRONIZATION_2` requirement in the graph layer.
+
+### Build, Packaging & Developer Experience
+
+- Added `use-float-as-double` build option for shader compatibility testing.
+- Fixed Android™ shader source path handling
+- Fix Darwin usage documentation details.
+- Fixed shader/runtime issues, including Reduce and Pad ops.
+- Fixed `vkSetDebugUtilsObjectNameEXT` dispatch to use the device loader.
+
 ## Version 0.8.0 – *API Coverage & Platform Expansion*
 
 ### New API
