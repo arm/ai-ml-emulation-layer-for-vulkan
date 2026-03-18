@@ -685,17 +685,22 @@ class VulkanLayer {
 
         const bool hasExtension =
             std::any_of(extensions.begin(), extensions.end(), [deviceExtensions](const auto &left) {
-                return std::any_of(deviceExtensions.begin(), deviceExtensions.end(),
-                                   [&left](const std::string &right) { return right == left.extensionName; });
+                return std::any_of(deviceExtensions.begin(), deviceExtensions.end(), [&left](const char *const right) {
+                    return std::strcmp(right, left.extensionName) == 0;
+                });
             });
 
         if (hasExtension) {
             // Remove layer implemented extensions
             deviceExtensions.erase(
-                std::remove_if(deviceExtensions.begin(), deviceExtensions.end(), [](const std::string &left) {
-                    return std::any_of(extensions.begin(), extensions.end(),
-                                       [left](const auto &right) { return left == right.extensionName; });
-                }));
+                std::remove_if(deviceExtensions.begin(), deviceExtensions.end(),
+                               [](const char *const left) {
+                                   return std::any_of(extensions.begin(), extensions.end(), [left](const auto &right) {
+                                       return std::strcmp(left, right.extensionName) == 0;
+                                   });
+                               }),
+                deviceExtensions.end());
+
             VkPhysicalDeviceProperties physicalDeviceProperties;
             handle->loader->vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
             if (physicalDeviceProperties.apiVersion < VK_MAKE_VERSION(1, 3, 0)) {
