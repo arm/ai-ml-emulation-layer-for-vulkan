@@ -1,0 +1,17 @@
+/*
+ * SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+plugins {
+    id("com.android.application")
+}
+
+android {
+    namespace "com.arm.ai_ml_emulation_layer_for_vulkan"
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 21
+        targetSdk 34
+    }
+}
