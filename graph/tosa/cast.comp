@@ -86,7 +86,17 @@ void main() {
         #else
             float fvalue = float(value);
         #endif
-        OUT_T outValue = OUT_T(clamp(round(fvalue), float(TYPE_OUT_MIN), float(TYPE_OUT_MAX)));
+        OUT_T outValue = OUT_T(0);
+        if (isnan(fvalue)) {
+            // NaN to int cast undefined in Tosa spec, casting to zero
+            outValue = OUT_T(0);
+        } else if (fvalue <= float(TYPE_OUT_MIN)) {
+            outValue = OUT_T(TYPE_OUT_MIN);
+        } else if (fvalue >= float(TYPE_OUT_MAX)) {
+            outValue = OUT_T(TYPE_OUT_MAX);
+        } else {
+            outValue = OUT_T(fvalue);
+        }
     #else
         OUT_T outValue = OUT_T(value);
     #endif
