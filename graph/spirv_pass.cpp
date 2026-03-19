@@ -435,7 +435,8 @@ std::shared_ptr<TensorDescriptor> GraphPassBase::makeCompositeTensor(const uint3
 
         return graphPipeline.makeConstCompositeTensor(format, dimensions, bf16Values.data());
     }
-    case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM | VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM: {
+    case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM:
+    case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM: {
         const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(instruction->result_id());
         std::vector<uint8_t> f8Values;
 
