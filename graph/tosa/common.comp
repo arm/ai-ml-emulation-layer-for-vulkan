@@ -38,8 +38,8 @@
 #define IS_BOOL(t) (t == TYPE_BOOL)
 #define IS_INTEGER(t) ((t >> 8) == 0x69)
 #define IS_FLOAT8(t) ((t == TYPE_FLOAT8_E5M2) || (t == TYPE_FLOAT8_E4M3))
-#define IS_FLOAT(t) (((t >> 8) == 0x66) && ((t & 0xFF) != 0x42) && ((t & 0xFF) != 0x4D) && ((t & 0xFF) != 0x43))
-#define IS_BFLOAT(t) (((t >> 8) == 0x66) && ((t & 0xFF) == 0x42))
+#define IS_FLOAT(t) ((t == TYPE_HALF) || (t == TYPE_FLOAT))
+#define IS_BFLOAT(t) (t == TYPE_BFLOAT16)
 #define IS_REDUCED_FLOAT(t) (IS_BFLOAT(t) || IS_FLOAT8(t))
 
 // Remaping types due to some platforms not supporting higher precision types in buffers/push constants
