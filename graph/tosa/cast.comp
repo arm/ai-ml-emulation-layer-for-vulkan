@@ -75,30 +75,27 @@ void main() {
             outValue = OUT_T(value);
         }
     #endif
-#else
+#else // TYPE_OUT: Int
     #if IS_BOOL(TYPE_IN)
         OUT_T outValue = OUT_T(value ? 1 : 0);
-    #elif IS_FLOAT(TYPE_IN) || IS_REDUCED_FLOAT(TYPE_IN)
-        #if IS_FLOAT8(TYPE_IN)
-            float fvalue = float(decode_float8_to_f16(uint8_t(value), TYPE_IN));
-        #elif IS_BFLOAT(TYPE_IN)
-            float fvalue = decode_to_f32(value);
-        #else
-            float fvalue = float(value);
-        #endif
+    #elif IS_FLOAT(TYPE_IN)
+        float fvalue = float(value);
+    #elif IS_FLOAT8(TYPE_IN)
+        float fvalue = float(decode_float8_to_f16(uint8_t(value), TYPE_IN));
+    #elif IS_BFLOAT(TYPE_IN)
+        float fvalue = decode_to_f32(value);
+    #else
+        OUT_T outValue = OUT_T(value);
+    #endif
+    #if IS_FLOAT(TYPE_IN) || IS_FLOAT8(TYPE_IN) || IS_BFLOAT(TYPE_IN)
         OUT_T outValue = OUT_T(0);
-        if (isnan(fvalue)) {
-            // NaN to int cast undefined in Tosa spec, casting to zero
-            outValue = OUT_T(0);
-        } else if (fvalue <= float(TYPE_OUT_MIN)) {
+        if (fvalue <= float(TYPE_OUT_MIN)) {
             outValue = OUT_T(TYPE_OUT_MIN);
         } else if (fvalue >= float(TYPE_OUT_MAX)) {
             outValue = OUT_T(TYPE_OUT_MAX);
         } else {
-            outValue = OUT_T(fvalue);
+            outValue = OUT_T(roundEven(fvalue));
         }
-    #else
-        OUT_T outValue = OUT_T(value);
     #endif
 #endif
 
