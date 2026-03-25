@@ -23,7 +23,7 @@
 
 - Added `use-float-as-double` build option for shader compatibility testing.
 - Fixed Android™ shader source path handling
-- Fix Darwin usage documentation details.
+- Fixed Darwin usage documentation details.
 - Fixed shader/runtime issues, including Reduce and Pad ops.
 - Fixed `vkSetDebugUtilsObjectNameEXT` dispatch to use the device loader.
 
