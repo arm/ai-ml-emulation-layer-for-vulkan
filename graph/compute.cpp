@@ -1522,15 +1522,16 @@ SpirvBinary Negate::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
 Pad::Pad(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, VkDevice _device,
          const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
          const std::shared_ptr<TensorDescriptor> &_output, const std::shared_ptr<TensorDescriptor> &_padding,
-         const real_t _padConst, const std::string &debugName)
+         const real_t _padConst, const int32_t _padConstInt, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output, _padding),
                       {&pushConstant, sizeof(pushConstant)}, _pipelineCache, createSpirv(_pipelineCache, _output),
                       debugName, {_input->getRank()}),
-      pushConstant{createPushConstant(_padConst)} {}
+      pushConstant{createPushConstant(_padConst, _padConstInt)} {}
 
-Pad::PushConstant Pad::createPushConstant(const real_t padConst) const {
+Pad::PushConstant Pad::createPushConstant(const real_t padConst, const int32_t padConstInt) const {
     PushConstant constant = {
         padConst,
+        padConstInt,
     };
 
     return constant;
@@ -2693,8 +2694,8 @@ void GraphPipeline::makeNegate(const std::shared_ptr<TensorDescriptor> &input,
 void GraphPipeline::makePad(const std::shared_ptr<TensorDescriptor> &input,
                             const std::shared_ptr<TensorDescriptor> &output,
                             const std::shared_ptr<TensorDescriptor> &padding, const real_t padConst,
-                            const std::string &debugName) {
-    makePipeline<Pad>(input, output, padding, padConst, debugName);
+                            const int32_t padConstInt, const std::string &debugName) {
+    makePipeline<Pad>(input, output, padding, padConst, padConstInt, debugName);
 }
 
 void GraphPipeline::makePow(const std::shared_ptr<TensorDescriptor> &input1,

@@ -733,6 +733,7 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
     const auto output = getTensor(*opExtInst);
     const auto &padding = getOrMakeCompositeTensor(opExtInst->GetInOperand(3).AsId());
     real_t padConst = 0.0;
+    int32_t padConstInt = 0;
 
     // Reduced-float constants are stored as raw payload bits.
     if (output->getFormat() == VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM ||
@@ -780,16 +781,21 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
         } else {
             throw std::runtime_error("Unsupported ouput format for PAD operation");
         }
+    } else if (output->getFormat() == VK_FORMAT_R32_SINT) {
+        const auto &padConstVector = getConstVector<int32_t>(opExtInst->GetInOperand(4));
+        padConstInt = padConstVector[0];
+        padConst = real_t(padConstInt);
     } else {
         const auto &padConstVector = getConstVector<real_t>(opExtInst->GetInOperand(4));
         padConst = padConstVector[0];
+        padConstInt = int32_t(padConst);
     }
 
     graphLog(Severity::Info) << "OpExtInst result=" << resultId << "," << debugName << ", padding=" << padding
                              << ", padConst=" << std::fixed << std::setprecision(0) << padConst << ", input=%"
                              << inputId.AsId() << std::endl;
 
-    graphPipeline.makePad(getTensor(inputId), output, padding, padConst, debugName);
+    graphPipeline.makePad(getTensor(inputId), output, padding, padConst, padConstInt, debugName);
 }
 
 void GraphPassTosaSpv100::handleRescale(const Instruction *opExtInst, const std::string &debugName) {

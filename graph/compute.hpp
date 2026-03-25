@@ -728,14 +728,15 @@ class Pad : public ComputePipeline {
     Pad(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, VkDevice _device,
         const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
         const std::shared_ptr<TensorDescriptor> &_output, const std::shared_ptr<TensorDescriptor> &_padding,
-        const real_t _padConst, const std::string &debugName);
+        const real_t _padConst, const int32_t _padConstInt, const std::string &debugName);
 
   private:
     struct PushConstant {
         real_t padConst;
+        int32_t padConstInt;
     };
 
-    PushConstant createPushConstant(const real_t padConst) const;
+    PushConstant createPushConstant(const real_t padConst, const int32_t padConstInt) const;
 
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output,
@@ -1352,7 +1353,8 @@ class GraphPipeline {
                     const int32_t inputZeroPoint, const int32_t outputZeroPoint, const std::string &debugName);
 
     void makePad(const std::shared_ptr<TensorDescriptor> &input, const std::shared_ptr<TensorDescriptor> &output,
-                 const std::shared_ptr<TensorDescriptor> &padding, const real_t padConst, const std::string &debugName);
+                 const std::shared_ptr<TensorDescriptor> &padding, const real_t padConst, const int32_t padConstInt,
+                 const std::string &debugName);
 
     void makePow(const std::shared_ptr<TensorDescriptor> &input1, const std::shared_ptr<TensorDescriptor> &input2,
                  const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName);

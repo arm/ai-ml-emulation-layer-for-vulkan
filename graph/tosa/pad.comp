@@ -10,6 +10,7 @@ layout(local_size_x = %warpX%) in;
 
 layout(push_constant) uniform PushConstants {
     DOUBLE padConst;
+    int32_t padConstInt;
 } pushConstants;
 
 layout(constant_id = 0) const uint32_t RANK = RANK_MAX;
@@ -41,10 +42,10 @@ void main() {
     IN_OUT_T value;
 
     if (isPad) {
-#if IS_REDUCED_FLOAT(TYPE_IN_OUT)
-        value = ENCODE_COMP_TO_STORAGE(pushConstants.padConst, IN_OUT_T, TYPE_IN_OUT);
+#if (in_out_t_type == TYPE_INT32)
+    value = IN_OUT_T(pushConstants.padConstInt);
 #else
-        value = IN_OUT_T(pushConstants.padConst);
+    value = ENCODE_COMP_TO_STORAGE(pushConstants.padConst, IN_OUT_T, TYPE_IN_OUT);
 #endif
     } else {
         tensorReadARM(inputData, inputIndex, value);
