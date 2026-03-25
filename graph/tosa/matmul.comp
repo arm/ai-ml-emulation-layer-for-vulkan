@@ -38,7 +38,9 @@ void main() {
     COMP_T acc = COMP_T(0);
 
     const uint IC = tensorSizeARM(inputData1, 2);
-    for (uint c = 0; c < IC; c += 4) {
+
+    uint c = 0;
+    for (; c + 3 < IC; c += 4) {
         IN_T value1[4];
         tensorReadARM(inputData1, uint[](on, oy, c), value1);
 
@@ -49,11 +51,21 @@ void main() {
         tensorReadARM(inputData2, uint[](on, c + 3, ox), value23);
         IN_T value2[4] = {value20, value21, value22, value23};
 
-        for (uint idx = 0; idx < 4 && c + idx < IC; ++idx) {
+        for (uint idx = 0; idx < 4; ++idx) {
             COMP_T val1 = DECODE_STORAGE_TO_COMP(value1[idx], TYPE_IN, COMP_T) - COMP_T(pushConstants.inputZeroPoint1);
             COMP_T val2 = DECODE_STORAGE_TO_COMP(value2[idx], TYPE_IN, COMP_T) - COMP_T(pushConstants.inputZeroPoint2);
             acc += val1 * val2;
         }
+    }
+
+    for (; c < IC; ++c) {
+        IN_T v1, v2;
+        tensorReadARM(inputData1, uint[](on, oy, c), v1);
+        tensorReadARM(inputData2, uint[](on, c, ox), v2);
+
+        COMP_T val1 = DECODE_STORAGE_TO_COMP(v1, TYPE_IN, COMP_T) - COMP_T(pushConstants.inputZeroPoint1);
+        COMP_T val2 = DECODE_STORAGE_TO_COMP(v2, TYPE_IN, COMP_T) - COMP_T(pushConstants.inputZeroPoint2);
+        acc += val1 * val2;
     }
 
     OUT_T outValue = ENCODE_COMP_TO_STORAGE(acc, OUT_T, TYPE_OUT);
