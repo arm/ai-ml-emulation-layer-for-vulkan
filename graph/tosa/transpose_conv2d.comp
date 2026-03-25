@@ -8,18 +8,9 @@
 #define WEIGHT_T %weight_t%
 #define TYPE_IN %in_t_type%
 #define TYPE_OUT %out_t_type%
-#define TYPE_ACC %acc_t_type%
 #define ACC_T %acc_t%
 
 DEFINE_CONV_ACC_CASTS(ACC_T, OUT_T, TYPE_IN, TYPE_OUT)
-
-#if TYPE_ACC == TYPE_INT64
-    #define VEC4 dvec4
-#elif TYPE_ACC == TYPE_INT32
-    #define VEC4 ivec4
-#else
-    #define VEC4 vec4
-#endif
 
 layout(local_size_x = %warpX%) in;
 
@@ -61,30 +52,15 @@ void main() {
                     (uint(iy) < tensorSizeARM(inputData, 1)) &&
                     (uint(ix) < tensorSizeARM(inputData, 2))) {
                     const uint IC = tensorSizeARM(inputData, 3);
-                    for (uint ic = 0; ic < IC; ic += 4) {
-                        IN_T tempValue[4];
-                        tensorReadARM(inputData, uint[](n, uint(iy), uint(ix), ic), tempValue);
-                        VEC4 value = VEC4(
-                            to_acc(tempValue[0]),
-                            to_acc(tempValue[1]),
-                            to_acc(tempValue[2]),
-                            to_acc(tempValue[3]));
+                    for (uint ic = 0; ic < IC; ++ic) {
+                        IN_T inV;
+                        WEIGHT_T wV;
+                        tensorReadARM(inputData, uint[](n, uint(iy), uint(ix), ic), inV);
+                        tensorReadARM(weightsData, uint[](oc, ky, kx, ic), wV);
 
-                        WEIGHT_T tempWeight[4];
-                        tensorReadARM(weightsData, uint[](oc, ky, kx, ic), tempWeight);
-                        VEC4 weight = VEC4(
-                            to_acc(tempWeight[0]),
-                            to_acc(tempWeight[1]),
-                            to_acc(tempWeight[2]),
-                            to_acc(tempWeight[3]));
-
-                        VEC4 outValue = value - pushConstants.inputZeroPoint;
-                        VEC4 outWeight = weight - pushConstants.weightZeroPoint;
-                        VEC4 mul = outValue * outWeight;
-
-                        for (uint idx = 0; idx < 4 && ic + idx < IC; ++idx) {
-                            acc += ACC_T(mul[idx]);
-                        }
+                        ACC_T inAcc = to_acc(inV) - ACC_T(pushConstants.inputZeroPoint);
+                        ACC_T wAcc = to_acc(wV) - ACC_T(pushConstants.weightZeroPoint);
+                        acc += inAcc * wAcc;
                     }
                 }
             }

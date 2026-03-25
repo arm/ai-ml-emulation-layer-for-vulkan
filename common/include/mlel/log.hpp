@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -82,14 +82,25 @@ class Log {
     std::ostream *os;
 };
 
+template <typename T> auto getValue(T value) {
+    // Specialization for int8_t and uint8_t to print as integers, not characters
+    if constexpr (std::is_same_v<T, int8_t> || std::is_same_v<T, uint8_t>) {
+        return int{value};
+    } else {
+        return value;
+    }
+};
+
 template <typename T> Log &operator<<(Log &os, const std::vector<T> &v) {
     os << std::dec << "[";
     auto it = v.begin();
     if (it != v.end()) {
-        os << *it++;
+        os << getValue(*it);
+        ++it;
     }
     while (it != v.end()) {
-        os << ", " << *it++;
+        os << ", " << getValue(*it);
+        ++it;
     }
     os << "]";
     return os;

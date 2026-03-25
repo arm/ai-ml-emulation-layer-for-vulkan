@@ -2116,16 +2116,16 @@ TransposeConv2D::TransposeConv2D(const std::shared_ptr<VULKAN_HPP_NAMESPACE::det
                                  const std::shared_ptr<TensorDescriptor> &_input,
                                  const std::shared_ptr<TensorDescriptor> &_output,
                                  const std::shared_ptr<TensorDescriptor> &_weights,
-                                 const std::shared_ptr<TensorDescriptor> &_biases, const std::vector<uint32_t> &_outPad,
-                                 const std::vector<uint32_t> &_stride, const int8_t _inputZeroPoint,
+                                 const std::shared_ptr<TensorDescriptor> &_biases, const std::vector<int32_t> &_outPad,
+                                 const std::vector<int32_t> &_stride, const int8_t _inputZeroPoint,
                                  const int8_t _weightZeroPoint, const uint32_t _accType, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output, _weights, _biases),
                       {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
                       createSpirv(_pipelineCache, _input, _output, _weights, _accType), debugName),
       pushConstant{createPushConstant(_outPad, _stride, _inputZeroPoint, _weightZeroPoint)} {}
 
-TransposeConv2D::PushConstant TransposeConv2D::createPushConstant(const std::vector<uint32_t> &outPad,
-                                                                  const std::vector<uint32_t> &stride,
+TransposeConv2D::PushConstant TransposeConv2D::createPushConstant(const std::vector<int32_t> &outPad,
+                                                                  const std::vector<int32_t> &stride,
                                                                   const int8_t inputZeroPoint,
                                                                   const int8_t weightZeroPoint) const {
     PushConstant constant = {
@@ -2183,7 +2183,6 @@ SpirvBinary TransposeConv2D::createSpirv(const std::shared_ptr<PipelineCache> &_
                                       {"%in_t%", inType->glslType()},
                                       {"%out_t%", outType->glslType()},
                                       {"%weight_t%", weightType->glslType()},
-                                      {"%acc_t_type%", accTypeType->toInt()},
                                       {"%acc_t%", accTypeType->glslType()},
                                   });
 }
@@ -2851,7 +2850,7 @@ void GraphPipeline::makeTransposeConv2D(const std::shared_ptr<TensorDescriptor> 
                                         const std::shared_ptr<TensorDescriptor> &output,
                                         const std::shared_ptr<TensorDescriptor> &weights,
                                         const std::shared_ptr<TensorDescriptor> &biases,
-                                        const std::vector<uint32_t> &pad, const std::vector<uint32_t> &stride,
+                                        const std::vector<int32_t> &pad, const std::vector<int32_t> &stride,
                                         const int8_t inputZeroPoint, const int8_t weightZeroPoint,
                                         const uint32_t accType, const std::string &debugName) {
     makePipeline<TransposeConv2D>(input, output, weights, biases, pad, stride, inputZeroPoint, weightZeroPoint, accType,

@@ -1026,8 +1026,8 @@ void GraphPassTosaSpv100::handleTransposeConv2D(const Instruction *opExtInst, co
     assert(opExtInst->NumInOperands() == 11);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &outPad = getConstVector(opExtInst->GetInOperand(2));
-    const auto &stride = getConstVector(opExtInst->GetInOperand(3));
+    const auto &outPad = getConstVector<int32_t>(opExtInst->GetInOperand(2));
+    const auto &stride = getConstVector<int32_t>(opExtInst->GetInOperand(3));
     const auto &accType = getConstScalar<uint32_t>(opExtInst->GetInOperand(4));
     const auto &localBound = getBoolConstant(opExtInst->GetInOperand(5));
     const auto &inputId = opExtInst->GetInOperand(6);
