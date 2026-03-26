@@ -1079,7 +1079,7 @@ class TransposeConv2D : public ComputePipeline {
                     VkDevice _device, const std::shared_ptr<PipelineCache> &_pipelineCache,
                     const std::shared_ptr<TensorDescriptor> &_input, const std::shared_ptr<TensorDescriptor> &_output,
                     const std::shared_ptr<TensorDescriptor> &_weights, const std::shared_ptr<TensorDescriptor> &_biases,
-                    const std::vector<uint32_t> &_outPad, const std::vector<uint32_t> &_stride,
+                    const std::vector<int32_t> &_outPad, const std::vector<int32_t> &_stride,
                     const int8_t _inputZeroPoint, const int8_t _weightZeroPoint, const uint32_t _accType,
                     const std::string &debugName);
 
@@ -1087,11 +1087,11 @@ class TransposeConv2D : public ComputePipeline {
     struct PushConstant {
         int32_t inputZeroPoint;
         int32_t weightZeroPoint;
-        uint32_t outPad[4];
-        uint32_t stride[2];
+        int32_t outPad[4];
+        int32_t stride[2];
     };
 
-    PushConstant createPushConstant(const std::vector<uint32_t> &outPad, const std::vector<uint32_t> &stride,
+    PushConstant createPushConstant(const std::vector<int32_t> &outPad, const std::vector<int32_t> &stride,
                                     const int8_t inputZeroPoint, const int8_t weightZeroPoint) const;
 
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
@@ -1439,8 +1439,8 @@ class GraphPipeline {
     void makeTransposeConv2D(const std::shared_ptr<TensorDescriptor> &input,
                              const std::shared_ptr<TensorDescriptor> &output,
                              const std::shared_ptr<TensorDescriptor> &weights,
-                             const std::shared_ptr<TensorDescriptor> &biases, const std::vector<uint32_t> &pad,
-                             const std::vector<uint32_t> &stride, const int8_t inputZeroPoint,
+                             const std::shared_ptr<TensorDescriptor> &biases, const std::vector<int32_t> &pad,
+                             const std::vector<int32_t> &stride, const int8_t inputZeroPoint,
                              const int8_t weightZeroPoint, const uint32_t accType, const std::string &debugName);
 
     /***************************************************************************
