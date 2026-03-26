@@ -11,9 +11,9 @@
 layout(local_size_x = %warpX%) in;
 
 layout(push_constant) uniform PushConstants {
-    uint kernel[2];
-    uint stride[2];
-    uint pad[4];
+    int32_t kernel[2];
+    int32_t stride[2];
+    int32_t pad[4];
     uint nanMode;
 } pushConstants;
 
@@ -30,17 +30,23 @@ void main() {
     uint ox = index[2];
     uint oc = index[3];
 
-    uint iy = oy * pushConstants.stride[0] - pushConstants.pad[0];
-    uint ix = ox * pushConstants.stride[1] - pushConstants.pad[2];
+    // Keep math in signed domain for signed push constants and cast only after bounds checks.
+    int kernelY = max(pushConstants.kernel[0], 0);
+    int kernelX = max(pushConstants.kernel[1], 0);
+    int strideY = max(pushConstants.stride[0], 1);
+    int strideX = max(pushConstants.stride[1], 1);
 
-    for (uint ky = 0; ky < pushConstants.kernel[0]; ky++) {
-        for (int kx = 0; kx < pushConstants.kernel[1]; kx++) {
-            uint y = iy + ky;
-            uint x = ix + kx;
+    int iy = int(oy) * strideY - pushConstants.pad[0];
+    int ix = int(ox) * strideX - pushConstants.pad[2];
 
-            if (y < tensorSizeARM(inputData, 1) && x < tensorSizeARM(inputData, 2)) {
+    for (int ky = 0; ky < kernelY; ++ky) {
+        for (int kx = 0; kx < kernelX; ++kx) {
+            int y = iy + ky;
+            int x = ix + kx;
+
+            if (y >= 0 && x >= 0 && uint(y) < tensorSizeARM(inputData, 1) && uint(x) < tensorSizeARM(inputData, 2)) {
                 STORAGE_T valueRaw;
-                tensorReadARM(inputData, uint[](on, y, x, oc), valueRaw);
+                tensorReadARM(inputData, uint[](on, uint(y), uint(x), oc), valueRaw);
 
                 IN_OUT_T value = DECODE_STORAGE_TO_COMP(valueRaw, TYPE_IN_OUT, IN_OUT_T);
 

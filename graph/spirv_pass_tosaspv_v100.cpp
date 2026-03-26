@@ -394,9 +394,9 @@ void GraphPassTosaSpv100::handleAvgPool2D(const Instruction *opExtInst, const st
     assert(opExtInst->NumInOperands() == 9);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &kernel = getConstVector(opExtInst->GetInOperand(2));
-    const auto &stride = getConstVector(opExtInst->GetInOperand(3));
-    const auto &pad = getConstVector(opExtInst->GetInOperand(4));
+    const auto &kernel = getConstVector<int32_t>(opExtInst->GetInOperand(2));
+    const auto &stride = getConstVector<int32_t>(opExtInst->GetInOperand(3));
+    const auto &pad = getConstVector<int32_t>(opExtInst->GetInOperand(4));
     const auto &accType = getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
     const auto &inputId = opExtInst->GetInOperand(6);
     const auto &inputZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(7));
@@ -483,9 +483,9 @@ void GraphPassTosaSpv100::handleConv2D(const Instruction *opExtInst, const std::
     assert(opExtInst->NumInOperands() == 12);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &pad = getConstVector(opExtInst->GetInOperand(2));
-    const auto &stride = getConstVector(opExtInst->GetInOperand(3));
-    const auto &dilation = getConstVector(opExtInst->GetInOperand(4));
+    const auto &pad = getConstVector<int32_t>(opExtInst->GetInOperand(2));
+    const auto &stride = getConstVector<int32_t>(opExtInst->GetInOperand(3));
+    const auto &dilation = getConstVector<int32_t>(opExtInst->GetInOperand(4));
     const auto &accType = getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
     const auto &localBound = getBoolConstant(opExtInst->GetInOperand(6));
     const auto &inputId = opExtInst->GetInOperand(7);
@@ -510,9 +510,9 @@ void GraphPassTosaSpv100::handleConv3D(const Instruction *opExtInst, const std::
     assert(opExtInst->NumInOperands() == 12);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &pad = getConstVector(opExtInst->GetInOperand(2));
-    const auto &stride = getConstVector(opExtInst->GetInOperand(3));
-    const auto &dilation = getConstVector(opExtInst->GetInOperand(4));
+    const auto &pad = getConstVector<int32_t>(opExtInst->GetInOperand(2));
+    const auto &stride = getConstVector<int32_t>(opExtInst->GetInOperand(3));
+    const auto &dilation = getConstVector<int32_t>(opExtInst->GetInOperand(4));
     const auto &accType = getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
     const auto &localBound = getBoolConstant(opExtInst->GetInOperand(6));
     const auto &inputId = opExtInst->GetInOperand(7);
@@ -537,9 +537,9 @@ void GraphPassTosaSpv100::handleDepthwiseConv2D(const Instruction *opExtInst, co
     assert(opExtInst->NumInOperands() == 12);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &pad = getConstVector(opExtInst->GetInOperand(2));
-    const auto &stride = getConstVector(opExtInst->GetInOperand(3));
-    const auto &dilation = getConstVector(opExtInst->GetInOperand(4));
+    const auto &pad = getConstVector<int32_t>(opExtInst->GetInOperand(2));
+    const auto &stride = getConstVector<int32_t>(opExtInst->GetInOperand(3));
+    const auto &dilation = getConstVector<int32_t>(opExtInst->GetInOperand(4));
     const auto &accType = getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
     const auto &localBound = getBoolConstant(opExtInst->GetInOperand(6));
     const auto &inputId = opExtInst->GetInOperand(7);
@@ -664,9 +664,9 @@ void GraphPassTosaSpv100::handleMaxPool2D(const Instruction *opExtInst, const st
     assert(opExtInst->NumInOperands() == 7);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &kernel = getConstVector(opExtInst->GetInOperand(2));
-    const auto &stride = getConstVector(opExtInst->GetInOperand(3));
-    const auto &pad = getConstVector(opExtInst->GetInOperand(4));
+    const auto &kernel = getConstVector<int32_t>(opExtInst->GetInOperand(2));
+    const auto &stride = getConstVector<int32_t>(opExtInst->GetInOperand(3));
+    const auto &pad = getConstVector<int32_t>(opExtInst->GetInOperand(4));
     const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
     const auto &inputId = opExtInst->GetInOperand(6);
 
