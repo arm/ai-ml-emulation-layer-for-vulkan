@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2025-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -9,8 +9,8 @@
  *******************************************************************************/
 
 #include "pipeline_cache.hpp"
-#include "tosa/shaders.hpp.inc"
-#include "tosa/shaders_spv.hpp.inc"
+#include "shaders/shaders.hpp.inc"
+#include "shaders/shaders_spv.hpp.inc"
 
 #include <vulkan/vulkan.hpp>
 
