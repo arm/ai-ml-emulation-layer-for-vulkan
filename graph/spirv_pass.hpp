@@ -92,7 +92,7 @@ class GraphPassBase : public Pass {
 
             if (isSplat) {
                 assert(kernel.size() == 1);
-                const auto tensorType = getTensorType(id);
+                auto *const tensorType = getTensorType(id);
                 const auto &dimensions = getConstVector<int64_t>(tensorType->shape_id());
                 const auto elemCount = static_cast<size_t>(std::abs(
                     std::accumulate(dimensions.begin(), dimensions.end(), int64_t(1), std::multiplies<int64_t>())));
@@ -151,12 +151,12 @@ class GraphPassBase : public Pass {
             switch (type->width()) {
             case 8: {
                 if (type->encoding() == spv::FPEncoding::Float8E5M2EXT) {
-                    const uint8_t value = uint8_t(floatConstant->words()[0]);
+                    const auto value = uint8_t(floatConstant->words()[0]);
                     const auto &fp = reinterpret_cast<const float8_e5m2 &>(value);
                     return T(fp);
                 }
                 if (type->encoding() == spv::FPEncoding::Float8E4M3EXT) {
-                    const uint8_t value = uint8_t(floatConstant->words()[0]);
+                    const auto value = uint8_t(floatConstant->words()[0]);
                     const auto &fp = reinterpret_cast<const float8_e4m3 &>(value);
                     return T(fp);
                 }
@@ -164,7 +164,7 @@ class GraphPassBase : public Pass {
                                          std::to_string(static_cast<uint32_t>(type->encoding())));
             }
             case 16: {
-                const uint16_t value = uint16_t(floatConstant->words()[0]);
+                const auto value = uint16_t(floatConstant->words()[0]);
                 const auto &fp = reinterpret_cast<const float16 &>(value);
                 return T(fp);
             }

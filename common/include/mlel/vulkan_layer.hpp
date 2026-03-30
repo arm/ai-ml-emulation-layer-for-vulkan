@@ -46,7 +46,7 @@ template <typename T> struct LinkedType {
 };
 
 template <class T, class U> static T *findTypeMutable(U *ptr, VkStructureType type) {
-    auto p = reinterpret_cast<VkBaseOutStructure *>(ptr);
+    auto *p = reinterpret_cast<VkBaseOutStructure *>(ptr);
 
     while (p != nullptr) {
         if (p->sType == type) {
@@ -59,7 +59,7 @@ template <class T, class U> static T *findTypeMutable(U *ptr, VkStructureType ty
 }
 
 template <class T, class U> static const T *findType(const U *ptr, const VkStructureType type) {
-    auto p = reinterpret_cast<const VkBaseInStructure *>(ptr);
+    const auto *p = reinterpret_cast<const VkBaseInStructure *>(ptr);
 
     while (p != nullptr) {
         if (p->sType == type) {
@@ -72,7 +72,7 @@ template <class T, class U> static const T *findType(const U *ptr, const VkStruc
 }
 
 template <typename T, class U> static LinkedType<T> findLinkedType(U *ptr, const VkStructureType type) {
-    auto p = reinterpret_cast<VkBaseOutStructure *>(ptr);
+    auto *p = reinterpret_cast<VkBaseOutStructure *>(ptr);
 
     VkBaseOutStructure *previous = nullptr;
     while (p != nullptr) {
@@ -95,7 +95,7 @@ template <class T, class U> static T getType(const U *ptr, const VkStructureType
 }
 
 template <class T, class U> static const T *removeType(U *ptr, const VkStructureType type) {
-    auto p = reinterpret_cast<VkBaseOutStructure *>(ptr);
+    auto *p = reinterpret_cast<VkBaseOutStructure *>(ptr);
     // remove VkStructureType from the pNext chain, header will not be checked
     while (p) {
         if (p->pNext && p->pNext->sType == type) {
@@ -109,7 +109,7 @@ template <class T, class U> static const T *removeType(U *ptr, const VkStructure
 }
 
 template <class T, class U> static void appendType(T *list, U *node) {
-    auto p = reinterpret_cast<VkBaseOutStructure *>(list);
+    auto *p = reinterpret_cast<VkBaseOutStructure *>(list);
     while (p->pNext) {
         p = p->pNext;
     }
@@ -134,7 +134,7 @@ template <typename T> static void insertType(LinkedType<T> &node) {
 
 template <class T> static std::vector<const VkBaseOutStructure *> dumpVkStructureList(const T *list) {
     std::vector<const VkBaseOutStructure *> vec;
-    auto p = reinterpret_cast<const VkBaseOutStructure *>(list);
+    const auto *p = reinterpret_cast<const VkBaseOutStructure *>(list);
     while (p) {
         p = p->pNext;
         vec.emplace_back(p);
@@ -143,8 +143,8 @@ template <class T> static std::vector<const VkBaseOutStructure *> dumpVkStructur
 }
 
 template <class T> static void loadVkStructureList(T *list, const std::vector<const VkBaseOutStructure *> &vec) {
-    auto tail = reinterpret_cast<VkBaseOutStructure *>(list);
-    for (auto &pNode : vec) {
+    auto *tail = reinterpret_cast<VkBaseOutStructure *>(list);
+    for (const auto &pNode : vec) {
         tail->pNext = const_cast<VkBaseOutStructure *>(pNode);
         tail = tail->pNext;
     }
@@ -598,7 +598,7 @@ class VulkanLayer {
 
     static VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo *createInfo,
                                                 const VkAllocationCallbacks *allocator, VkInstance *instance) {
-        auto layerCreateInfo = findInstanceCreateInfo(createInfo);
+        auto *layerCreateInfo = findInstanceCreateInfo(createInfo);
         if (layerCreateInfo == nullptr) {
             return VK_ERROR_INITIALIZATION_FAILED;
         }
@@ -737,7 +737,7 @@ class VulkanLayer {
             }
         }
 
-        auto layerCreateInfo = findDeviceLayerCreateInfo(createInfo);
+        auto *layerCreateInfo = findDeviceLayerCreateInfo(createInfo);
         if (layerCreateInfo == nullptr) {
             return VK_ERROR_INITIALIZATION_FAILED;
         }
@@ -772,7 +772,7 @@ class VulkanLayer {
             nullptr,                                        // pEnabledFeatures
         };
 
-        auto pDeviceFeature2 =
+        const auto *pDeviceFeature2 =
             removeType<VkPhysicalDeviceFeatures2>(&newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2);
         VkPhysicalDeviceFeatures deviceFeatures{};
         VkPhysicalDeviceFeatures2 layerPhysicalDeviceFeatures2{};
@@ -796,7 +796,7 @@ class VulkanLayer {
             newCreateInfo.pEnabledFeatures = &deviceFeatures;
         }
 
-        auto pDeviceFeature11 = removeType<VkPhysicalDeviceVulkan11Features>(
+        const auto *pDeviceFeature11 = removeType<VkPhysicalDeviceVulkan11Features>(
             &newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES);
         VkPhysicalDeviceVulkan11Features layerVulkan11Feature{};
         layerVulkan11Feature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
@@ -807,7 +807,7 @@ class VulkanLayer {
         layerVulkan11Feature.storageBuffer16BitAccess = queryVulkan11Feature.storageBuffer16BitAccess;
         appendType(&newCreateInfo, &layerVulkan11Feature);
 
-        auto pDeviceFeature12 = removeType<VkPhysicalDeviceVulkan12Features>(
+        const auto *pDeviceFeature12 = removeType<VkPhysicalDeviceVulkan12Features>(
             &newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES);
         VkPhysicalDeviceVulkan12Features layerVulkan12Feature{};
         layerVulkan12Feature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
@@ -824,7 +824,7 @@ class VulkanLayer {
             queryVulkan12Feature.descriptorBindingStorageBufferUpdateAfterBind;
         appendType(&newCreateInfo, &layerVulkan12Feature);
 
-        auto pDeviceFeature13 = removeType<VkPhysicalDeviceVulkan13Features>(
+        const auto *pDeviceFeature13 = removeType<VkPhysicalDeviceVulkan13Features>(
             &newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES);
         VkPhysicalDeviceVulkan13Features layerVulkan13Feature{};
         layerVulkan13Feature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
@@ -1033,7 +1033,7 @@ class VulkanLayer {
     }
 
     static VkLayerInstanceCreateInfo *findInstanceCreateInfo(const VkInstanceCreateInfo *createInfo) {
-        auto info = reinterpret_cast<const VkLayerInstanceCreateInfo *>(createInfo->pNext);
+        const auto *info = reinterpret_cast<const VkLayerInstanceCreateInfo *>(createInfo->pNext);
         while (info != nullptr) {
             if (info->sType == VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO && info->function == VK_LAYER_LINK_INFO) {
                 return const_cast<VkLayerInstanceCreateInfo *>(info);
@@ -1046,7 +1046,7 @@ class VulkanLayer {
     }
 
     static VkLayerDeviceCreateInfo *findDeviceLayerCreateInfo(const VkDeviceCreateInfo *createInfo) {
-        auto info = reinterpret_cast<const VkLayerDeviceCreateInfo *>(createInfo->pNext);
+        const auto *info = reinterpret_cast<const VkLayerDeviceCreateInfo *>(createInfo->pNext);
         while (info != nullptr) {
             if (info->sType == VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO && info->function == VK_LAYER_LINK_INFO) {
                 return const_cast<VkLayerDeviceCreateInfo *>(info);

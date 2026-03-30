@@ -134,7 +134,7 @@ bool PhysicalDevice::hasExtensionProperties(const vk::raii::PhysicalDevice &phys
                                             const std::vector<const char *> &extensions) const {
     const auto extensionProperties = physicalDevice.enumerateDeviceExtensionProperties();
 
-    for (auto &extension : extensions) {
+    for (const auto &extension : extensions) {
         auto it = std::find_if(extensionProperties.begin(), extensionProperties.end(), [&](const auto &property) {
             return std::strcmp(property.extensionName, extension) == 0;
         });
@@ -154,7 +154,7 @@ std::vector<vk::raii::PhysicalDevice> PhysicalDevice::enumeratePhysicalDevices()
 vk::raii::PhysicalDevice PhysicalDevice::createPhysicalDevice(const std::vector<const char *> &extensions) const {
     std::vector<vk::raii::PhysicalDevice> physicalDevices;
 
-    for (auto currentPhysicalDevice : enumeratePhysicalDevices()) {
+    for (const auto &currentPhysicalDevice : enumeratePhysicalDevices()) {
         // Verify that device supports compute queues
         auto queueCreateInfo = getQueueCreateInfo(currentPhysicalDevice, queuePriorities, vk::QueueFlagBits::eCompute);
         if (queueCreateInfo.empty()) {
@@ -210,13 +210,14 @@ PhysicalDevice::getQueueCreateInfo(const vk::raii::PhysicalDevice &physicalDevic
     for (uint32_t i = 0; i < queueFamilyProperties.size(); i++) {
         auto &property = queueFamilyProperties[i];
 
-        if (property.queueFlags & flags)
+        if (property.queueFlags & flags) {
             queueCreateInfo.push_back(vk::DeviceQueueCreateInfo{
                 {},                     // flags
                 i,                      // queue family index
                 property.queueCount,    // queue count
                 queuePriorities.data(), // queue priorities
             });
+        }
     }
 
     return queueCreateInfo;

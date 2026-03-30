@@ -87,14 +87,14 @@ substituteTensorWriteDescriptorSet(const Device &dev, uint32_t descriptorWriteCo
             continue;
         }
 
-        const auto tensorInfo =
+        const auto *const tensorInfo =
             findType<VkWriteDescriptorSetTensorARM>(write.pNext, VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_TENSOR_ARM);
         if (tensorInfo == nullptr) {
             throw std::runtime_error("Write descriptor is missing tensor descriptor tensor info");
         }
 
         for (uint32_t j = 0; j < tensorInfo->tensorViewCount; j++) {
-            const auto tensorViewARM = reinterpret_cast<TensorViewARM *>(tensorInfo->pTensorViews[j]);
+            auto *const tensorViewARM = reinterpret_cast<TensorViewARM *>(tensorInfo->pTensorViews[j]);
 
             bufferInfos.emplace_back(VkDescriptorBufferInfo{
                 tensorViewARM->getDescriptorBuffer(dev), // buffer

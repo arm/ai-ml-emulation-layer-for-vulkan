@@ -17,8 +17,7 @@
 namespace mlsdk::el::log {
 
 Log::Log(const std::string &_environmentVariable, const std::string &_loggerName, const Severity _defaultLogLevel)
-    : logLevel{getLogLevel(_environmentVariable, _defaultLogLevel)}, loggerName(_loggerName), severity(Severity::Debug),
-      os(&std::cout) {}
+    : logLevel{getLogLevel(_environmentVariable, _defaultLogLevel)}, loggerName(_loggerName), os(&std::cout) {}
 
 Log &Log::operator<<(std::ostream &(*f)(std::ostream &)) {
     if (enabled(severity)) {
@@ -60,7 +59,7 @@ Log &operator<<(Log &os, const StringLineNumber &s) {
     std::string::size_type pastPos{};
     unsigned line{1};
     os << std::resetiosflags(std::ios_base::dec) << "\n";
-    for (auto curPos = s.str.find("\n", pastPos); curPos != std::string::npos; curPos = s.str.find("\n", pastPos)) {
+    for (auto curPos = s.str.find('\n', pastPos); curPos != std::string::npos; curPos = s.str.find('\n', pastPos)) {
         os << std::setw(3) << line++ << ": " << s.str.substr(pastPos, curPos - pastPos + 1);
         pastPos = curPos + 1;
     }

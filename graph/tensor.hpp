@@ -132,7 +132,7 @@ class VirtualTensor {
     std::shared_ptr<TensorDescriptor> tensor;
     ComputePipelineBase *parent;
     ComputePipelineBase *descendant;
-    bool visited;
+    bool visited{false};
 };
 
 } // namespace mlsdk::el::compute

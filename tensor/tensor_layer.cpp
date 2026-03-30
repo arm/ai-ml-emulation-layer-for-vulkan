@@ -77,7 +77,7 @@ class DeviceMemory {
  *******************************************************************************/
 inline std::size_t spirvHash(const std::vector<uint32_t> &spirv) {
     std::size_t hash = spirv.size();
-    for (auto &i : spirv) {
+    for (const auto &i : spirv) {
         hash ^= std::hash<uint32_t>()(i) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
     }
     return hash;
@@ -247,7 +247,7 @@ class TensorLayer : public VulkanLayerImpl {
 
     static VkResult VKAPI_CALL vkCreateTensorARM(VkDevice device, const VkTensorCreateInfoARM *createInfo,
                                                  const VkAllocationCallbacks *allocator, VkTensorARM *tensor) {
-        auto tensorARM = allocateObject<TensorARM>(allocator);
+        auto *tensorARM = allocateObject<TensorARM>(allocator);
         VkResult result = tensorARM->create(*VulkanLayerImpl::getHandle(device), *createInfo, allocator);
         if (result != VK_SUCCESS) {
             destroyObject(allocator, tensorARM);
@@ -264,7 +264,7 @@ class TensorLayer : public VulkanLayerImpl {
             memoryAliasing.removeAliasingResource(tensor);
         }
         if (tensor) {
-            auto tensorARM = reinterpret_cast<TensorARM *>(tensor);
+            auto *tensorARM = reinterpret_cast<TensorARM *>(tensor);
             tensorARM->destroy(*VulkanLayerImpl::getHandle(device), allocator);
             destroyObject(allocator, tensorARM);
         }
@@ -273,7 +273,7 @@ class TensorLayer : public VulkanLayerImpl {
     static VkResult VKAPI_CALL vkCreateTensorViewARM(VkDevice device, const VkTensorViewCreateInfoARM *createInfo,
                                                      const VkAllocationCallbacks *allocator,
                                                      VkTensorViewARM *tensorView) {
-        auto tensorViewARM = allocateObject<TensorViewARM>(allocator);
+        auto *tensorViewARM = allocateObject<TensorViewARM>(allocator);
         VkResult result = tensorViewARM->create(*VulkanLayerImpl::getHandle(device), createInfo, allocator);
         if (result != VK_SUCCESS) {
             destroyObject(allocator, tensorViewARM);
@@ -286,7 +286,7 @@ class TensorLayer : public VulkanLayerImpl {
     static void VKAPI_CALL vkDestroyTensorViewARM(VkDevice device, VkTensorViewARM tensorView,
                                                   const VkAllocationCallbacks *allocator) {
         if (tensorView) {
-            auto tensorViewARM = reinterpret_cast<TensorViewARM *>(tensorView);
+            auto *tensorViewARM = reinterpret_cast<TensorViewARM *>(tensorView);
             tensorViewARM->destroy(*VulkanLayerImpl::getHandle(device), allocator);
             destroyObject(allocator, tensorViewARM);
         }
@@ -295,7 +295,7 @@ class TensorLayer : public VulkanLayerImpl {
     static void VKAPI_CALL vkGetTensorMemoryRequirementsARM(VkDevice device,
                                                             const VkTensorMemoryRequirementsInfoARM *info,
                                                             VkMemoryRequirements2 *requirements) {
-        auto tensor = reinterpret_cast<TensorARM *>(info->tensor);
+        auto *tensor = reinterpret_cast<TensorARM *>(info->tensor);
         tensor->getMemoryRequirements(*VulkanLayerImpl::getHandle(device), &requirements->memoryRequirements);
     }
 
@@ -304,7 +304,7 @@ class TensorLayer : public VulkanLayerImpl {
         auto handle = VulkanLayerImpl::getHandle(device);
         VkResult result = VK_SUCCESS;
         for (uint32_t i = 0; i < bindInfoCount; i++) {
-            auto tensor = reinterpret_cast<TensorARM *>(bindInfos[i].tensor);
+            auto *tensor = reinterpret_cast<TensorARM *>(bindInfos[i].tensor);
             result = tensor->bindTensorMemory(*handle, bindInfos[i].memory, bindInfos[i].memoryOffset);
             if (result == VK_SUCCESS) {
                 scopedMutex l(globalMutex);
@@ -331,22 +331,22 @@ class TensorLayer : public VulkanLayerImpl {
     static void VKAPI_CALL vkCmdCopyTensorARM(VkCommandBuffer commandBuffer,
                                               const VkCopyTensorInfoARM *copyTensorInfo) {
         assert(copyTensorInfo->regionCount == 1 && "Only support single region to copy tensor.");
-        auto srcTensor = reinterpret_cast<TensorARM *>(copyTensorInfo->srcTensor);
-        auto dstTensor = reinterpret_cast<TensorARM *>(copyTensorInfo->dstTensor);
+        auto *srcTensor = reinterpret_cast<TensorARM *>(copyTensorInfo->srcTensor);
+        auto *dstTensor = reinterpret_cast<TensorARM *>(copyTensorInfo->dstTensor);
         srcTensor->copyToTensor(*VulkanLayerImpl::getHandle(commandBuffer), *dstTensor);
     }
 
     static VkResult vkGetTensorViewOpaqueCaptureDescriptorDataARM(VkDevice device,
                                                                   const VkTensorViewCaptureDescriptorDataInfoARM *pInfo,
                                                                   void *pData) {
-        auto tensorView = reinterpret_cast<TensorViewARM *>(pInfo->tensorView);
+        auto *tensorView = reinterpret_cast<TensorViewARM *>(pInfo->tensorView);
         return tensorView->getOpaqueCaptureDescriptorDataEXT(*VulkanLayerImpl::getHandle(device), pData);
     }
 
     static VkResult vkGetTensorOpaqueCaptureDescriptorDataARM(VkDevice device,
                                                               const VkTensorCaptureDescriptorDataInfoARM *pInfo,
                                                               void *pData) {
-        auto tensor = reinterpret_cast<TensorARM *>(pInfo->tensor);
+        auto *tensor = reinterpret_cast<TensorARM *>(pInfo->tensor);
         return tensor->getOpaqueCaptureDescriptorDataEXT(*VulkanLayerImpl::getHandle(device), pData);
     }
 
@@ -527,7 +527,7 @@ class TensorLayer : public VulkanLayerImpl {
                                                            VkDescriptorSetLayout *pSetLayout) {
         auto handle = VulkanLayerImpl::getHandle(device);
 
-        auto bindingInfo = findType<VkDescriptorSetLayoutBindingFlagsCreateInfo>(
+        const auto *bindingInfo = findType<VkDescriptorSetLayoutBindingFlagsCreateInfo>(
             pCreateInfo, VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO);
 
         const auto bindings =
@@ -604,9 +604,9 @@ class TensorLayer : public VulkanLayerImpl {
                                                  const VkDependencyInfo *pDependencyInfo) {
         auto handle = VulkanLayerImpl::getHandle(commandBuffer);
 
-        auto tensorDependencyInfo =
+        const auto *tensorDependencyInfo =
             findType<VkTensorDependencyInfoARM>(pDependencyInfo->pNext, VK_STRUCTURE_TYPE_TENSOR_DEPENDENCY_INFO_ARM);
-        auto tensorBarrier =
+        const auto *tensorBarrier =
             findType<VkTensorMemoryBarrierARM>(pDependencyInfo->pNext, VK_STRUCTURE_TYPE_TENSOR_MEMORY_BARRIER_ARM);
 
         if (tensorDependencyInfo == nullptr && tensorBarrier == nullptr &&
@@ -637,7 +637,7 @@ class TensorLayer : public VulkanLayerImpl {
                 tensorDependencyInfo->pTensorMemoryBarriers + tensorDependencyInfo->tensorMemoryBarrierCount};
 
             for (const auto &barrier : tensorMemoryBarriers) {
-                auto tensorARM = reinterpret_cast<TensorARM *>(barrier.tensor);
+                auto *tensorARM = reinterpret_cast<TensorARM *>(barrier.tensor);
                 bufferMemoryBarriers.emplace_back(VkBufferMemoryBarrier2{
                     VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2, // sType
                     nullptr,                                   // pNext
@@ -653,7 +653,7 @@ class TensorLayer : public VulkanLayerImpl {
                 });
             }
         } else if (tensorBarrier != nullptr) {
-            auto tensorARM = reinterpret_cast<TensorARM *>(tensorBarrier->tensor);
+            auto *tensorARM = reinterpret_cast<TensorARM *>(tensorBarrier->tensor);
             bufferMemoryBarriers.emplace_back(VkBufferMemoryBarrier2{
                 VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2, // sType
                 nullptr,                                   // pNext
@@ -737,7 +737,7 @@ class TensorLayer : public VulkanLayerImpl {
             memoryAliasing.addAliasingResource(memory, memoryOffset, image);
             auto tensors = memoryAliasing.getAliasingResources<VkTensorARM>(memory, memoryOffset);
             for (auto &&tensor : tensors) {
-                TensorARM *underlyingTensor = reinterpret_cast<TensorARM *>(tensor);
+                auto *underlyingTensor = reinterpret_cast<TensorARM *>(tensor);
                 underlyingTensor->updateAliasedTensorInfo(*handle, image);
             }
         }
@@ -756,7 +756,7 @@ class TensorLayer : public VulkanLayerImpl {
                 auto tensors =
                     memoryAliasing.getAliasingResources<VkTensorARM>(pBindInfos[i].memory, pBindInfos[i].memoryOffset);
                 for (auto &&tensor : tensors) {
-                    TensorARM *underlyingTensor = reinterpret_cast<TensorARM *>(tensor);
+                    auto *underlyingTensor = reinterpret_cast<TensorARM *>(tensor);
                     underlyingTensor->updateAliasedTensorInfo(*handle, pBindInfos[i].image);
                 }
             }
@@ -789,8 +789,9 @@ class TensorLayer : public VulkanLayerImpl {
                                                    0,
                                                });
         newAllocateFlagInfo.flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
-        if (getBufferDeviceAddressCaptureReplayFeat(device) == VK_TRUE)
+        if (getBufferDeviceAddressCaptureReplayFeat(device) == VK_TRUE) {
             newAllocateFlagInfo.flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT;
+        }
 
         appendType(&newAllocateInfo, &newAllocateFlagInfo);
 
@@ -814,7 +815,7 @@ class TensorLayer : public VulkanLayerImpl {
     static void VKAPI_CALL vkGetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice, VkFormat format,
                                                                 VkFormatProperties2 *pFormatProperties) {
         auto handle = VulkanLayerImpl::getHandle(physicalDevice);
-        auto pTensorFormatProp = const_cast<VkTensorFormatPropertiesARM *>(findType<VkTensorFormatPropertiesARM>(
+        auto *pTensorFormatProp = const_cast<VkTensorFormatPropertiesARM *>(findType<VkTensorFormatPropertiesARM>(
             pFormatProperties->pNext, VK_STRUCTURE_TYPE_TENSOR_FORMAT_PROPERTIES_ARM));
         handle->loader->vkGetPhysicalDeviceFormatProperties2(physicalDevice, format, pFormatProperties);
         if (pTensorFormatProp) {
@@ -828,7 +829,7 @@ class TensorLayer : public VulkanLayerImpl {
     static void VKAPI_CALL vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
                                                         VkPhysicalDeviceFeatures2 *pFeatures) {
         auto handle = VulkanLayerImpl::getHandle(physicalDevice);
-        auto pTensorFeatures =
+        auto *pTensorFeatures =
             const_cast<VkPhysicalDeviceTensorFeaturesARM *>(findType<VkPhysicalDeviceTensorFeaturesARM>(
                 pFeatures->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_FEATURES_ARM));
         handle->loader->vkGetPhysicalDeviceFeatures2(physicalDevice, pFeatures);
@@ -913,7 +914,7 @@ class TensorLayer : public VulkanLayerImpl {
         auto handle = VulkanLayerImpl::getHandle(device);
         switch (pNameInfo->objectType) {
         case VK_OBJECT_TYPE_TENSOR_ARM: {
-            auto tensorARM = reinterpret_cast<TensorARM *>(pNameInfo->objectHandle);
+            auto *tensorARM = reinterpret_cast<TensorARM *>(pNameInfo->objectHandle);
             VkDebugUtilsObjectNameInfoEXT newNameInfo{
                 VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT, pNameInfo->pNext, VK_OBJECT_TYPE_BUFFER,
                 reinterpret_cast<uint64_t>(tensorARM->getTensorBuffer()), pNameInfo->pObjectName};

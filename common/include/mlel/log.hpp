@@ -78,7 +78,7 @@ class Log {
 
     Severity logLevel;
     std::string loggerName;
-    Severity severity;
+    Severity severity{Severity::Info};
     std::ostream *os;
 };
 

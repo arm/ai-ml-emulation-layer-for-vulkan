@@ -173,7 +173,7 @@ std::map<std::shared_ptr<TensorDescriptor>, Tensors> BestFitMemoryPlanner::liveT
 
         // Pass on the virtual tensor references along the edges of the graph
         for (const auto &descendant : descendants) {
-            const auto descendantPipeline = descendant->getDescendantPipeline();
+            auto *const descendantPipeline = descendant->getDescendantPipeline();
 
             auto carryOnInsert = [&](const auto &tensor) {
                 auto [iterator, inserted] = carryOnSet[descendantPipeline].insert(tensor);
@@ -303,7 +303,7 @@ std::map<std::shared_ptr<TensorDescriptor>, Tensors> BestFitMemoryPlanner::creat
  * before its descendants. This function produces such a vector.
  */
 std::vector<ComputePipelineBase *> BestFitMemoryPlanner::getTopologicalOrder() const {
-    auto input = &graphPipeline->getInputs();
+    auto *input = &graphPipeline->getInputs();
 
     std::set<ComputePipelineBase *> processed;
     std::deque<ComputePipelineBase *> workingList;
@@ -315,10 +315,10 @@ std::vector<ComputePipelineBase *> BestFitMemoryPlanner::getTopologicalOrder() c
         ComputePipelineBase *current = workingList.front();
         workingList.pop_front();
 
-        auto &descendants = current->getDescendants();
+        const auto &descendants = current->getDescendants();
 
         for (const auto &descendant : descendants) {
-            const auto pipeline = descendant->getDescendantPipeline();
+            auto *const pipeline = descendant->getDescendantPipeline();
 
             if (processed.count(pipeline) == 0) {
                 workingList.push_back(pipeline);
