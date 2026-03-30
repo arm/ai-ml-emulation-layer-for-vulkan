@@ -127,24 +127,20 @@ class GraphPassBase : public Pass {
 
             if (type->IsSigned()) {
                 return static_cast<T>(constant->GetSignExtendedValue());
-            } else {
-                switch (type->width()) {
-                case 8:
-                    return isUnsigned ? T(constant->GetZeroExtendedValue())
-                                      : T(int8_t(constant->GetZeroExtendedValue()));
-                case 16:
-                    return isUnsigned ? T(constant->GetZeroExtendedValue())
-                                      : T(int16_t(constant->GetZeroExtendedValue()));
-                case 32:
-                    return isUnsigned ? T(constant->GetZeroExtendedValue())
-                                      : T(int32_t(constant->GetZeroExtendedValue()));
-                case 64:
-                    return isUnsigned ? T(constant->GetZeroExtendedValue())
-                                      : T(int64_t(constant->GetZeroExtendedValue()));
-                default:
-                    throw std::runtime_error(std::string("Unsupported integer constant width: ") +
-                                             std::to_string(type->width()));
-                }
+            }
+
+            switch (type->width()) {
+            case 8:
+                return isUnsigned ? T(constant->GetZeroExtendedValue()) : T(int8_t(constant->GetZeroExtendedValue()));
+            case 16:
+                return isUnsigned ? T(constant->GetZeroExtendedValue()) : T(int16_t(constant->GetZeroExtendedValue()));
+            case 32:
+                return isUnsigned ? T(constant->GetZeroExtendedValue()) : T(int32_t(constant->GetZeroExtendedValue()));
+            case 64:
+                return isUnsigned ? T(constant->GetZeroExtendedValue()) : T(int64_t(constant->GetZeroExtendedValue()));
+            default:
+                throw std::runtime_error(std::string("Unsupported integer constant width: ") +
+                                         std::to_string(type->width()));
             }
         }
 

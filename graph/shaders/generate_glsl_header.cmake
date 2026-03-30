@@ -12,7 +12,7 @@ endforeach()
 cmake_parse_arguments(ARGS "" "OUTPUT_FILE" "SRCS" ${ARGV})
 
 # Write header file header
-file(WRITE "${ARGS_OUTPUT_FILE}" "#pragma once\n#include <map>\n#include <string_view>\nnamespace {\n")
+file(WRITE "${ARGS_OUTPUT_FILE}" "#pragma once\n#include <map>\n#include <string_view>\nnamespace mlsdk::el::compute {\n")
 
 set(SHADER_MAP "const std::map<std::string_view, std::string_view> glslMap {\n")
 

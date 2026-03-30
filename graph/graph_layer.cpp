@@ -219,7 +219,7 @@ inline std::optional<bool> isGraphSpirv(const std::vector<uint32_t> &spirv) {
     if (ir == nullptr || ir->module() == nullptr) {
         return std::nullopt;
     }
-    return ir->module()->graphs().size() > 0;
+    return !ir->module()->graphs().empty();
 }
 
 std::optional<std::string> tryGetExtInstVersion(const uint32_t *spirvCode, const size_t spirvSize,
@@ -483,7 +483,8 @@ class GraphLayer : public VulkanLayerImpl {
                 if (!isGraph.has_value()) {
                     graphLog(Severity::Error) << "Failed to compile spirv code." << std::endl;
                     return VK_ERROR_UNKNOWN;
-                } else if (isGraph.value()) {
+                }
+                if (isGraph.value()) {
                     shaderModule = std::make_shared<ShaderModule>(shaderModuleCreateInfo);
                 } else {
                     graphLog(Severity::Error) << "spirv code does not contain graph." << std::endl;
@@ -1012,7 +1013,8 @@ class GraphLayer : public VulkanLayerImpl {
         if (!isGraph.has_value()) {
             graphLog(Severity::Error) << "Failed to compile spirv code." << std::endl;
             return VK_ERROR_UNKNOWN;
-        } else if (isGraph.value()) {
+        }
+        if (isGraph.value()) {
             std::shared_ptr<ShaderModule> shaderModule = std::make_shared<ShaderModule>(pCreateInfo);
             *pShaderModule = reinterpret_cast<VkShaderModule>(shaderModule.get());
             {
@@ -1020,9 +1022,8 @@ class GraphLayer : public VulkanLayerImpl {
                 deviceHandle->shaderModuleMap[*pShaderModule] = std::move(shaderModule);
             }
             return VK_SUCCESS;
-        } else {
-            return deviceHandle->loader->vkCreateShaderModule(device, pCreateInfo, pAllocator, pShaderModule);
         }
+        return deviceHandle->loader->vkCreateShaderModule(device, pCreateInfo, pAllocator, pShaderModule);
     }
 
     static void VKAPI_CALL vkDestroyShaderModule(VkDevice device, VkShaderModule shaderModule,

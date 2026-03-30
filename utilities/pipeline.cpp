@@ -485,7 +485,7 @@ std::shared_ptr<vk::raii::DeviceMemory> GraphPipeline::bindGraphPipelineSessionM
 }
 
 void *GraphPipeline::mapGraphPipelineSessionMemory(std::shared_ptr<vk::raii::DeviceMemory> deviceMemory) const {
-    if (deviceMemory == nullptr || &(*deviceMemory.get()) == nullptr || !hostMemory) {
+    if (deviceMemory == nullptr || &(*deviceMemory) == nullptr || !hostMemory) {
         return nullptr;
     }
     void *pointer = deviceMemory->mapMemory({}, VK_WHOLE_SIZE);

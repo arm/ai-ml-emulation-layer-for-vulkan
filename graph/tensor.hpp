@@ -66,7 +66,7 @@ class TensorDescriptor {
                      const VkTensorDescriptionARM &_tensorDescription);
 
     // Function is static because the created tensor takes ownership of the supplied tensor description.
-    static std::shared_ptr<Tensor> makeTensor(const std::shared_ptr<TensorDescriptor> &tensorDescriptor);
+    static std::shared_ptr<Tensor> makeTensor(const std::shared_ptr<TensorDescriptor> &_this);
     VkDeviceMemory createInitializeDeviceMemory(const void *data);
 
     VkFormat getFormat() const;

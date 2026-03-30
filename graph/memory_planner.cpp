@@ -311,7 +311,7 @@ std::vector<ComputePipelineBase *> BestFitMemoryPlanner::getTopologicalOrder() c
 
     std::vector<ComputePipelineBase *> topologicalOrder;
 
-    while (workingList.size() != 0) {
+    while (!workingList.empty()) {
         ComputePipelineBase *current = workingList.front();
         workingList.pop_front();
 

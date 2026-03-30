@@ -90,9 +90,8 @@ template <class T, class U> static T getType(const U *ptr, const VkStructureType
     auto p = findType<T>(ptr, type);
     if (p) {
         return *p;
-    } else {
-        return defaultType;
     }
+    return defaultType;
 }
 
 template <class T, class U> static const T *removeType(U *ptr, const VkStructureType type) {

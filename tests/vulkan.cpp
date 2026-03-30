@@ -121,7 +121,7 @@ std::tuple<vk::raii::Device, vk::raii::PhysicalDevice> createDevice(vk::raii::In
     for (auto physicalDevice : vk::raii::PhysicalDevices{instance}) {
         // Verify that device supports compute queues
         const auto queueCreateInfo = getQueueCreateInfo(physicalDevice, vk::QueueFlagBits::eCompute);
-        if (queueCreateInfo.size() == 0) {
+        if (queueCreateInfo.empty()) {
             continue;
         }
 #ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
@@ -158,7 +158,7 @@ vk::raii::TensorARM createTensor(vk::raii::Device &device, const std::vector<int
         {},                           // usage flags
     };
 
-    if (strides.size() > 0)
+    if (!strides.empty())
         tensorDescription.setPStrides(strides.data());
 
     const vk::TensorCreateInfoARM tensorCreateInfo{
@@ -296,7 +296,7 @@ std::shared_ptr<Device> createDevice() {
     };
 
     const auto envValidation = std::getenv("VMEL_VALIDATION");
-    if (envValidation && std::string(envValidation) != "" && std::string(envValidation) != "0") {
+    if (envValidation && !std::string(envValidation).empty() && std::string(envValidation) != "0") {
         layers.emplace_back("VK_LAYER_KHRONOS_validation");
     }
 

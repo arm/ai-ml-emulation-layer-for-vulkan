@@ -284,7 +284,7 @@ void CompilerTensorAsBuffer::emit_instruction(const Instruction &instruction) {
             std::string newExpr = varName + '[' + to_expression(indexId) + "].descriptor";
 
             set<SPIRExpression>(resultTypeId, SPIRExpression(newExpr, resultId, true));
-            break; // Done, don't emit normal code for this Op
+            // Done, don't emit normal code for this Op
         } else {
             CompilerGLSL::emit_instruction(instruction);
         }
