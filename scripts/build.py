@@ -433,7 +433,7 @@ def parse_arguments():
     )
     parser.add_argument(
         "--package-type",
-        choices=["zip", "tgz", "pip", "source-zip", "source-tgz", "release_pip"],
+        choices=["zip", "tgz", "pip", "source-zip", "source-tgz", "release-pip"],
         action="append",
         help="Create a package of a certain type",
         default=[],
