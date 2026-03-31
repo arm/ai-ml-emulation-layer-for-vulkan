@@ -247,10 +247,75 @@ by using following commands:
 
 ```shell
 adb shell settings put global enable_gpu_debug_layers 1
-adb shell settings put global gpu_debug_app ${package_name}
+adb shell settings put global gpu_debug_app $TARGET_APP_PKG
 adb shell settings put global gpu_debug_layers \
     VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation
 ```
+
+### APK Packaging
+
+If you want to package the ML Emulation Layer for Vulkan® as an Android™ APK,
+set the following variables first:
+
+```shell
+export EMULATION_LAYER_ROOT=/path/to/emulation-layer
+export NDK=/path/to/android-ndk
+export ANDROID_HOME=/path/to/android-sdk
+export TARGET_APP_PKG=com.example.targetapp
+```
+
+The Android™ packaging flow in `scripts/build.py` requires the Android™ NDK
+toolchain for the native build and Gradle 8.4 or later with `ANDROID_HOME` set
+for APK generation. The Android™ SDK installation pointed to by
+`ANDROID_HOME` should include `build-tools;34.0.0` and
+`platforms;android-34`, or other compatible versions. A typical APK packaging
+command looks like:
+
+```shell
+python3 $EMULATION_LAYER_ROOT/scripts/build.py \
+    --build-type Android \
+    --target-platform android \
+    --cmake-toolchain-for-android $NDK/build/cmake/android.toolchain.cmake \
+    --install $EMULATION_LAYER_ROOT/apk_install \
+    --package-type apk \
+    -j $(nproc)
+```
+
+This produces an Android™ project in `apk_package/` and Gradle builds the debug
+APK from there. The layer APK package name is currently
+`com.arm.ai_ml_emulation_layer_for_vulkan`.
+
+To enable the packaged layers for a target application, use Android™ GPU debug
+layer settings:
+
+```shell
+adb shell settings put global enable_gpu_debug_layers 1
+adb shell settings put global gpu_debug_app $TARGET_APP_PKG
+adb shell settings put global gpu_debug_layers \
+    VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation
+adb shell settings put global gpu_debug_layer_app \
+    com.arm.ai_ml_emulation_layer_for_vulkan
+```
+
+If you only want to enable a single layer, the command will likely look like:
+
+```shell
+adb shell settings put global gpu_debug_layers VK_LAYER_KHRONOS_validation
+```
+
+The layer package must also be visible to the debug app. On Android™ 11 and
+later, if the target app does not already query the layer package, add a
+package visibility entry such as:
+
+```xml
+<queries>
+    <package android:name="com.arm.ai_ml_emulation_layer_for_vulkan" />
+</queries>
+```
+
+Refer to the Android™ validation layer guide for background on APK packaging,
+debug layer settings, and package visibility:
+[Use Vulkan validation layers on Android](https://developer.android.com/ndk/guides/graphics/validation-layer).
 
 ## Building for Darwin (Experimental)
 
