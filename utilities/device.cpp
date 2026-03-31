@@ -157,7 +157,7 @@ vk::raii::PhysicalDevice PhysicalDevice::createPhysicalDevice(const std::vector<
     for (auto currentPhysicalDevice : enumeratePhysicalDevices()) {
         // Verify that device supports compute queues
         auto queueCreateInfo = getQueueCreateInfo(currentPhysicalDevice, queuePriorities, vk::QueueFlagBits::eCompute);
-        if (queueCreateInfo.size() == 0) {
+        if (queueCreateInfo.empty()) {
             continue;
         }
 
@@ -234,9 +234,9 @@ vk::raii::Device const &Device::operator&() const { return device; }
 
 const std::shared_ptr<PhysicalDevice> &Device::getPhysicalDevice() const { return physicalDevice; };
 
-const std::shared_ptr<vk::raii::DeviceMemory>
-Device::allocateDeviceMemory(const vk::DeviceSize size, const vk::MemoryPropertyFlags memoryPropertyFlags,
-                             const uint32_t memoryTypeBits) const {
+std::shared_ptr<vk::raii::DeviceMemory> Device::allocateDeviceMemory(const vk::DeviceSize size,
+                                                                     const vk::MemoryPropertyFlags memoryPropertyFlags,
+                                                                     const uint32_t memoryTypeBits) const {
     auto memoryTypeIndices = physicalDevice->getMemoryTypeIndices(memoryPropertyFlags, memoryTypeBits);
 
     for (auto index : memoryTypeIndices) {

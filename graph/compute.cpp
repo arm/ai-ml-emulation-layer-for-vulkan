@@ -462,7 +462,7 @@ VkPipeline ComputePipeline::createComputePipeline(const SpecConstants &_constant
         VK_SHADER_STAGE_COMPUTE_BIT,                         // stage flag bits
         shaderModule,                                        // shader module
         "main",                                              // name
-        _constants.size() > 0 ? &spec_info : nullptr,        // specialization info
+        !_constants.empty() ? &spec_info : nullptr,          // specialization info
     };
 
     const VkComputePipelineCreateInfo computePipelineCreateInfo = {
@@ -1257,13 +1257,13 @@ Gather::Gather(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoade
                       createSpirv(_pipelineCache, _indices, _output), debugName, {}) {}
 
 DescriptorMap Gather::createDescriptorMap(const std::shared_ptr<TensorDescriptor> &values,
-                                          const std::shared_ptr<TensorDescriptor> &indicies,
+                                          const std::shared_ptr<TensorDescriptor> &indices,
                                           const std::shared_ptr<TensorDescriptor> &output) const {
     // Configure descriptor map
     DescriptorMap descriptorMap = {
-        {Output, output},  // set 0
-        {Input, values},   // set 1
-        {Input, indicies}, // set 2
+        {Output, output}, // set 0
+        {Input, values},  // set 1
+        {Input, indices}, // set 2
     };
 
     return descriptorMap;
@@ -1874,14 +1874,14 @@ Scatter::Scatter(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoa
 
 DescriptorMap Scatter::createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                            const std::shared_ptr<TensorDescriptor> &values,
-                                           const std::shared_ptr<TensorDescriptor> &indicies,
+                                           const std::shared_ptr<TensorDescriptor> &indices,
                                            const std::shared_ptr<TensorDescriptor> &output) const {
     // Configure descriptor map
     DescriptorMap descriptorMap = {
-        {Output, output},  // set 0
-        {Input, input},    // set 1
-        {Input, values},   // set 2
-        {Input, indicies}, // set 3
+        {Output, output}, // set 0
+        {Input, input},   // set 1
+        {Input, values},  // set 2
+        {Input, indices}, // set 3
     };
 
     return descriptorMap;

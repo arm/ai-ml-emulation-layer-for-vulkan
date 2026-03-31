@@ -117,8 +117,8 @@ class Tensor {
     size_t size() const;
     size_t getElementOffset(size_t index) const;
     uint8_t *data() const;
-    void setData(const uint8_t *pointer, const size_t size);
-    void clear();
+    void setData(const uint8_t *pointer, const size_t size) const;
+    void clear() const;
     vk::Format getFormat() const;
     const std::vector<int64_t> &getDimensions() const;
     const vk::TensorDescriptionARM &getTensorDescription() const;

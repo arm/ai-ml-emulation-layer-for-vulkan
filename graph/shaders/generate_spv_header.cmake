@@ -17,7 +17,7 @@ file(WRITE "${ARGS_OUTPUT_FILE}" "#pragma once
 #include <string>
 #include <tuple>
 
-namespace {
+namespace mlsdk::el::compute {
 ")
 
 # Generate a C array for each SPIR-V module
@@ -40,7 +40,7 @@ foreach(INPUT_FILE ${ARGS_INPUT_FILES})
         string(APPEND HEX "0x${BYTE3}${BYTE2}${BYTE1}${BYTE0},\n")
     endforeach()
 
-    file(APPEND "${ARGS_OUTPUT_FILE}" "static constexpr uint32_t ${NAME}[] = {\n${HEX}};\n")
+    file(APPEND "${ARGS_OUTPUT_FILE}" "constexpr uint32_t ${NAME}[] = {\n${HEX}};\n")
 endforeach()
 
 # Generate lookup table
@@ -54,5 +54,6 @@ endforeach()
 
 # Write header file footer
 file(APPEND "${ARGS_OUTPUT_FILE}" "}; // precompiledSpirvModules[]
-} // namespace
+} // namespace mlsdk::el::compute
+
 ")

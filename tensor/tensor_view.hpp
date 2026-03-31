@@ -23,7 +23,7 @@ class TensorViewARM {
     void destroy(const Device &dev, const VkAllocationCallbacks *pAllocator);
     VkBuffer getDescriptorBuffer(const Device &dev) const;
     VkBuffer getTensorBuffer() const;
-    VkResult getOpaqueCaptureDescriptorDataEXT(const Device &dev, void *pData);
+    VkResult getOpaqueCaptureDescriptorDataEXT(const Device &dev, void *pData) const;
 
   private:
     TensorDescriptor *m_descriptor;

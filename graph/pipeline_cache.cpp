@@ -28,7 +28,7 @@ namespace mlsdk::el::compute {
 
 namespace {
 
-static std::string_view getGlslSource(std::string_view shaderName) {
+std::string_view getGlslSource(std::string_view shaderName) {
     if (auto it = glslMap.find(shaderName); it != glslMap.end()) {
         return it->second;
     }

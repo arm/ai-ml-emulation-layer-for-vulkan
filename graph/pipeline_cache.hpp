@@ -38,7 +38,7 @@ class PipelineCache {
     PipelineCache(const void *data, const size_t size, VkPipelineCache _pipelineCache);
     ~PipelineCache() = default;
 
-    SpirvBinary lookup(std::string_view shaderName, const KeyList &keys, const ReplaceList &reps);
+    SpirvBinary lookup(std::string_view shaderName, const KeyList &keys, const ReplaceList &repl);
     VkPipelineCache getPipelineCache() const;
 
   private:

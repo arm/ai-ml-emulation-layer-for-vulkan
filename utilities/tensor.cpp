@@ -51,14 +51,13 @@ std::vector<int64_t> Shape::createStrides(const std::vector<int64_t> &_strides) 
     if (!_strides.empty()) {
         if (_strides.size() == dimensions.size()) {
             return _strides;
-        } else {
-            throw std::runtime_error("Stride size should be equal to dimension size.");
         }
+        throw std::runtime_error("Stride size should be equal to dimension size.");
     }
     std::vector<int64_t> strides;
     strides.resize(dimensions.size());
 
-    if (strides.size() > 0) {
+    if (!strides.empty()) {
         strides.back() = getFormatSize();
         for (size_t i = strides.size() - 1; i > 0; i--) {
             strides[i - 1] = strides[i] * dimensions[i];
@@ -98,7 +97,7 @@ vk::Format Tensor::getFormat() const { return shape.getFormat(); }
 
 const std::vector<int64_t> &Tensor::getDimensions() const { return shape.getDimensions(); }
 
-void Tensor::setData(const uint8_t *_pointer, const size_t _size) {
+void Tensor::setData(const uint8_t *_pointer, const size_t _size) const {
     if (size() < _size) {
         throw std::runtime_error("Tensor data is larger than tensor size");
     }
@@ -107,7 +106,7 @@ void Tensor::setData(const uint8_t *_pointer, const size_t _size) {
     std::fill(data() + _size, data() + size(), 0);
 }
 
-void Tensor::clear() { memset(data(), 0, size()); }
+void Tensor::clear() const { memset(data(), 0, size()); }
 
 const vk::TensorDescriptionARM &Tensor::getTensorDescription() const { return tensorDescription; }
 

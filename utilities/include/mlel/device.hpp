@@ -76,9 +76,9 @@ class Device {
 
     vk::raii::Device const &operator&() const;
     const std::shared_ptr<PhysicalDevice> &getPhysicalDevice() const;
-    const std::shared_ptr<vk::raii::DeviceMemory>
-    allocateDeviceMemory(const vk::DeviceSize size, const vk::MemoryPropertyFlags memoryPropertyFlags = {},
-                         const uint32_t memoryTypeBits = 0xffffffff) const;
+    std::shared_ptr<vk::raii::DeviceMemory> allocateDeviceMemory(const vk::DeviceSize size,
+                                                                 const vk::MemoryPropertyFlags memoryPropertyFlags = {},
+                                                                 const uint32_t memoryTypeBits = 0xffffffff) const;
 
   private:
     vk::raii::Device createDevice(const std::vector<const char *> &layers, const std::vector<const char *> &extensions,

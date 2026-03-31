@@ -26,7 +26,7 @@ VkBuffer TensorViewARM::getDescriptorBuffer(const Device &dev) const {
 
 VkBuffer TensorViewARM::getTensorBuffer() const { return reinterpret_cast<TensorARM *>(m_tensor)->getTensorBuffer(); }
 
-VkResult TensorViewARM::getOpaqueCaptureDescriptorDataEXT(const Device &dev, void *pData) {
+VkResult TensorViewARM::getOpaqueCaptureDescriptorDataEXT(const Device &dev, void *pData) const {
     const VkBufferCaptureDescriptorDataInfoEXT info = {
         VK_STRUCTURE_TYPE_BUFFER_CAPTURE_DESCRIPTOR_DATA_INFO_EXT,
         nullptr,
