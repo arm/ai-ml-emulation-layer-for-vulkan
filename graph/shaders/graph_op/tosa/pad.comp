@@ -42,7 +42,7 @@ void main() {
     IN_OUT_T value;
 
     if (isPad) {
-#if (in_out_t_type == TYPE_INT32)
+#if (TYPE_IN_OUT == TYPE_INT32)
     value = IN_OUT_T(pushConstants.padConstInt);
 #else
     value = ENCODE_COMP_TO_STORAGE(pushConstants.padConst, IN_OUT_T, TYPE_IN_OUT);
