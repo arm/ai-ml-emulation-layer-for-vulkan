@@ -624,16 +624,16 @@ SpirvBinary ArithmeticRightShift::createSpirv(const std::shared_ptr<PipelineCach
 AvgPool2D::AvgPool2D(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader,
                      VkDevice _device, const std::shared_ptr<PipelineCache> &_pipelineCache,
                      const std::shared_ptr<TensorDescriptor> &_input, const std::shared_ptr<TensorDescriptor> &_output,
-                     const std::vector<uint32_t> &_kernel, const std::vector<uint32_t> &_stride,
-                     const std::vector<uint32_t> &_pad, const uint32_t _accType, const int8_t _inputZeroPoint,
+                     const std::vector<int32_t> &_kernel, const std::vector<int32_t> &_stride,
+                     const std::vector<int32_t> &_pad, const uint32_t _accType, const int8_t _inputZeroPoint,
                      const int8_t _outputZeroPoint, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output), {&pushConstant, sizeof(pushConstant)},
                       _pipelineCache, createSpirv(_pipelineCache, _output, _accType), debugName),
       pushConstant{createPushConstant(_kernel, _stride, _pad, _inputZeroPoint, _outputZeroPoint)} {}
 
-AvgPool2D::PushConstant AvgPool2D::createPushConstant(const std::vector<uint32_t> &kernel,
-                                                      const std::vector<uint32_t> &stride,
-                                                      const std::vector<uint32_t> &pad, const int8_t inputZeroPoint,
+AvgPool2D::PushConstant AvgPool2D::createPushConstant(const std::vector<int32_t> &kernel,
+                                                      const std::vector<int32_t> &stride,
+                                                      const std::vector<int32_t> &pad, const int8_t inputZeroPoint,
                                                       const int8_t outputZeroPoint) const {
     PushConstant constant = {
         {
@@ -844,17 +844,16 @@ SpirvBinary Concat::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
 Conv2D::Conv2D(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, VkDevice _device,
                const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
                const std::shared_ptr<TensorDescriptor> &_output, const std::shared_ptr<TensorDescriptor> &_weights,
-               const std::shared_ptr<TensorDescriptor> &_biases, const std::vector<uint32_t> &_pad,
-               const std::vector<uint32_t> &_stride, const std::vector<uint32_t> &_dilation,
-               const int8_t _inputZeroPoint, const int8_t _weightZeroPoint, const uint32_t _accType,
-               const std::string &debugName)
+               const std::shared_ptr<TensorDescriptor> &_biases, const std::vector<int32_t> &_pad,
+               const std::vector<int32_t> &_stride, const std::vector<int32_t> &_dilation, const int8_t _inputZeroPoint,
+               const int8_t _weightZeroPoint, const uint32_t _accType, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output, _weights, _biases),
                       {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
                       createSpirv(_pipelineCache, _input, _output, _weights, _accType), debugName),
       pushConstant{createPushConstant(_pad, _stride, _dilation, _inputZeroPoint, _weightZeroPoint)} {}
 
-Conv2D::PushConstant Conv2D::createPushConstant(const std::vector<uint32_t> &pad, const std::vector<uint32_t> &stride,
-                                                const std::vector<uint32_t> &dilation, const int8_t inputZeroPoint,
+Conv2D::PushConstant Conv2D::createPushConstant(const std::vector<int32_t> &pad, const std::vector<int32_t> &stride,
+                                                const std::vector<int32_t> &dilation, const int8_t inputZeroPoint,
                                                 const int8_t weightZeroPoint) const {
     PushConstant constant = {
         inputZeroPoint,
@@ -939,17 +938,16 @@ void Conv2D::cmdDispatch(VkCommandBuffer commandBuffer) {
 Conv3D::Conv3D(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, VkDevice _device,
                const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
                const std::shared_ptr<TensorDescriptor> &_output, const std::shared_ptr<TensorDescriptor> &_weights,
-               const std::shared_ptr<TensorDescriptor> &_biases, const std::vector<uint32_t> &_pad,
-               const std::vector<uint32_t> &_stride, const std::vector<uint32_t> &_dilation,
-               const int8_t _inputZeroPoint, const int8_t _weightZeroPoint, const uint32_t _accType,
-               const std::string &debugName)
+               const std::shared_ptr<TensorDescriptor> &_biases, const std::vector<int32_t> &_pad,
+               const std::vector<int32_t> &_stride, const std::vector<int32_t> &_dilation, const int8_t _inputZeroPoint,
+               const int8_t _weightZeroPoint, const uint32_t _accType, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output, _weights, _biases),
                       {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
                       createSpirv(_pipelineCache, _input, _output, _weights, _accType), debugName),
       pushConstant{createPushConstant(_pad, _stride, _dilation, _inputZeroPoint, _weightZeroPoint)} {}
 
-Conv3D::PushConstant Conv3D::createPushConstant(const std::vector<uint32_t> &pad, const std::vector<uint32_t> &stride,
-                                                const std::vector<uint32_t> &dilation, const int8_t inputZeroPoint,
+Conv3D::PushConstant Conv3D::createPushConstant(const std::vector<int32_t> &pad, const std::vector<int32_t> &stride,
+                                                const std::vector<int32_t> &dilation, const int8_t inputZeroPoint,
                                                 const int8_t weightZeroPoint) const {
     PushConstant constant = {
         inputZeroPoint,
@@ -1027,8 +1025,8 @@ DepthwiseConv2D::DepthwiseConv2D(const std::shared_ptr<VULKAN_HPP_NAMESPACE::det
                                  const std::shared_ptr<TensorDescriptor> &_input,
                                  const std::shared_ptr<TensorDescriptor> &_output,
                                  const std::shared_ptr<TensorDescriptor> &_weights,
-                                 const std::shared_ptr<TensorDescriptor> &_biases, const std::vector<uint32_t> &_pad,
-                                 const std::vector<uint32_t> &_stride, const std::vector<uint32_t> &_dilation,
+                                 const std::shared_ptr<TensorDescriptor> &_biases, const std::vector<int32_t> &_pad,
+                                 const std::vector<int32_t> &_stride, const std::vector<int32_t> &_dilation,
                                  const int8_t _inputZeroPoint, const int8_t _weightZeroPoint, const uint32_t _accType,
                                  const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output, _weights, _biases),
@@ -1036,9 +1034,9 @@ DepthwiseConv2D::DepthwiseConv2D(const std::shared_ptr<VULKAN_HPP_NAMESPACE::det
                       createSpirv(_pipelineCache, _input, _output, _weights, _accType), debugName),
       pushConstant{createPushConstant(_pad, _stride, _dilation, _inputZeroPoint, _weightZeroPoint)} {}
 
-DepthwiseConv2D::PushConstant DepthwiseConv2D::createPushConstant(const std::vector<uint32_t> &pad,
-                                                                  const std::vector<uint32_t> &stride,
-                                                                  const std::vector<uint32_t> &dilation,
+DepthwiseConv2D::PushConstant DepthwiseConv2D::createPushConstant(const std::vector<int32_t> &pad,
+                                                                  const std::vector<int32_t> &stride,
+                                                                  const std::vector<int32_t> &dilation,
                                                                   const int8_t inputZeroPoint,
                                                                   const int8_t weightZeroPoint) const {
     PushConstant constant = {
@@ -1349,15 +1347,15 @@ SpirvBinary Matmul::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
 MaxPool2D::MaxPool2D(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader,
                      VkDevice _device, const std::shared_ptr<PipelineCache> &_pipelineCache,
                      const std::shared_ptr<TensorDescriptor> &_input, const std::shared_ptr<TensorDescriptor> &_output,
-                     const std::vector<uint32_t> &_kernel, const std::vector<uint32_t> &_stride,
-                     const std::vector<uint32_t> &_pad, const uint32_t _nanMode, const std::string &debugName)
+                     const std::vector<int32_t> &_kernel, const std::vector<int32_t> &_stride,
+                     const std::vector<int32_t> &_pad, const uint32_t _nanMode, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output), {&pushConstant, sizeof(pushConstant)},
                       _pipelineCache, createSpirv(_pipelineCache, _output, _nanMode), debugName),
       pushConstant{createPushConstant(_kernel, _stride, _pad, _nanMode)} {}
 
-MaxPool2D::PushConstant MaxPool2D::createPushConstant(const std::vector<uint32_t> &kernel,
-                                                      const std::vector<uint32_t> &stride,
-                                                      const std::vector<uint32_t> &pad, const uint32_t nanMode) const {
+MaxPool2D::PushConstant MaxPool2D::createPushConstant(const std::vector<int32_t> &kernel,
+                                                      const std::vector<int32_t> &stride,
+                                                      const std::vector<int32_t> &pad, const uint32_t nanMode) const {
     PushConstant constant = {
         {
             kernel[0],
@@ -2443,8 +2441,8 @@ void GraphPipeline::makeArithmeticRightShift(const std::shared_ptr<TensorDescrip
 }
 
 void GraphPipeline::makeAvgPool2D(const std::shared_ptr<TensorDescriptor> &input,
-                                  const std::shared_ptr<TensorDescriptor> &output, const std::vector<uint32_t> &kernel,
-                                  const std::vector<uint32_t> &stride, const std::vector<uint32_t> &pad,
+                                  const std::shared_ptr<TensorDescriptor> &output, const std::vector<int32_t> &kernel,
+                                  const std::vector<int32_t> &stride, const std::vector<int32_t> &pad,
                                   const uint32_t accType, const int8_t inputZeroPoint, const int8_t outputZeroPoint,
                                   const std::string &debugName) {
     makePipeline<AvgPool2D>(input, output, kernel, stride, pad, accType, inputZeroPoint, outputZeroPoint, debugName);
@@ -2510,8 +2508,8 @@ void GraphPipeline::makeConcat(const std::vector<std::shared_ptr<TensorDescripto
 void GraphPipeline::makeConv2D(const std::shared_ptr<TensorDescriptor> &input,
                                const std::shared_ptr<TensorDescriptor> &output,
                                const std::shared_ptr<TensorDescriptor> &weights,
-                               const std::shared_ptr<TensorDescriptor> &biases, const std::vector<uint32_t> &pad,
-                               const std::vector<uint32_t> &stride, const std::vector<uint32_t> &dilation,
+                               const std::shared_ptr<TensorDescriptor> &biases, const std::vector<int32_t> &pad,
+                               const std::vector<int32_t> &stride, const std::vector<int32_t> &dilation,
                                const int8_t inputZeroPoint, const int8_t weightZeroPoint, const uint32_t accType,
                                const std::string &debugName) {
     makePipeline<Conv2D>(input, output, weights, biases, pad, stride, dilation, inputZeroPoint, weightZeroPoint,
@@ -2521,8 +2519,8 @@ void GraphPipeline::makeConv2D(const std::shared_ptr<TensorDescriptor> &input,
 void GraphPipeline::makeConv3D(const std::shared_ptr<TensorDescriptor> &input,
                                const std::shared_ptr<TensorDescriptor> &output,
                                const std::shared_ptr<TensorDescriptor> &weights,
-                               const std::shared_ptr<TensorDescriptor> &biases, const std::vector<uint32_t> &pad,
-                               const std::vector<uint32_t> &stride, const std::vector<uint32_t> &dilation,
+                               const std::shared_ptr<TensorDescriptor> &biases, const std::vector<int32_t> &pad,
+                               const std::vector<int32_t> &stride, const std::vector<int32_t> &dilation,
                                const int8_t inputZeroPoint, const int8_t weightZeroPoint, const uint32_t accType,
                                const std::string &debugName) {
     makePipeline<Conv3D>(input, output, weights, biases, pad, stride, dilation, inputZeroPoint, weightZeroPoint,
@@ -2537,7 +2535,7 @@ void GraphPipeline::makeCos(const std::shared_ptr<TensorDescriptor> &input1,
 void GraphPipeline::makeDepthwiseConv2D(
     const std::shared_ptr<TensorDescriptor> &input, const std::shared_ptr<TensorDescriptor> &output,
     const std::shared_ptr<TensorDescriptor> &weights, const std::shared_ptr<TensorDescriptor> &biases,
-    const std::vector<uint32_t> &pad, const std::vector<uint32_t> &stride, const std::vector<uint32_t> &dilation,
+    const std::vector<int32_t> &pad, const std::vector<int32_t> &stride, const std::vector<int32_t> &dilation,
     const int8_t inputZeroPoint, const int8_t weightZeroPoint, const uint32_t accType, const std::string &debugName) {
     makePipeline<DepthwiseConv2D>(input, output, weights, biases, pad, stride, dilation, inputZeroPoint,
                                   weightZeroPoint, accType, debugName);
@@ -2655,8 +2653,8 @@ void GraphPipeline::makeMatmul(const std::shared_ptr<TensorDescriptor> &input1,
 }
 
 void GraphPipeline::makeMaxPool2D(const std::shared_ptr<TensorDescriptor> &input,
-                                  const std::shared_ptr<TensorDescriptor> &output, const std::vector<uint32_t> &kernel,
-                                  const std::vector<uint32_t> &stride, const std::vector<uint32_t> &pad,
+                                  const std::shared_ptr<TensorDescriptor> &output, const std::vector<int32_t> &kernel,
+                                  const std::vector<int32_t> &stride, const std::vector<int32_t> &pad,
                                   const uint32_t nanMode, const std::string &debugName) {
     makePipeline<MaxPool2D>(input, output, kernel, stride, pad, nanMode, debugName);
 }
