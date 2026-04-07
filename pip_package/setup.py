@@ -21,10 +21,10 @@ class BDistWheel(bdist_wheel):
             platformName = "win_amd64"
         elif system == "Linux":
             if machine == "aarch64":
-                platformName = "manyLinux2014_aarch64"
+                platformName = "manylinux2014_aarch64"
             else:
                 assert machine == "x86_64"
-                platformName = "manyLinux2014_x86_64"
+                platformName = "manylinux2014_x86_64"
         elif system == "Darwin":
             assert machine == "arm64"
             platformName = "macosx_11_0_arm64"
