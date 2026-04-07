@@ -196,7 +196,7 @@ void CompilerTensorAsBuffer::emit_instruction(const Instruction &instruction) {
     // Whenever emit_instruction is called, this overrides the parent definition.
     // If the instruction concerns a tensor operator, custom output is produced.
     // Otherwise, the parent function is called.
-    auto ops = stream(instruction);
+    const auto *ops = stream(instruction);
     auto opcode = static_cast<spv::Op>(instruction.op);
     uint32_t length = instruction.length;
 

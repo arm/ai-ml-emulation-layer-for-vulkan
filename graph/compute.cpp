@@ -22,7 +22,7 @@ namespace mlsdk::el::compute {
 
 namespace {
 void makeAndConnectVirtualTensor(const std::shared_ptr<TensorDescriptor> &tensor, ComputePipelineBase *descendant) {
-    auto parent = tensor->getPipeline();
+    auto *parent = tensor->getPipeline();
     auto virtualTensor = std::make_shared<VirtualTensor>(tensor, parent, descendant);
 
     if (parent != nullptr) {
@@ -143,7 +143,7 @@ ComputePipelineLayout::ComputePipelineLayout(
       descriptorSetLayouts{createDescriptorSetLayouts()}, pipelineLayout{createPipelineLayout()} {}
 
 ComputePipelineLayout::~ComputePipelineLayout() {
-    for (auto descriptorSetLayout : descriptorSetLayouts) {
+    for (auto *descriptorSetLayout : descriptorSetLayouts) {
         loader->vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
     }
 
@@ -170,7 +170,7 @@ void ComputePipelineLayout::cmdBindDescriptorSets(VkCommandBuffer commandBuffer,
     for (uint32_t set = 0; set < descriptorMap.size(); set++) {
         const auto &descriptorSet = descriptorSetMap.at({pipelineLayout, set});
 
-        const auto vkDescriptorSet = descriptorSet->getVkDescriptorSet();
+        auto *const vkDescriptorSet = descriptorSet->getVkDescriptorSet();
         loader->vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, set, 1,
                                         &vkDescriptorSet, 0, nullptr);
     }
@@ -314,7 +314,7 @@ void ComputePipelineLayout::makeDescriptorSets(ComputeDescriptorSetMap &mapping,
 
         // Compare if tensor descriptor from descriptor map and argument are matching
         if (auto it = filter.find(tensorDescriptor); it != filter.end()) {
-            auto vkDescriptorPool = createDescriptorPool();
+            auto *vkDescriptorPool = createDescriptorPool();
             mapping[{pipelineLayout, set}] = std::make_shared<ComputeDescriptorSet>(
                 loader, device, vkDescriptorPool, createDescriptorSet(vkDescriptorPool, set), it->second);
         }
@@ -2292,7 +2292,7 @@ void GraphPipeline::makeConstTensor(const uint32_t id, const VkTensorDescription
                                     const void *data) {
     const auto tensorDescriptor = std::make_shared<TensorDescriptor>(loader, physicalDevice, device, tensorDescription);
     auto tensor = TensorDescriptor::makeTensor(tensorDescriptor);
-    const auto deviceMemory = tensorDescriptor->createInitializeDeviceMemory(data);
+    auto *const deviceMemory = tensorDescriptor->createInitializeDeviceMemory(data);
 
     (void)tensor->bindTensorMemory(deviceMemory, 0);
     constantsDeviceMemory.push_back(deviceMemory);
@@ -2308,7 +2308,7 @@ std::shared_ptr<TensorDescriptor> GraphPipeline::makeConstCompositeTensor(const 
                                                                           const void *data) {
     auto tensorDescriptor = std::make_shared<TensorDescriptor>(loader, physicalDevice, device, format, dimensions);
     auto tensor = TensorDescriptor::makeTensor(tensorDescriptor);
-    const auto deviceMemory = tensorDescriptor->createInitializeDeviceMemory(data);
+    auto *const deviceMemory = tensorDescriptor->createInitializeDeviceMemory(data);
 
     (void)tensor->bindTensorMemory(deviceMemory, 0);
     constantsDeviceMemory.push_back(deviceMemory);

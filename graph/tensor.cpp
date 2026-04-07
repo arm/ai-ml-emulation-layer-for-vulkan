@@ -81,8 +81,8 @@ TensorDescriptor::TensorDescriptor(const std::shared_ptr<VULKAN_HPP_NAMESPACE::d
 
 std::shared_ptr<Tensor> TensorDescriptor::makeTensor(const std::shared_ptr<TensorDescriptor> &_this) {
     const auto tensorDescription = _this->getTensorDescription();
-    auto tensorARM = _this->createTensorARM(tensorDescription);
-    auto tensorViewARM = _this->createTensorViewARM(tensorARM, _this->format);
+    auto *tensorARM = _this->createTensorARM(tensorDescription);
+    auto *tensorViewARM = _this->createTensorViewARM(tensorARM, _this->format);
 
     auto tensor = std::make_shared<Tensor>(_this->loader, _this->device, _this, tensorARM, tensorViewARM);
 
@@ -97,7 +97,7 @@ VkDeviceMemory TensorDescriptor::createInitializeDeviceMemory(const void *data) 
     }
 
     const auto requirements = getMemoryRequirements();
-    auto deviceMemory = allocateDeviceMemory(requirements.size, requirements.memoryTypeBits);
+    auto *deviceMemory = allocateDeviceMemory(requirements.size, requirements.memoryTypeBits);
 
     void *dst;
     auto ret = loader->vkMapMemory(device, deviceMemory, 0, VK_WHOLE_SIZE, {}, &dst);
@@ -342,7 +342,7 @@ Log &operator<<(Log &os, const TensorDescriptor &tensor) {
 
 VirtualTensor::VirtualTensor(const std::shared_ptr<TensorDescriptor> &_tensor, ComputePipelineBase *_parent,
                              ComputePipelineBase *_descendant)
-    : tensor{_tensor}, parent{_parent}, descendant{_descendant}, visited{false} {
+    : tensor{_tensor}, parent{_parent}, descendant{_descendant} {
     tensor->incrementReferenceCounter();
 }
 

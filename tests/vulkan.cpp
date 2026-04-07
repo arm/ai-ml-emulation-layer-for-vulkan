@@ -81,7 +81,7 @@ bool hasExtensionProperties(const vk::raii::PhysicalDevice &physicalDevice,
                             const std::vector<const char *> &extensions) {
     const auto extensionProperties = physicalDevice.enumerateDeviceExtensionProperties();
 
-    for (auto &extension : extensions) {
+    for (const auto &extension : extensions) {
         auto it = std::find_if(extensionProperties.begin(), extensionProperties.end(), [&](const auto &property) {
             return std::strcmp(property.extensionName, extension) == 0;
         });
@@ -101,15 +101,16 @@ std::vector<vk::DeviceQueueCreateInfo> getQueueCreateInfo(const vk::raii::Physic
     const auto queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
 
     for (uint32_t i = 0; i < queueFamilyProperties.size(); i++) {
-        auto &property = queueFamilyProperties[i];
+        const auto &property = queueFamilyProperties[i];
 
-        if (property.queueFlags & flags)
+        if (property.queueFlags & flags) {
             queueCreateInfo.push_back(vk::DeviceQueueCreateInfo{
                 {},                     // flags
                 i,                      // queue family index
                 property.queueCount,    // queue count
                 queuePriorities.data(), // queue priorities
             });
+        }
     }
 
     return queueCreateInfo;
@@ -118,7 +119,7 @@ std::vector<vk::DeviceQueueCreateInfo> getQueueCreateInfo(const vk::raii::Physic
 std::tuple<vk::raii::Device, vk::raii::PhysicalDevice> createDevice(vk::raii::Instance &instance,
                                                                     std::vector<const char *> enabledLayers = {},
                                                                     std::vector<const char *> enabledExtensions = {}) {
-    for (auto physicalDevice : vk::raii::PhysicalDevices{instance}) {
+    for (const auto &physicalDevice : vk::raii::PhysicalDevices{instance}) {
         // Verify that device supports compute queues
         const auto queueCreateInfo = getQueueCreateInfo(physicalDevice, vk::QueueFlagBits::eCompute);
         if (queueCreateInfo.empty()) {
@@ -158,8 +159,9 @@ vk::raii::TensorARM createTensor(vk::raii::Device &device, const std::vector<int
         {},                           // usage flags
     };
 
-    if (!strides.empty())
+    if (!strides.empty()) {
         tensorDescription.setPStrides(strides.data());
+    }
 
     const vk::TensorCreateInfoARM tensorCreateInfo{
         {},                          // flags
@@ -295,7 +297,7 @@ std::shared_ptr<Device> createDevice() {
         VK_ARM_TENSORS_EXTENSION_NAME,
     };
 
-    const auto envValidation = std::getenv("VMEL_VALIDATION");
+    auto *const envValidation = std::getenv("VMEL_VALIDATION");
     if (envValidation && !std::string(envValidation).empty() && std::string(envValidation) != "0") {
         layers.emplace_back("VK_LAYER_KHRONOS_validation");
     }
@@ -326,7 +328,7 @@ TEST_F(MLEmulationLayerForVulkan, EnumerateLayers) {
 
     const auto layerProperties = ctx.enumerateInstanceLayerProperties();
 
-    for (auto &property : layerProperties) {
+    for (const auto &property : layerProperties) {
         std::cout << "name=" << property.layerName << ", description=" << property.description << std::endl;
     }
 }
@@ -336,7 +338,7 @@ TEST_F(MLEmulationLayerForVulkan, EnumerateInstanceExtensions) {
 
     const auto extensionProperties = ctx.enumerateInstanceExtensionProperties();
 
-    for (auto &property : extensionProperties) {
+    for (const auto &property : extensionProperties) {
         std::cout << "name=" << property.extensionName << std::endl;
     }
 }
@@ -1523,8 +1525,9 @@ TEST_F(MLEmulationLayerForVulkan, CopyLargeNonPackedTensor) {
     auto begin = std::chrono::steady_clock::now();
 
     queue.submit({1, &submitInfo}, *fence);
-    while (vk::Result::eTimeout == (&(*device)).waitForFences({*fence}, vk::True, uint64_t(-1)))
-        ;
+    while (vk::Result::eTimeout == (&(*device)).waitForFences({*fence}, vk::True, uint64_t(-1))) {
+        // Wait again
+    }
 
     auto end = std::chrono::steady_clock::now();
 
@@ -1798,7 +1801,7 @@ TEST_F(MLEmulationLayerForVulkan, MultiSessionsOneAtTheTime) {
     auto graphPipeline2 = std::make_shared<GraphPipeline>(device, descriptorMapRef, graphPipeline->getPipelineLayout(),
                                                           GraphConstants{}, spirv);
 
-    for (auto pipeline : {graphPipeline, graphPipeline2}) {
+    for (const auto &pipeline : {graphPipeline, graphPipeline2}) {
         for (const auto &descriptorMap : descriptorMaps) {
             // Clear output tensor and any stored sessions
             outputTensor->clear();
@@ -1851,7 +1854,7 @@ TEST_F(MLEmulationLayerForVulkan, PipelineCreationFeedback) {
     std::vector<vk::DataGraphPipelineResourceInfoARM> graphPipelineResourceInfos;
     uint32_t set = 0;
 
-    for (auto &bindingMap : descriptorMap) {
+    for (const auto &bindingMap : descriptorMap) {
         for (const auto &[binding, tensors] : bindingMap) {
             for (uint32_t i = 0; i < tensors.size(); i++) {
                 const auto &tensor = tensors[i];
@@ -1877,9 +1880,10 @@ TEST_F(MLEmulationLayerForVulkan, PipelineCreationFeedback) {
 
     std::vector<vk::raii::DescriptorSetLayout> descriptorSetLayouts;
 
-    for (auto &bindingMap : descriptorMap) {
+    for (const auto &bindingMap : descriptorMap) {
         std::vector<vk::DescriptorSetLayoutBinding> descriptorSetLayoutBindings;
 
+        descriptorSetLayoutBindings.reserve(bindingMap.size());
         for (const auto &[binding, tensors] : bindingMap) {
             descriptorSetLayoutBindings.push_back(vk::DescriptorSetLayoutBinding{
                 binding,                        // binding

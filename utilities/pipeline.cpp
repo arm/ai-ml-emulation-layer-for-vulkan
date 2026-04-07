@@ -139,8 +139,9 @@ void PipelineBase::submitWork(vk::raii::CommandBuffer &commandBuffer) const {
     };
 
     queue.submit({1, &submitInfo}, *fence);
-    while (vk::Result::eTimeout == (&(*device)).waitForFences({*fence}, vk::True, uint64_t(-1)))
-        ;
+    while (vk::Result::eTimeout == (&(*device)).waitForFences({*fence}, vk::True, uint64_t(-1))) {
+        // Wait again
+    }
 }
 
 uint32_t PipelineBase::getDescriptorCount() const {
@@ -177,9 +178,10 @@ vk::raii::DescriptorPool PipelineBase::createDescriptorPool() const {
 std::vector<vk::raii::DescriptorSetLayout> PipelineBase::createDescriptorSetLayouts() const {
     std::vector<vk::raii::DescriptorSetLayout> descriptorSetLayouts;
 
-    for (auto &bindingMap : descriptorMap) {
+    for (const auto &bindingMap : descriptorMap) {
         std::vector<vk::DescriptorSetLayoutBinding> descriptorSetLayoutBindings;
 
+        descriptorSetLayoutBindings.reserve(bindingMap.size());
         for (const auto &[binding, tensors] : bindingMap) {
             descriptorSetLayoutBindings.push_back(vk::DescriptorSetLayoutBinding{
                 binding,                        // binding
@@ -361,7 +363,7 @@ void GraphPipeline::printGraphPipelineSessionMemory() const {
             continue;
         }
         std::cout << "Session: " << index++ << " at address: " << session.pointer << '\n';
-        const auto p = static_cast<const uint8_t *>(session.pointer);
+        const auto *const p = static_cast<const uint8_t *>(session.pointer);
         std::ios_base::fmtflags coutFlags(std::cout.flags());
         std::cout << std::hex << std::setfill('0');
 
@@ -385,7 +387,7 @@ vk::raii::Pipeline GraphPipeline::createPipeline() const {
     std::vector<vk::DataGraphPipelineResourceInfoARM> graphPipelineResourceInfos;
     uint32_t set = 0;
 
-    for (auto &bindingMap : descriptorMap) {
+    for (const auto &bindingMap : descriptorMap) {
         for (const auto &[binding, tensors] : bindingMap) {
             for (uint32_t i = 0; i < tensors.size(); i++) {
                 const auto &tensor = tensors[i];

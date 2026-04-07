@@ -79,7 +79,7 @@ class DataGraphDescriptorSet : public DescriptorSet {
 
         switch (set.descriptorType) {
         case VK_DESCRIPTOR_TYPE_TENSOR_ARM: {
-            auto tensorInfo =
+            const auto *tensorInfo =
                 findType<VkWriteDescriptorSetTensorARM>(set.pNext, VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_TENSOR_ARM);
             assert(tensorInfo);
             assert(tensorInfo->tensorViewCount == set.descriptorCount);
@@ -143,7 +143,7 @@ class DataGraphPipelineSessionARM : public Loader {
 
   private:
     std::shared_ptr<MemoryPlanner> createMemoryPlanner(const std::shared_ptr<GraphPipeline> &graphPipeline) const {
-        const auto envMemoryPlanner = std::getenv("VMEL_MEMORY_PLANNER");
+        auto *const envMemoryPlanner = std::getenv("VMEL_MEMORY_PLANNER");
 
         if (envMemoryPlanner && std::string(envMemoryPlanner) == "Linear") {
             graphLog(Severity::Info) << "Using linear memory planner" << std::endl;
@@ -227,8 +227,9 @@ std::optional<std::string> tryGetExtInstVersion(const uint32_t *spirvCode, const
     auto ir = spvtools::BuildModule(SPV_ENV_UNIVERSAL_1_6, sprivMessageConsumer, spirvCode, spirvSize);
     for (const auto &inst : ir->module()->ext_inst_imports()) {
         const auto name = inst.GetInOperand(0).AsString();
-        if (std::regex_search(name, pattern))
+        if (std::regex_search(name, pattern)) {
             return name;
+        }
     }
     return std::nullopt;
 }
@@ -469,7 +470,7 @@ class GraphLayer : public VulkanLayerImpl {
             }
             std::shared_ptr<ShaderModule> shaderModule;
             if (dataGraphPipelineShaderModuleCreateInfo->module == VK_NULL_HANDLE) {
-                auto shaderModuleCreateInfo =
+                const auto *shaderModuleCreateInfo =
                     findType<VkShaderModuleCreateInfo>(createInfo.pNext, VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);
                 if (shaderModuleCreateInfo == nullptr) {
                     graphLog(Severity::Error) << "Missing both shader handle and shader create info" << std::endl;
@@ -560,7 +561,7 @@ class GraphLayer : public VulkanLayerImpl {
         auto handle = VulkanLayerImpl::getHandle(physicalDevice);
         handle->loader->vkGetPhysicalDeviceFeatures2(physicalDevice, pFeatures);
 
-        auto pDataGraphFeatures =
+        auto *pDataGraphFeatures =
             const_cast<VkPhysicalDeviceDataGraphFeaturesARM *>(findType<VkPhysicalDeviceDataGraphFeaturesARM>(
                 pFeatures->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM));
         if (pDataGraphFeatures) {
@@ -568,9 +569,10 @@ class GraphLayer : public VulkanLayerImpl {
             pDataGraphFeatures->dataGraphUpdateAfterBind = VK_TRUE;
             pDataGraphFeatures->dataGraphShaderModule = VK_TRUE;
         }
-        auto pPipelineCreationCacheControlFeatures = const_cast<VkPhysicalDevicePipelineCreationCacheControlFeatures *>(
-            findType<VkPhysicalDevicePipelineCreationCacheControlFeatures>(
-                pFeatures->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_CREATION_CACHE_CONTROL_FEATURES));
+        auto *pPipelineCreationCacheControlFeatures =
+            const_cast<VkPhysicalDevicePipelineCreationCacheControlFeatures *>(
+                findType<VkPhysicalDevicePipelineCreationCacheControlFeatures>(
+                    pFeatures->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_CREATION_CACHE_CONTROL_FEATURES));
         // Pipeline caching is currently not supported
         if (pPipelineCreationCacheControlFeatures) {
             pPipelineCreationCacheControlFeatures->pipelineCreationCacheControl = VK_FALSE;
@@ -622,7 +624,7 @@ class GraphLayer : public VulkanLayerImpl {
     static VkResult VKAPI_CALL vkGetDataGraphPipelineSessionBindPointRequirementsARM(
         VkDevice, const VkDataGraphPipelineSessionBindPointRequirementsInfoARM *info,
         uint32_t *bindPointRequirementCount, VkDataGraphPipelineSessionBindPointRequirementARM *bindPointRequirements) {
-        const auto session = reinterpret_cast<DataGraphPipelineSessionARM *>(info->session);
+        auto *const session = reinterpret_cast<DataGraphPipelineSessionARM *>(info->session);
 
         *bindPointRequirementCount = 0;
 
@@ -647,7 +649,7 @@ class GraphLayer : public VulkanLayerImpl {
     static void VKAPI_CALL vkGetDataGraphPipelineSessionMemoryRequirementsARM(
         VkDevice, const VkDataGraphPipelineSessionMemoryRequirementsInfoARM *info,
         VkMemoryRequirements2 *requirements) {
-        const auto session = reinterpret_cast<DataGraphPipelineSessionARM *>(info->session);
+        auto *const session = reinterpret_cast<DataGraphPipelineSessionARM *>(info->session);
 
         // Calculate how much memory pipelines hidden layers require
         requirements->memoryRequirements = session->memoryPlanner->getGraphPipelineSessionMemoryRequirements();
@@ -655,7 +657,7 @@ class GraphLayer : public VulkanLayerImpl {
 
     static VkResult VKAPI_CALL vkBindDataGraphPipelineSessionMemoryARM(
         VkDevice, uint32_t bindInfoCount, const VkBindDataGraphPipelineSessionMemoryInfoARM *bindInfos) {
-        const auto session = reinterpret_cast<DataGraphPipelineSessionARM *>(bindInfos->session);
+        auto *const session = reinterpret_cast<DataGraphPipelineSessionARM *>(bindInfos->session);
 
         // Bind session memory to hidden layers
         for (uint32_t i = 0; i < bindInfoCount; i++) {
@@ -908,9 +910,9 @@ class GraphLayer : public VulkanLayerImpl {
     static void VKAPI_CALL vkCmdDispatchDataGraphARM(VkCommandBuffer commandBuffer,
                                                      VkDataGraphPipelineSessionARM _session) {
         auto handle = VulkanLayerImpl::getHandle(commandBuffer);
-        auto session = reinterpret_cast<DataGraphPipelineSessionARM *>(_session);
+        auto *session = reinterpret_cast<DataGraphPipelineSessionARM *>(_session);
         auto pipeline = session->pipeline;
-        auto vkPipeline = reinterpret_cast<VkPipeline>(pipeline.get());
+        auto *vkPipeline = reinterpret_cast<VkPipeline>(pipeline.get());
         auto graphPipeline = pipeline->graphPipeline;
         auto deviceHandle = VulkanLayerImpl::getHandle(handle->device->device);
 
@@ -1045,7 +1047,7 @@ class GraphLayer : public VulkanLayerImpl {
                                                  const VkDependencyInfo *pDependencyInfo) {
         auto handle = VulkanLayerImpl::getHandle(commandBuffer);
 
-        auto tensorDependencyInfo =
+        const auto *tensorDependencyInfo =
             findType<VkTensorDependencyInfoARM>(pDependencyInfo->pNext, VK_STRUCTURE_TYPE_TENSOR_DEPENDENCY_INFO_ARM);
         if (tensorDependencyInfo == nullptr && pDependencyInfo->pMemoryBarriers == nullptr &&
             pDependencyInfo->pImageMemoryBarriers == nullptr && pDependencyInfo->pBufferMemoryBarriers == nullptr) {
@@ -1150,14 +1152,14 @@ class GraphLayer : public VulkanLayerImpl {
 
         switch (pNameInfo->objectType) {
         case VK_OBJECT_TYPE_PIPELINE: {
-            auto pipeline = reinterpret_cast<VkPipeline>(pNameInfo->objectHandle);
+            auto *pipeline = reinterpret_cast<VkPipeline>(pNameInfo->objectHandle);
             scopedMutex l(globalMutex);
             if (deviceHandle->dataGraphPipelineMap.find(pipeline) != deviceHandle->dataGraphPipelineMap.end()) {
                 return VK_SUCCESS;
             }
         } break;
         case VK_OBJECT_TYPE_SHADER_MODULE: {
-            auto shaderModule = reinterpret_cast<VkShaderModule>(pNameInfo->objectHandle);
+            auto *shaderModule = reinterpret_cast<VkShaderModule>(pNameInfo->objectHandle);
             scopedMutex l(globalMutex);
             if (deviceHandle->shaderModuleMap.find(shaderModule) != deviceHandle->shaderModuleMap.end()) {
                 return VK_SUCCESS;

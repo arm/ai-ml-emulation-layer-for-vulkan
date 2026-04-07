@@ -86,7 +86,7 @@ template <std::size_t EXPONENT, std::size_t MANTISSA> class FloatingPoint {
     template <std::size_t, std::size_t> friend class FloatingPoint;
 
     explicit FloatingPoint(const double v = 0) {
-        auto fp = reinterpret_cast<const float64 *>(&v);
+        const auto *fp = reinterpret_cast<const float64 *>(&v);
         const auto exponent64 = fp->exponent();
 
         // Set sign bit

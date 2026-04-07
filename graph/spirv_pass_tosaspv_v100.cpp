@@ -42,11 +42,11 @@ void GraphPassTosaSpv100::handleGraph(const Graph *graph) {
         const auto &importInstr = get_def_use_mgr()->GetDef(resultId.AsId());
         const auto &importName = importInstr->GetInOperand(0).AsString();
 
-        if (importName == tosaSpv100)
+        if (importName == tosaSpv100) {
             handleTosaInst(&*opExtInst);
-        else if (importName == motionEngine100)
+        } else if (importName == motionEngine100) {
             handleMotionEngineInst(&*opExtInst);
-        else {
+        } else {
             throw std::runtime_error(std::string("Unsupported extension ") + importName);
         }
     }
@@ -755,7 +755,7 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
                 throw std::runtime_error("Unsupported BF16 PAD constant encoding");
             }
 
-            const uint16_t bf16 = uint16_t(floatConstant->words()[0]);
+            const auto bf16 = uint16_t(floatConstant->words()[0]);
             const uint32_t fp32Bits = uint32_t(bf16) << 16;
             float fp32Value = 0.0f;
             std::memcpy(&fp32Value, &fp32Bits, sizeof(fp32Bits));
@@ -766,7 +766,7 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
                 throw std::runtime_error("Unsupported FLOAT8E5M2 PAD constant encoding");
             }
 
-            const uint8_t f8 = uint8_t(floatConstant->words()[0]);
+            const auto f8 = uint8_t(floatConstant->words()[0]);
             const auto &fp = reinterpret_cast<const float8_e5m2 &>(f8);
             padConst = real_t(fp);
         } else if (output->getFormat() == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM) {
@@ -775,7 +775,7 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
                 throw std::runtime_error("Unsupported FLOAT8E4M3 PAD constant encoding");
             }
 
-            const uint8_t f8 = uint8_t(floatConstant->words()[0]);
+            const auto f8 = uint8_t(floatConstant->words()[0]);
             const auto &fp = reinterpret_cast<const float8_e4m3 &>(f8);
             padConst = real_t(fp);
         } else {

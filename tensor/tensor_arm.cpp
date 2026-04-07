@@ -49,9 +49,10 @@ VkBufferUsageFlags TensorARM::TensorInfo::convertToBufferUsageFlags(VkTensorUsag
 TensorARM::TensorInfo::TensorInfo(const VkTensorCreateInfoARM &createInfo) {
     const VkTensorDescriptionARM &desc = *createInfo.pDescription;
     format = desc.format;
-    if (desc.dimensionCount <= 0 || desc.dimensionCount > TENSOR_MAX_DIMENSIONS)
+    if (desc.dimensionCount <= 0 || desc.dimensionCount > TENSOR_MAX_DIMENSIONS) {
         throw std::runtime_error(std::string("Tensor dimension count not supported: ") +
                                  std::to_string(desc.dimensionCount));
+    }
     isOptimalTilingAliasing =
         (desc.usage & VK_TENSOR_USAGE_IMAGE_ALIASING_BIT_ARM) && desc.tiling == VK_TENSOR_TILING_OPTIMAL_ARM;
 
@@ -77,7 +78,7 @@ TensorARM::TensorInfo::TensorInfo(const VkTensorCreateInfoARM &createInfo) {
 VkResult TensorARM::create(const Device &dev, const VkTensorCreateInfoARM &createInfo,
                            const VkAllocationCallbacks *allocator) {
     m_info = TensorInfo(createInfo);
-    auto pCaptureDescriptorInfo = findType<VkOpaqueCaptureDescriptorDataCreateInfoEXT>(
+    const auto *pCaptureDescriptorInfo = findType<VkOpaqueCaptureDescriptorDataCreateInfoEXT>(
         createInfo.pNext, VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT);
     const VkBufferCreateInfo bufferInfo = {
         VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, // type

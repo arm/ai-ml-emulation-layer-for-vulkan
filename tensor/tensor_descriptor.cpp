@@ -12,7 +12,7 @@ VkResult TensorDescriptor::create(const Device &dev, const VkTensorViewCreateInf
                                   const VkAllocationCallbacks *allocator) {
     VkResult result;
     // create buffer
-    auto pCaptureDescriptorInfo = findType<VkOpaqueCaptureDescriptorDataCreateInfoEXT>(
+    const auto *pCaptureDescriptorInfo = findType<VkOpaqueCaptureDescriptorDataCreateInfoEXT>(
         createInfo->pNext, VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT);
     VkBufferCreateFlags flags = (createInfo->flags & VK_TENSOR_VIEW_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_ARM)
                                     ? VK_BUFFER_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT
@@ -54,7 +54,7 @@ VkResult TensorDescriptor::create(const Device &dev, const VkTensorViewCreateInf
 }
 
 VkBuffer TensorDescriptor::getTensorDescriptorBuffer(const Device &dev, VkTensorARM tensorHandle) {
-    auto tensor = reinterpret_cast<TensorARM *>(tensorHandle);
+    auto *tensor = reinterpret_cast<TensorARM *>(tensorHandle);
     const auto info = tensor->getTensorInfo();
 
     DescriptorBuffer *descriptor;
