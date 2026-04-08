@@ -626,24 +626,41 @@ class GraphLayer : public VulkanLayerImpl {
         uint32_t *bindPointRequirementCount, VkDataGraphPipelineSessionBindPointRequirementARM *bindPointRequirements) {
         auto *const session = reinterpret_cast<DataGraphPipelineSessionARM *>(info->session);
 
-        *bindPointRequirementCount = 0;
+        const auto needsTransient = session->memoryPlanner->getGraphPipelineSessionMemoryRequirements().size > 0;
 
-        // Calculate how much memory pipelines hidden layers require
-        const auto memoryRequirements = session->memoryPlanner->getGraphPipelineSessionMemoryRequirements();
-        if (memoryRequirements.size > 0) {
-            (*bindPointRequirementCount)++;
-            if (bindPointRequirements != nullptr) {
-                bindPointRequirements[0] = VkDataGraphPipelineSessionBindPointRequirementARM{
-                    VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENT_ARM, // type
-                    nullptr,                                                                  // next
-                    VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM,                  // bind point
-                    VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM,                // bind point type
-                    1,                                                                        // number of resources
-                };
-            }
+        uint32_t requiredCount = 0;
+        if (needsTransient) {
+            ++requiredCount;
         }
 
-        return VK_SUCCESS;
+        if (bindPointRequirements == nullptr) {
+            *bindPointRequirementCount = requiredCount;
+            return VK_SUCCESS;
+        }
+
+        const auto capacity = *bindPointRequirementCount;
+        uint32_t written = 0;
+
+        auto writeRequirement = [&](VkDataGraphPipelineSessionBindPointARM bindPoint) {
+            if (written < capacity) {
+                bindPointRequirements[written] = VkDataGraphPipelineSessionBindPointRequirementARM{
+                    VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENT_ARM,
+                    nullptr,
+                    bindPoint,
+                    VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM,
+                    1,
+                };
+            }
+            ++written;
+        };
+
+        if (needsTransient) {
+            writeRequirement(VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM);
+        }
+
+        *bindPointRequirementCount = written;
+
+        return (capacity < requiredCount) ? VK_INCOMPLETE : VK_SUCCESS;
     }
 
     static void VKAPI_CALL vkGetDataGraphPipelineSessionMemoryRequirementsARM(
@@ -740,36 +757,42 @@ class GraphLayer : public VulkanLayerImpl {
             return VK_ERROR_UNKNOWN;
         }
 
-        if (!pQueueFamilyDataGraphProperties) {
-            *pQueueFamilyDataGraphPropertyCount = 1;
+        constexpr uint32_t propertyCount = 1;
+
+        if (pQueueFamilyDataGraphProperties == nullptr) {
+            *pQueueFamilyDataGraphPropertyCount = propertyCount;
             return VK_SUCCESS;
         }
 
-        if (*pQueueFamilyDataGraphPropertyCount == 0) {
-            return VK_INCOMPLETE;
-        }
+        const auto capacity = *pQueueFamilyDataGraphPropertyCount;
+        const uint32_t toWrite = std::min(capacity, propertyCount);
 
-        VkPhysicalDeviceDataGraphProcessingEngineARM processingEngine = {
+        const VkPhysicalDeviceDataGraphProcessingEngineARM processingEngine = {
             VK_PHYSICAL_DEVICE_DATA_GRAPH_PROCESSING_ENGINE_TYPE_DEFAULT_ARM,
             VK_FALSE,
         };
 
-        VkPhysicalDeviceDataGraphOperationSupportARM operationSupport = {
+        const VkPhysicalDeviceDataGraphOperationSupportARM operationSupportTOSA = {
             VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_SPIRV_EXTENDED_INSTRUCTION_SET_ARM,
             "TOSA.001000.1",
             {},
         };
 
-        *pQueueFamilyDataGraphProperties = {
-            VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_PROPERTIES_ARM,
-            nullptr,
-            processingEngine,
-            operationSupport,
+        const VkQueueFamilyDataGraphPropertiesARM availableProperties[propertyCount] = {
+            {
+                VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_PROPERTIES_ARM,
+                nullptr,
+                processingEngine,
+                operationSupportTOSA,
+            },
         };
 
-        *pQueueFamilyDataGraphPropertyCount = 1;
+        for (uint32_t i = 0; i < toWrite; ++i) {
+            pQueueFamilyDataGraphProperties[i] = availableProperties[i];
+        }
+        *pQueueFamilyDataGraphPropertyCount = toWrite;
 
-        return VK_SUCCESS;
+        return (toWrite < propertyCount) ? VK_INCOMPLETE : VK_SUCCESS;
     }
 
     /**************************************************************************

@@ -411,7 +411,7 @@ ComputePipeline::ComputePipeline(const std::shared_ptr<VULKAN_HPP_NAMESPACE::det
       loader{_loader}, device{_device}, pipelineCache{_pipelineCache},
       shaderModule{createShaderModule(_spirv)}, pipeline{createComputePipeline(_constants)} {
     connectPipelines();
-    setDebugUtilsObjectName(loader, device, VK_OBJECT_TYPE_PIPELINE, (uint64_t)pipeline, debugName);
+    setDebugUtilsObjectName(loader, device, VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(pipeline), debugName);
 }
 
 ComputePipeline::~ComputePipeline() {

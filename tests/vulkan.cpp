@@ -1996,6 +1996,126 @@ TEST_F(MLEmulationLayerForVulkan, GetQueueFamilyDataGraphPropertiesARM) {
     ASSERT_FALSE(result.empty());
 }
 
+TEST_F(MLEmulationLayerForVulkan, GetQueueFamilyDataGraphPropertiesARM_TwoCallPattern) {
+    const auto device = createDevice();
+    const auto &physicalDevice = device->getPhysicalDevice();
+    const auto &vkPhysicalDevice = &(*physicalDevice);
+    const uint32_t queueFamilyIndex = physicalDevice->getComputeFamilyIndex();
+
+    // Phase 1: query the count with nullptr properties
+    uint32_t count = 0;
+    const VkResult firstResult = vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
+        *vkPhysicalDevice, queueFamilyIndex, &count, nullptr);
+    ASSERT_EQ(firstResult, VK_SUCCESS);
+    ASSERT_GT(count, 0u);
+
+    // Phase 2: retrieve the indicated count of elements
+    std::vector<VkQueueFamilyDataGraphPropertiesARM> properties(count);
+    for (auto &p : properties) {
+        p = {};
+        p.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_PROPERTIES_ARM;
+    }
+    uint32_t retrieveCount = count;
+    const VkResult secondResult =
+        vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
+            *vkPhysicalDevice, queueFamilyIndex, &retrieveCount, properties.data());
+    ASSERT_EQ(secondResult, VK_SUCCESS);
+    ASSERT_EQ(retrieveCount, count);
+}
+
+TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelineSessionBindPointRequirementsARM_TwoCallPattern) {
+    auto device = createDevice();
+
+    auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 16, 16, 3}});
+    auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 8, 8, 3}});
+    const GraphPipeline::DescriptorMap descriptorMap = {{
+        {0, {inputTensor, inputTensor}},
+        {1, {outputTensor}},
+    }};
+    const auto spirv = assembleSpirv(fileToString("maxpool.spvasm"));
+
+    // Build resource infos from descriptor map
+    std::vector<vk::DataGraphPipelineResourceInfoARM> resourceInfos;
+    uint32_t set = 0;
+    for (const auto &bindingMap : descriptorMap) {
+        for (const auto &[binding, tensors] : bindingMap) {
+            for (uint32_t i = 0; i < tensors.size(); i++) {
+                resourceInfos.push_back(
+                    vk::DataGraphPipelineResourceInfoARM{set, binding, i, &tensors[i]->getTensorDescription()});
+            }
+        }
+        ++set;
+    }
+
+    // Shader module
+    const vk::ShaderModuleCreateInfo shaderModuleCI{
+        {},
+        spirv.size() * sizeof(uint32_t),
+        spirv.data(),
+    };
+    vk::raii::ShaderModule shaderModule{&(*device), shaderModuleCI};
+
+    // Descriptor set layouts and pipeline layout
+    std::vector<vk::raii::DescriptorSetLayout> dsLayouts;
+    for (const auto &bindingMap : descriptorMap) {
+        std::vector<vk::DescriptorSetLayoutBinding> bindings;
+        bindings.reserve(bindingMap.size());
+        for (const auto &[binding, tensors] : bindingMap) {
+            bindings.push_back(
+                {binding, vk::DescriptorType::eTensorARM, uint32_t(tensors.size()), vk::ShaderStageFlagBits::eAll});
+        }
+        std::vector<vk::DescriptorBindingFlags> bindingFlags(bindings.size(),
+                                                             vk::DescriptorBindingFlagBits::eUpdateAfterBind);
+        const vk::DescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsCI{uint32_t(bindingFlags.size()),
+                                                                           bindingFlags.data()};
+        const vk::DescriptorSetLayoutCreateInfo dsCI{vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool,
+                                                     uint32_t(bindings.size()), bindings.data(), &bindingFlagsCI};
+        dsLayouts.emplace_back(&(*device), dsCI);
+    }
+    std::vector<vk::DescriptorSetLayout> vkDSLayouts;
+    vkDSLayouts.reserve(dsLayouts.size());
+    for (const auto &l : dsLayouts) {
+        vkDSLayouts.push_back(*l);
+    }
+    const vk::PipelineLayoutCreateInfo plCI{{}, uint32_t(vkDSLayouts.size()), vkDSLayouts.data()};
+    vk::raii::PipelineLayout pipelineLayout{&(*device), plCI};
+
+    // Pipeline
+    const vk::DataGraphPipelineShaderModuleCreateInfoARM smCI{*shaderModule, "Graph Pipeline", nullptr, 0, nullptr};
+    const vk::DataGraphPipelineCreateInfoARM pipelineCI{
+        {}, *pipelineLayout, uint32_t(resourceInfos.size()), resourceInfos.data(), &smCI};
+    vk::raii::Pipeline pipeline{&(*device), nullptr, nullptr, pipelineCI};
+
+    // Session
+    const vk::DataGraphPipelineSessionCreateInfoARM sessionCI{{}, *pipeline};
+    vk::raii::DataGraphPipelineSessionARM session{&(*device), sessionCI};
+
+    const auto &vkDevice = &(*device);
+    const VkDataGraphPipelineSessionBindPointRequirementsInfoARM requirementsInfo{
+        VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENTS_INFO_ARM,
+        nullptr,
+        *session,
+    };
+
+    // Phase 1: query the count with nullptr requirements
+    uint32_t count = 0;
+    const VkResult firstResult = vkDevice.getDispatcher()->vkGetDataGraphPipelineSessionBindPointRequirementsARM(
+        *vkDevice, &requirementsInfo, &count, nullptr);
+    ASSERT_EQ(firstResult, VK_SUCCESS);
+
+    // Phase 2: retrieve the indicated count of requirements
+    std::vector<VkDataGraphPipelineSessionBindPointRequirementARM> requirements(count);
+    for (auto &r : requirements) {
+        r = {};
+        r.sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENT_ARM;
+    }
+    uint32_t retrieveCount = count;
+    const VkResult secondResult = vkDevice.getDispatcher()->vkGetDataGraphPipelineSessionBindPointRequirementsARM(
+        *vkDevice, &requirementsInfo, &retrieveCount, requirements.data());
+    ASSERT_EQ(secondResult, VK_SUCCESS);
+    ASSERT_EQ(retrieveCount, count);
+}
+
 TEST_F(MLEmulationLayerForVulkan, GetExternalTensorPropertiesARM) {
     const auto device = createDevice();
     const auto &physicalDevice = device->getPhysicalDevice();
