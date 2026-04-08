@@ -5,6 +5,7 @@
 Checks: >
     -*,
     bugprone-use-after-move,
+    cppcoreguidelines-pro-type-cstyle-cast,
     cppcoreguidelines-virtual-class-destructor,
     google-build-namespaces,
     misc-definitions-in-headers,

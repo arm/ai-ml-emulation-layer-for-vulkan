@@ -7,15 +7,15 @@
 ###############################################################################
 
 # Get a list of all shaders under graph_op/, excluding the shared common header.
-file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/graph_op/*.comp")
-list(FILTER SOURCES EXCLUDE REGEX "/common\\.comp$")
-list(SORT SOURCES)
+file(GLOB_RECURSE SOURCES_GRAPH_OP CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/graph_op/*.comp")
+list(FILTER SOURCES_GRAPH_OP EXCLUDE REGEX "/common\\.comp$")
+list(SORT SOURCES_GRAPH_OP)
 
 # Merge common header with GLSL sources
 set(GLSL_SOURCES "")
 add_custom_target(mlel_generate_shader_comp)
-foreach(SOURCE ${SOURCES})
-    get_filename_component(NAME ${SOURCE} NAME)
+macro(mlel_add_glsl_source SOURCE)
+    get_filename_component(NAME "${SOURCE}" NAME)
     set(OUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/${NAME}")
 
     add_custom_command(
@@ -26,6 +26,10 @@ foreach(SOURCE ${SOURCES})
     add_dependencies(mlel_generate_shader_comp "mlel_generate_shader_${NAME}")
 
     list(APPEND GLSL_SOURCES "${OUT_FILE}")
+endmacro()
+
+foreach(SOURCE ${SOURCES_GRAPH_OP})
+    mlel_add_glsl_source("${SOURCE}")
 endforeach()
 
 # Combine all outputs into a single target
