@@ -38,9 +38,9 @@ def main():
         print(
             f"export DYLD_LIBRARY_PATH={paths['DYLD_LIBRARY_PATH']}:$DYLD_LIBRARY_PATH"
         )
-        print(f"$env:VK_LAYER_PATH={paths['VK_LAYER_PATH']}:$VK_LAYER_PATH")
+        print(f"export VK_LAYER_PATH={paths['VK_LAYER_PATH']}:$VK_LAYER_PATH")
         print(
-            '$env:VK_INSTANCE_LAYERS="VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation"'
+            'export VK_INSTANCE_LAYERS="VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation"'
         )
     else:
         print("ERROR: Unsupported platform")
