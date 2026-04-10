@@ -61,7 +61,7 @@ class ScheduleHelper {
 class ComputePipeline {
   public:
     ComputePipeline(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
-                    const std::shared_ptr<PipelineCache> &pipelineCache, const SpirvBinary &spirv,
+                    const std::shared_ptr<PipelineCache> &pipelineCache, std::string_view shaderName,
                     const DescriptorConfigs &descriptorConfigs, const SpecConstants &specConstants,
                     uint32_t pushConstantsSize, const ScheduleHelper &schedule, const std::string &debugName);
     virtual ~ComputePipeline();
@@ -80,6 +80,7 @@ class ComputePipeline {
     void dispatchPipeline(VkCommandBuffer cmdBuf);
 
   private:
+    SpirvBinary createSpirv(std::string_view shaderName) const;
     void setCombinedImageSampler(uint32_t binding, const std::shared_ptr<Image> &image, VkSampler sampler);
     void setOutputImage(uint32_t binding, const std::shared_ptr<Image> &image);
     void setImage(uint32_t binding, const std::shared_ptr<Image> &image, VkDescriptorType descriptorType,
@@ -142,7 +143,6 @@ class RGBToY : public ComputePipeline {
         uint32_t fullImageStride;
     };
 
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache);
     SpecConstants makeSpecConstants(const std::shared_ptr<Image> &srcRGBImage,
                                     const std::shared_ptr<Image> &dstDownsampledImage,
                                     const std::shared_ptr<Image> &dstFullImage, bool outputDownsample,
@@ -194,7 +194,6 @@ class Downsample : public ComputePipeline {
         uint32_t outputImageStride;
     };
 
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache);
     SpecConstants makeSpecConstants(const std::shared_ptr<Image> &srcImage,
                                     const std::shared_ptr<Image> &dstImage) const;
 
@@ -242,7 +241,6 @@ class MVProcessAndWarp : public ComputePipeline {
         uint32_t outputFlowStride;
     };
 
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache);
     SpecConstants makeSpecConstants(const std::shared_ptr<Image> &dstImage,
                                     const std::shared_ptr<Image> &dstFlow) const;
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
@@ -290,7 +288,6 @@ class DenseWarp : public ComputePipeline {
         uint32_t outputImageStride;
     };
 
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache);
     SpecConstants makeSpecConstants(const std::shared_ptr<Image> &dstImage, float inputFlowScale) const;
 
     void setInputFlow(std::shared_ptr<Image> _srcFlow);
@@ -337,7 +334,6 @@ class MedianFilter : public ComputePipeline {
         uint32_t outputImageStride;
     };
 
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache);
     SpecConstants makeSpecConstants(const std::shared_ptr<Image> &dstImage, float outputFlowScale) const;
 
     void setOutput(std::shared_ptr<Image> dstImage);
@@ -381,7 +377,6 @@ class BilateralFilter : public ComputePipeline {
         uint32_t outputImageStride;
     };
 
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache);
     SpecConstants makeSpecConstants(const std::shared_ptr<Image> &dstFlow, float outputFlowScale) const;
 
     void setOutput(std::shared_ptr<Image> _dstFlow);
@@ -431,7 +426,6 @@ class SubpixelME : public ComputePipeline {
         uint32_t outputFlowStride;
     };
 
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache);
     SpecConstants makeSpecConstants(const std::shared_ptr<Image> &srcFlow, const std::shared_ptr<Image> &prevLevelFlow,
                                     const std::shared_ptr<Image> &dstFlow, bool doAccumulate) const;
 
@@ -488,7 +482,6 @@ class MVReplace : public ComputePipeline {
         uint32_t outputCostStride;
     };
 
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache);
     SpecConstants makeSpecConstants(const std::shared_ptr<Image> &costAtInput, const std::shared_ptr<Image> &dstFlow,
                                     const std::shared_ptr<Image> &dstCost, bool outputCost) const;
 
@@ -556,7 +549,6 @@ class BlockMatch : public ComputePipeline {
         int32_t searchIndexLimit;
     };
 
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache);
     SpecConstants makeSpecConstants(SearchType searchType, int32_t maxSearchRange,
                                     const std::shared_ptr<Image> &dstFlow, const std::shared_ptr<Image> &dstCost) const;
     bool hasFlowOutput() const;
