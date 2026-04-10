@@ -132,26 +132,42 @@ class DataGraphPipelineSessionARM : public Loader {
   public:
     explicit DataGraphPipelineSessionARM(const std::shared_ptr<Device> &device,
                                          const std::shared_ptr<DataGraphPipelineARM> &_pipeline)
-        : Loader(*device), pipeline{_pipeline}, memoryPlanner{createMemoryPlanner(pipeline->graphPipeline)},
-          sessionRamDescriptorSets{pipeline->graphPipeline->makeSessionRamDescriptorSets()} {}
+        : Loader(*device), pipeline{_pipeline},
+          sessionRamDescriptorSets{pipeline->graphPipeline->makeSessionRamDescriptorSets()},
+          memoryPlanner{createMemoryPlanner()} {}
 
     std::shared_ptr<DataGraphPipelineARM> pipeline;
-    std::shared_ptr<MemoryPlanner> memoryPlanner;
 
     // Session ram descriptor sets
     ComputeDescriptorSetMap sessionRamDescriptorSets;
 
+    bool needsTransientRequirements() const { return getGraphPipelineMemoryRequirements().size > 0; }
+
+    VkMemoryRequirements getGraphPipelineMemoryRequirements() const {
+        return memoryPlanner->getGraphPipelineSessionMemoryRequirements();
+    }
+
+    void bindTransientMemory(VkDeviceMemory memory, VkDeviceSize offset) {
+        memoryPlanner->bindGraphPipelineSessionMemory(memory, offset, sessionRamDescriptorSets);
+
+        for ([[maybe_unused]] const auto &[_, descriptorSet] : sessionRamDescriptorSets) {
+            descriptorSet->updateDescriptorSet();
+        }
+    }
+
   private:
-    std::shared_ptr<MemoryPlanner> createMemoryPlanner(const std::shared_ptr<GraphPipeline> &graphPipeline) const {
+    std::shared_ptr<MemoryPlanner> memoryPlanner;
+
+    std::shared_ptr<MemoryPlanner> createMemoryPlanner() const {
         auto *const envMemoryPlanner = std::getenv("VMEL_MEMORY_PLANNER");
 
         if (envMemoryPlanner && std::string(envMemoryPlanner) == "Linear") {
             graphLog(Severity::Info) << "Using linear memory planner" << std::endl;
-            return std::make_shared<LinearMemoryPlanner>(graphPipeline);
+            return std::make_shared<LinearMemoryPlanner>(pipeline->graphPipeline);
         }
 
         graphLog(Severity::Info) << "Using best-fit memory planner" << std::endl;
-        return std::make_shared<BestFitMemoryPlanner>(graphPipeline);
+        return std::make_shared<BestFitMemoryPlanner>(pipeline->graphPipeline);
     }
 };
 
@@ -626,7 +642,7 @@ class GraphLayer : public VulkanLayerImpl {
         uint32_t *bindPointRequirementCount, VkDataGraphPipelineSessionBindPointRequirementARM *bindPointRequirements) {
         auto *const session = reinterpret_cast<DataGraphPipelineSessionARM *>(info->session);
 
-        const auto needsTransient = session->memoryPlanner->getGraphPipelineSessionMemoryRequirements().size > 0;
+        const auto needsTransient = session->needsTransientRequirements();
 
         uint32_t requiredCount = 0;
         if (needsTransient) {
@@ -669,7 +685,7 @@ class GraphLayer : public VulkanLayerImpl {
         auto *const session = reinterpret_cast<DataGraphPipelineSessionARM *>(info->session);
 
         // Calculate how much memory pipelines hidden layers require
-        requirements->memoryRequirements = session->memoryPlanner->getGraphPipelineSessionMemoryRequirements();
+        requirements->memoryRequirements = session->getGraphPipelineMemoryRequirements();
     }
 
     static VkResult VKAPI_CALL vkBindDataGraphPipelineSessionMemoryARM(
@@ -680,13 +696,7 @@ class GraphLayer : public VulkanLayerImpl {
         for (uint32_t i = 0; i < bindInfoCount; i++) {
             switch (bindInfos[i].bindPoint) {
             case VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM: {
-                session->memoryPlanner->bindGraphPipelineSessionMemory(bindInfos[i].memory, bindInfos[i].memoryOffset,
-                                                                       session->sessionRamDescriptorSets);
-
-                for ([[maybe_unused]] const auto &[_, descriptorSet] : session->sessionRamDescriptorSets) {
-                    descriptorSet->updateDescriptorSet();
-                }
-
+                session->bindTransientMemory(bindInfos[i].memory, bindInfos[i].memoryOffset);
                 break;
             }
             default:
