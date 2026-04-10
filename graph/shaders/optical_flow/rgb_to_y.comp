@@ -1,0 +1,138 @@
+/*
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#version 450
+precision highp float;
+precision highp sampler2D;
+precision highp image2D;
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+#extension GL_EXT_shader_8bit_storage : require
+
+/*
+RGB to Y color conversion + downsampling
+  - Input image : Full size RGB(3 or 4 ch) or Luma(1ch)
+  - Output images : Full size Luma and/or Downsampled Luma depending on OUTPUT_FULL and OUTPUT_DOWNSAMPLE
+  - If OUTPUT_FULL, DOWNSAMPLE_SCALE must be 2.f (hard-coded)
+  - Full size Luma is processed in 2x2 pixels per thread. Vectorization is not configurable.
+  - Downsampling is simple bilinear filtering which is performed by Texture H/W sampler
+*/
+
+// Local Work Size set as Specialization Constants
+layout (local_size_x_id = 0, local_size_y_id = 1, local_size_z = 1) in;
+
+// Supported : VECTORIZE_X: 1, VECTORIZE_Y: 1
+layout(constant_id = 2) const int VECTORIZE_X = 1;
+layout(constant_id = 3) const int VECTORIZE_Y = 1;
+
+layout(constant_id = 4) const bool LUMA_INPUT = false;
+layout(constant_id = 5) const bool OUTPUT_DOWNSAMPLE = true;
+layout(constant_id = 6) const bool OUTPUT_FULL = false;
+layout(constant_id = 7) const bool IMAGE_STORE = false;
+layout(constant_id = 8) const float DOWNSAMPLE_SCALE_X = 2.f;  // If OUTPUT_FULL, fixed to 2.f
+layout(constant_id = 9) const float DOWNSAMPLE_SCALE_Y = 2.f;  // If OUTPUT_FULL, fixed to 2.f
+layout(constant_id = 10) const int DS_OUTPUT_SIZE_X = 960;
+layout(constant_id = 11) const int DS_OUTPUT_SIZE_Y = 540;
+layout(constant_id = 12) const uint DS_STRIDE_DST = 960;   // The number of elements in a row (x-axis) including padding
+layout(constant_id = 13) const int FULL_OUTPUT_SIZE_X = 1920;
+layout(constant_id = 14) const int FULL_OUTPUT_SIZE_Y = 1080;
+layout(constant_id = 15) const uint FULL_STRIDE_DST = 1920;   // The number of elements in a row (x-axis) including padding
+
+layout (binding = 0) uniform sampler2D imageSampler;
+
+layout (set=0, binding = 1, r8) uniform writeonly image2D dst_ds_img;
+layout (set = 0, binding = 2, std430) buffer _dst_ds_buf{
+    uint8_t dst_ds_buf[];
+};
+
+layout (set=0, binding = 3, r8) uniform writeonly image2D dst_full_img;
+layout (set = 0, binding = 4, std430) buffer _dst_full_buf{
+    uint8_t dst_full_buf[];
+};
+
+
+const f16vec3 COEFF = f16vec3(0.25f, 0.5f, 0.25f);
+
+#define READ_QUAD_CENTER(_SAMP, _POS, _COMP) \
+    textureGather(_SAMP, _POS, _COMP).wzxy
+
+float16_t rgb_to_y(f16vec3 rgb) {
+    // NOTE: assuming value is normalized in 0.0-1.0 range in B10G11R11_UFLOAT format
+    return dot(rgb, COEFF);
+}
+
+float16_t calc_ds(vec2 src_pos)
+{
+    if (LUMA_INPUT) {
+        return float16_t(texture(imageSampler, src_pos).x);
+    } else {
+        return rgb_to_y(f16vec3(texture(imageSampler, src_pos).xyz));
+    }
+}
+
+f16vec4 calc_2x2(vec2 src_pos)
+{
+    f16vec4 luma;
+    if (LUMA_INPUT) {
+        luma = f16vec4(READ_QUAD_CENTER(imageSampler, src_pos, 0));
+
+    } else {
+        f16vec4 r = f16vec4(READ_QUAD_CENTER(imageSampler, src_pos, 0));
+        f16vec4 g = f16vec4(READ_QUAD_CENTER(imageSampler, src_pos, 1));
+        f16vec4 b = f16vec4(READ_QUAD_CENTER(imageSampler, src_pos, 2));
+
+        for (int i = 0; i < 4; ++i) {
+            luma[i] = rgb_to_y(f16vec3(r[i], g[i], b[i]));
+        }
+    }
+
+    return luma;
+}
+
+uint8_t convert_uint8(float16_t x)
+{
+    return uint8_t(round(x * 255.HF));
+}
+
+void main()
+{
+    const ivec2 ds_pos = ivec2(gl_GlobalInvocationID.x,
+                               gl_GlobalInvocationID.y);
+
+    vec2 downsample_scale = vec2(DOWNSAMPLE_SCALE_X, DOWNSAMPLE_SCALE_Y);
+    if (OUTPUT_FULL) {
+        downsample_scale = vec2(2.f);
+    }
+    vec2 src_pos = (vec2(ds_pos) + 0.5f) * downsample_scale;
+
+    if (OUTPUT_DOWNSAMPLE) {
+        if (any(greaterThanEqual(ds_pos, ivec2(DS_OUTPUT_SIZE_X, DS_OUTPUT_SIZE_Y)))) return;
+        float16_t luma_ds = calc_ds(src_pos);
+
+        if (IMAGE_STORE) {
+            imageStore(dst_ds_img, ds_pos, vec4(luma_ds, 0, 0, 0));
+        } else {
+            dst_ds_buf[DS_STRIDE_DST * ds_pos.y + ds_pos.x] = convert_uint8(luma_ds);
+        }
+    }
+
+    if (OUTPUT_FULL) {
+        f16vec4 luma = calc_2x2(src_pos);
+
+        for (int qy = 0; qy < 2 && ds_pos.y * 2 + qy < FULL_OUTPUT_SIZE_Y; ++qy) {
+            for (int qx = 0; qx < 2 && ds_pos.x * 2 + qx < FULL_OUTPUT_SIZE_X; ++qx) {
+
+                ivec2 full_pos = ds_pos * 2 + ivec2(qx, qy);
+
+                const int index_1d = qy * 2 + qx;
+                if (IMAGE_STORE) {
+                    imageStore(dst_full_img, full_pos, vec4(luma[index_1d], 0, 0, 0));
+                } else {
+                    dst_full_buf[FULL_STRIDE_DST * full_pos.y + full_pos.x] = convert_uint8(luma[index_1d]);
+                }
+            }
+        }
+    }
+}

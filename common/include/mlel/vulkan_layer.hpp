@@ -752,9 +752,12 @@ class VulkanLayer {
         VkPhysicalDeviceVulkan13Features queryVulkan13Feature{};
         queryVulkan13Feature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
         queryVulkan13Feature.pNext = &queryVulkan12Feature;
+        VkPhysicalDeviceDescriptorIndexingFeatures queryVulkanIndexingFeature{};
+        queryVulkanIndexingFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+        queryVulkanIndexingFeature.pNext = &queryVulkan13Feature;
         VkPhysicalDeviceFeatures2 queryFeatures2{};
         queryFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-        queryFeatures2.pNext = &queryVulkan13Feature;
+        queryFeatures2.pNext = &queryVulkanIndexingFeature;
         handle->loader->vkGetPhysicalDeviceFeatures2(physicalDevice, &queryFeatures2);
 
         // store origin deviceCreateInfo chain and modify to enable features
@@ -821,6 +824,11 @@ class VulkanLayer {
         layerVulkan12Feature.bufferDeviceAddress = queryVulkan12Feature.bufferDeviceAddress;
         layerVulkan12Feature.descriptorBindingStorageBufferUpdateAfterBind =
             queryVulkan12Feature.descriptorBindingStorageBufferUpdateAfterBind;
+        layerVulkan12Feature.descriptorBindingStorageImageUpdateAfterBind =
+            queryVulkan12Feature.descriptorBindingStorageImageUpdateAfterBind;
+        layerVulkan12Feature.descriptorBindingSampledImageUpdateAfterBind =
+            queryVulkan12Feature.descriptorBindingSampledImageUpdateAfterBind;
+        layerVulkan12Feature.descriptorBindingPartiallyBound = queryVulkan12Feature.descriptorBindingPartiallyBound;
         appendType(&newCreateInfo, &layerVulkan12Feature);
 
         const auto *pDeviceFeature13 = removeType<VkPhysicalDeviceVulkan13Features>(

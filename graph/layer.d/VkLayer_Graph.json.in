@@ -56,6 +56,14 @@
                 "entrypoints": [
                     "vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM"
                 ]
+            },
+            {
+                "name": "VK_ARM_data_graph_optical_flow",
+                "spec_version": "1",
+                "entrypoints": [
+                    "vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM",
+                    "vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM"
+                ]
             }
         ]
     }

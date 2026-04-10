@@ -11,25 +11,33 @@ file(GLOB_RECURSE SOURCES_GRAPH_OP CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR
 list(FILTER SOURCES_GRAPH_OP EXCLUDE REGEX "/common\\.comp$")
 list(SORT SOURCES_GRAPH_OP)
 
-# Merge common header with GLSL sources
 set(GLSL_SOURCES "")
 add_custom_target(mlel_generate_shader_comp)
-macro(mlel_add_glsl_source SOURCE)
-    get_filename_component(NAME "${SOURCE}" NAME)
-    set(OUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/${NAME}")
+macro(mlel_add_glsl_source SOURCE USE_COMMON)
+    if("${USE_COMMON}")
+        get_filename_component(NAME "${SOURCE}" NAME)
+        set(OUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/${NAME}")
 
-    add_custom_command(
-        OUTPUT "${OUT_FILE}"
-        COMMAND ${CMAKE_COMMAND} -E cat "${CMAKE_CURRENT_SOURCE_DIR}/graph_op/common.comp" "${SOURCE}" > "${OUT_FILE}"
-        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/graph_op/common.comp" "${SOURCE}")
-    add_custom_target("mlel_generate_shader_${NAME}" DEPENDS "${OUT_FILE}")
-    add_dependencies(mlel_generate_shader_comp "mlel_generate_shader_${NAME}")
-
-    list(APPEND GLSL_SOURCES "${OUT_FILE}")
+        add_custom_command(
+            OUTPUT "${OUT_FILE}"
+            COMMAND ${CMAKE_COMMAND} -E cat "${CMAKE_CURRENT_SOURCE_DIR}/graph_op/common.comp" "${SOURCE}" > "${OUT_FILE}"
+            DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/graph_op/common.comp" "${SOURCE}")
+        add_custom_target("mlel_generate_shader_${NAME}" DEPENDS "${OUT_FILE}")
+        add_dependencies(mlel_generate_shader_comp "mlel_generate_shader_${NAME}")
+        list(APPEND GLSL_SOURCES "${OUT_FILE}")
+    else()
+        list(APPEND GLSL_SOURCES "${SOURCE}")
+    endif()
 endmacro()
 
 foreach(SOURCE ${SOURCES_GRAPH_OP})
-    mlel_add_glsl_source("${SOURCE}")
+    mlel_add_glsl_source("${SOURCE}" TRUE)
+endforeach()
+
+file(GLOB SOURCES_OPTICAL_FLOW CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/optical_flow/*.comp")
+list(SORT SOURCES_OPTICAL_FLOW)
+foreach(SOURCE ${SOURCES_OPTICAL_FLOW})
+    mlel_add_glsl_source("${SOURCE}" FALSE)
 endforeach()
 
 # Combine all outputs into a single target
@@ -383,6 +391,22 @@ endmacro()
 mlel_spv_block_match(block_match "0")
 mlel_spv_block_match(block_match "1")
 mlel_spv_block_match(block_match "2")
+
+# Optical Flow
+macro(mlel_spv_optical_flow)
+    foreach(SOURCE ${SOURCES_OPTICAL_FLOW})
+        get_filename_component(NAME "${SOURCE}" NAME_WE)
+        set(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${NAME}.spv")
+
+        mlel_generate_glsl(
+            INPUT "${SOURCE}"
+            OUTPUT ${OUTPUT})
+
+        list(APPEND SPV_FILES ${OUTPUT})
+    endforeach()
+endmacro()
+
+mlel_spv_optical_flow()
 
 # Generate header file with SPIR-V modules
 mlel_generate_spv_inc()

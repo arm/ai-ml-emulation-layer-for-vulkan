@@ -1,0 +1,175 @@
+/*
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#version 450
+precision highp float;  // 32bit precision is necessary for det_A
+precision mediump sampler2D;
+precision mediump image2D;
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
+#extension GL_EXT_shader_16bit_storage : require
+#extension GL_EXT_shader_8bit_storage : require
+
+#define MACRO_BLOCK (5)
+#define BLOCK_R (MACRO_BLOCK / 2)
+
+// Local Work Size set as Specialization Constants
+layout (local_size_x_id = 0, local_size_y_id = 1, local_size_z = 1) in;
+
+// Vectorization is not available, just for compatibility
+layout(constant_id = 2) const int VECTORIZE_X = 1;
+layout(constant_id = 3) const int VECTORIZE_Y = 1;
+
+layout(constant_id = 4) const bool DO_ACCUMULATE = true;
+layout(constant_id = 5) const bool FLOW_BUFFER_LOAD = false;
+layout(constant_id = 6) const bool IMAGE_STORE = false;
+layout(constant_id = 7) const int OUTPUT_SIZE_X = 480;
+layout(constant_id = 8) const int OUTPUT_SIZE_Y = 270;
+layout(constant_id = 9) const uint STRIDE_INT_FLOW = 480;   // The number of elements in a row (x-axis) including padding
+layout(constant_id = 10) const uint STRIDE_PREV_FLOW = 480;
+layout(constant_id = 11) const uint STRIDE_DST_FLOW = 480;
+
+layout (set = 0, binding = 0) uniform mediump sampler2D imageSearchSampler;
+
+layout (set = 0, binding = 1) uniform mediump sampler2D imageTemplateSampler;
+
+layout (set = 0, binding = 2, std430) buffer _int_flow_buf{
+    i8vec2 int_flow_buf[];
+};
+
+layout (set = 0, binding = 3) uniform mediump sampler2D prevFlowSampler;
+layout (set = 0, binding = 4, std430) buffer _prev_flow_buf{
+    f16vec2 prev_flow_buf[];
+};
+
+layout(set = 0, binding = 5, rg16f) uniform writeonly image2D dst_flow_img;
+layout (set = 0, binding = 6, std430) buffer _dst_flow_buf{
+    f16vec2 dst_flow_buf[];
+};
+
+const ivec2 output_size = ivec2(OUTPUT_SIZE_X, OUTPUT_SIZE_Y);
+
+
+void unpack_from_u32(highp uint packed, out float16_t f, out float16_t dfx, out float16_t dfy)
+{
+    f   = float16_t(packed         & 0xff)  / 255.HF;           //  8 bit, [0, 1.0]
+    dfx = float16_t(((packed >>  8) & 0xfff) / 4095.f - 0.5f);  // 12 bit, [-0.5, +0.5]
+    dfy = float16_t(((packed >> 20) & 0xfff) / 4095.f - 0.5f);  // 12 bit, [-0.5, +0.5]
+}
+
+bool is_outside(ivec2 pos)
+{
+    return pos.x < 0 || pos.x >= output_size.x || pos.y < 0 || pos.y >= output_size.y;
+}
+
+void calc_gradient(ivec2 pos, out float16_t dfx, out float16_t dfy, out float16_t f)
+{
+    // Compute gradient on the fly
+    {
+        float16_t f_m1 = float16_t(texture(imageTemplateSampler, pos + ivec2(-1, 0)).x);
+        f              = float16_t(texture(imageTemplateSampler, pos               ).x);
+        float16_t f_p1 = float16_t(texture(imageTemplateSampler, pos + ivec2(+1, 0)).x);
+        dfx = (f_p1 - f_m1) * 0.5HF;
+    }
+    {
+        float16_t f_m1 = float16_t(texture(imageTemplateSampler, pos + ivec2(0, -1)).x);
+        float16_t f_p1 = float16_t(texture(imageTemplateSampler, pos + ivec2(0, +1)).x);
+        dfy = (f_p1 - f_m1) * 0.5HF;
+    }
+
+    // Zero padding in case pos is outside
+    // NOTE: CLAMP_TO_EDGE sampler is used to read f to compute gradient
+    float16_t is_inside = is_outside(pos) ? 0.HF : 1.HF;
+    f   = f   * is_inside;
+    dfx = dfx * is_inside;
+    dfy = dfy * is_inside;
+}
+
+f16vec2 calc(const ivec2 pos)
+{
+    float16_t a = 0.HF, b = 0.HF, d = 0.HF, p = 0.HF, q = 0.HF;
+    ivec2 int_flow = ivec2(int_flow_buf[STRIDE_INT_FLOW * pos.y + pos.x]);
+
+    // Read inputs and accumulate value, which updates:
+    //   - a, b, d, p, q
+    #define acc_work(_bx, _by) \
+    { \
+        ivec2 bpos = pos + ivec2(_bx, _by); \
+        float16_t f, dfx, dfy; \
+        calc_gradient(bpos, dfx, dfy, f); \
+        a += dfx * dfx; \
+        b += dfx * dfy; \
+        d += dfy * dfy; \
+        ivec2 g_pos = bpos + int_flow; \
+        float16_t g = float16_t(texture(imageSearchSampler, g_pos).x); \
+        float16_t z = g - f;\
+        p += z * dfx; \
+        q += z * dfy; \
+    }
+
+    /*
+        5x5 Reduction with predicate, where 0 means we don't accumulate
+        1, 1, 1, 1, 1,
+        1, 0, 0, 0, 1,
+        1, 0, 0, 0, 1,
+        1, 0, 0, 0, 1,
+        1, 1, 1, 1, 1
+    */
+    // Top edge, loop for x
+    for (int bx = -BLOCK_R; bx <= BLOCK_R; ++bx) {
+        acc_work(bx, -BLOCK_R);
+    }
+    // Middle rows, loop for y
+    for (int by = -BLOCK_R + 1; by <= BLOCK_R - 1; ++by) {
+        acc_work(-BLOCK_R, by);  // Left edge
+        acc_work( BLOCK_R, by);  // Right edge
+    }
+    // Bottom edge, loop for x
+    for (int bx = -BLOCK_R; bx <= BLOCK_R; ++bx) {
+        acc_work(bx, BLOCK_R);
+    }
+
+    // Use 32 bit float for numeric error sensitive process
+    float det_A = float(a) * float(d) - float(b) * float(b);
+    vec2 subpixel;
+    subpixel.x = float(d) * float(p) - float(b) * float(q);
+    subpixel.y = float(a) * float(q) - float(b) * float(p);
+    subpixel = subpixel / det_A;
+
+    // Validation
+    bool cond1 = (det_A <= 1e-7f);
+    bvec2 cond2 = greaterThanEqual(abs(subpixel), vec2(1.f));
+    // NOTE : element-wise vector operator of '||' cannot be compiled
+    bvec2 invalid_mask = bvec2(cond1 || cond2.x, cond1 || cond2.y);
+    subpixel = mix(subpixel, vec2(0.f), invalid_mask);
+
+    // Add integer flow here to save memory bandwidth
+    // Also accumulate the flow from previous level
+    // NOTE: The reference implementaion returns negated integer flow, but Motin Engine doesn't.
+    f16vec2 out_flow = f16vec2(int_flow) - f16vec2(subpixel);
+
+    if (DO_ACCUMULATE)
+        if (FLOW_BUFFER_LOAD)
+            out_flow += prev_flow_buf[STRIDE_PREV_FLOW * pos.y + pos.x];
+        else
+            out_flow += f16vec2(texelFetch(prevFlowSampler, ivec2(pos.x, pos.y), 0).xy);
+
+    return out_flow;
+}
+
+
+void main()
+{
+    const ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pos, output_size))) return;
+
+    f16vec2 flow = calc(pos);
+
+    if (IMAGE_STORE)
+        imageStore(dst_flow_img, pos, f16vec4(flow, 0, 0));
+    else
+        dst_flow_buf[STRIDE_DST_FLOW * pos.y + pos.x] = flow;
+}

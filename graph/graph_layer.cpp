@@ -13,6 +13,7 @@
 #include "compute_graph_op.hpp"
 #include "graph_log.hpp"
 #include "memory_planner.hpp"
+#include "optical_flow.hpp"
 #include "pipeline_cache.hpp"
 #include "source/opt/build_module.h"
 #include "source/opt/ir_context.h"
@@ -27,6 +28,7 @@
 
 using namespace mlsdk::el::compute;
 using namespace mlsdk::el::compute::graph_op;
+using namespace mlsdk::el::compute::optical_flow;
 using namespace mlsdk::el::log;
 
 /*****************************************************************************
@@ -70,6 +72,7 @@ class DataGraphDescriptorSet : public DescriptorSet {
         : DescriptorSet(_descriptorSetLayout) {
         for (const auto &[binding, descriptorSetLayoutBinding] : descriptorSetLayout->bindings) {
             tensorViews[binding].resize(descriptorSetLayoutBinding.descriptorCount);
+            imageViews[binding].resize(descriptorSetLayoutBinding.descriptorCount);
         }
     }
 
@@ -91,13 +94,24 @@ class DataGraphDescriptorSet : public DescriptorSet {
             }
             break;
         }
+        case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: {
+            for (uint32_t i = 0; i < set.descriptorCount; i++) {
+                // Only grab image view since we get image layout from connectivity map and we don't care about the
+                // sampler
+                imageViews[set.dstBinding][set.dstArrayElement + i] = set.pImageInfo[i].imageView;
+            }
+            break;
+        }
         default:
             break;
         }
     }
 
-    // Mapping from [binding, arrayIndex] to tensor view
+    // Mapping from [binding, arrayIndex] to tensor/image view
     std::map<uint32_t, std::vector<VkTensorViewARM>> tensorViews;
+    std::map<uint32_t, std::vector<VkImageView>> imageViews;
 
     // Mapping from [pipeline, set] to external descriptor sets bound by the application
     std::map<std::tuple<VkPipeline, uint32_t>, ComputeDescriptorSetMap> externalDescriptorSets;
@@ -109,13 +123,21 @@ class DataGraphDescriptorSet : public DescriptorSet {
 
 class DataGraphPipelineARM : public Loader {
   public:
+    enum class Type {
+        GRAPH,
+        OPTICAL_FLOW,
+    };
+
     explicit DataGraphPipelineARM(const std::shared_ptr<Device> &device,
-                                  const std::shared_ptr<PipelineCache> &_pipelineCache)
-        : Loader(*device), graphPipeline{std::make_shared<GraphPipeline>(device->loader,
-                                                                         device->physicalDevice->physicalDevice,
-                                                                         device->device, _pipelineCache)} {}
+                                  const std::shared_ptr<PipelineCache> &_pipelineCache, Type _pipelineType)
+        : Loader(*device), graphPipeline{std::make_shared<GraphPipeline>(
+                               device->loader, device->physicalDevice->physicalDevice, device->device, _pipelineCache)},
+          opticalFlow{std::make_shared<OpticalFlow>(device->loader, device->physicalDevice->physicalDevice,
+                                                    device->device, _pipelineCache)},
+          pipelineType(_pipelineType) {}
 
     std::shared_ptr<GraphPipeline> graphPipeline;
+    std::shared_ptr<OpticalFlow> opticalFlow;
     ComputeDescriptorSetMap constantsDescriptorSets;
 
     void makeConstantsDescriptorSets() {
@@ -124,6 +146,12 @@ class DataGraphPipelineARM : public Loader {
             descriptorSet->updateDescriptorSet();
         }
     }
+
+    bool isGraph() const { return pipelineType == Type::GRAPH; }
+    bool isOpticalFlow() const { return pipelineType == Type::OPTICAL_FLOW; }
+
+  private:
+    Type pipelineType;
 };
 
 /*****************************************************************************
@@ -133,32 +161,66 @@ class DataGraphPipelineARM : public Loader {
 class DataGraphPipelineSessionARM : public Loader {
   public:
     explicit DataGraphPipelineSessionARM(const std::shared_ptr<Device> &device,
-                                         const std::shared_ptr<DataGraphPipelineARM> &_pipeline)
+                                         const std::shared_ptr<DataGraphPipelineARM> &_pipeline,
+                                         VkDataGraphPipelineSessionCreateFlagsARM _createFlags)
         : Loader(*device), pipeline{_pipeline},
           sessionRamDescriptorSets{pipeline->graphPipeline->makeSessionRamDescriptorSets()},
-          memoryPlanner{createMemoryPlanner()} {}
+          memoryPlanner{createMemoryPlanner()}, createFlags{_createFlags} {}
 
     std::shared_ptr<DataGraphPipelineARM> pipeline;
 
     // Session ram descriptor sets
     ComputeDescriptorSetMap sessionRamDescriptorSets;
 
-    bool needsTransientRequirements() const { return getGraphPipelineMemoryRequirements().size > 0; }
+    bool transientMemoryBound = false;
+    bool opticalFlowCacheMemoryBound = false;
 
-    VkMemoryRequirements getGraphPipelineMemoryRequirements() const {
-        return memoryPlanner->getGraphPipelineSessionMemoryRequirements();
+    bool hasOpticalFlowCache() const {
+        return (createFlags & VK_DATA_GRAPH_PIPELINE_SESSION_CREATE_OPTICAL_FLOW_CACHE_BIT_ARM) != 0;
+    }
+
+    bool needsTransientRequirements() const {
+        return pipeline->isOpticalFlow() ? true : (memoryPlanner->getGraphPipelineSessionMemoryRequirements().size > 0);
+    }
+    bool needsOpticalFlowCacheRequirements() const { return pipeline->isOpticalFlow() && hasOpticalFlowCache(); }
+
+    VkMemoryRequirements getGraphPipelineMemoryRequirements(VkDataGraphPipelineSessionBindPointARM bindPoint) const {
+        if (pipeline->isGraph()) {
+            return memoryPlanner->getGraphPipelineSessionMemoryRequirements();
+        }
+        if (pipeline->isOpticalFlow()) {
+            if (bindPoint == VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM) {
+                return pipeline->opticalFlow->getTransientMemoryRequirements();
+            }
+            if (bindPoint == VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_OPTICAL_FLOW_CACHE_ARM &&
+                hasOpticalFlowCache()) {
+                return pipeline->opticalFlow->getCacheMemoryRequirements();
+            }
+        }
+        return {0, 1, 0};
     }
 
     void bindTransientMemory(VkDeviceMemory memory, VkDeviceSize offset) {
-        memoryPlanner->bindGraphPipelineSessionMemory(memory, offset, sessionRamDescriptorSets);
+        if (pipeline->isGraph()) {
+            memoryPlanner->bindGraphPipelineSessionMemory(memory, offset, sessionRamDescriptorSets);
 
-        for ([[maybe_unused]] const auto &[_, descriptorSet] : sessionRamDescriptorSets) {
-            descriptorSet->updateDescriptorSet();
+            for ([[maybe_unused]] const auto &[_, descriptorSet] : sessionRamDescriptorSets) {
+                descriptorSet->updateDescriptorSet();
+            }
+        } else if (pipeline->isOpticalFlow()) {
+            pipeline->opticalFlow->bindSessionTransientMemory(memory, offset);
         }
+        transientMemoryBound = true;
+    }
+
+    void bindOpticalFlowCacheMemory(VkDeviceMemory memory, VkDeviceSize offset) {
+        pipeline->opticalFlow->bindSessionCacheMemory(memory, offset);
+        opticalFlowCacheMemoryBound = true;
     }
 
   private:
     std::shared_ptr<MemoryPlanner> memoryPlanner;
+    VkDataGraphPipelineSessionCreateFlagsARM createFlags;
 
     std::shared_ptr<MemoryPlanner> createMemoryPlanner() const {
         auto *const envMemoryPlanner = std::getenv("VMEL_MEMORY_PLANNER");
@@ -254,10 +316,11 @@ std::optional<std::string> tryGetExtInstVersion(const uint32_t *spirvCode, const
 
 } // namespace
 
-constexpr std::array<const VkExtensionProperties, 2> extensions{
+constexpr std::array<const VkExtensionProperties, 3> extensions{
     VkExtensionProperties{VK_ARM_DATA_GRAPH_EXTENSION_NAME, VK_ARM_DATA_GRAPH_SPEC_VERSION},
     VkExtensionProperties{VK_ARM_DATA_GRAPH_INSTRUCTION_SET_TOSA_EXTENSION_NAME,
                           VK_ARM_DATA_GRAPH_INSTRUCTION_SET_TOSA_SPEC_VERSION},
+    VkExtensionProperties{VK_ARM_DATA_GRAPH_OPTICAL_FLOW_EXTENSION_NAME, VK_ARM_DATA_GRAPH_OPTICAL_FLOW_SPEC_VERSION},
 };
 
 constexpr std::array<const VkExtensionProperties, 2> requiredExtensions = {
@@ -286,6 +349,8 @@ class GraphLayer : public VulkanLayerImpl {
             // PhysicalDevice functions
             {"vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM",
              PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM)},
+            {"vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM",
+             PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM)},
             {"vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM",
              PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM)},
             {"vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM",
@@ -363,6 +428,8 @@ class GraphLayer : public VulkanLayerImpl {
             // PhysicalDevice functions
             {"vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM",
              PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM)},
+            {"vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM",
+             PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM)},
             {"vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM",
              PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM)},
             {"vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM",
@@ -426,6 +493,67 @@ class GraphLayer : public VulkanLayerImpl {
         }
     }
 
+    static VkResult VKAPI_CALL vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+        VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+        const VkQueueFamilyDataGraphPropertiesARM *pQueueFamilyDataGraphProperties,
+        const VkDataGraphOpticalFlowImageFormatInfoARM *pOpticalFlowImageFormatInfo, uint32_t *pFormatCount,
+        VkDataGraphOpticalFlowImageFormatPropertiesARM *pImageFormatProperties) {
+        if (!pFormatCount || !pQueueFamilyDataGraphProperties || !pOpticalFlowImageFormatInfo) {
+            return VK_ERROR_UNKNOWN;
+        }
+
+        auto handle = VulkanLayerImpl::getHandle(physicalDevice);
+        uint32_t familyCount = 0;
+        handle->loader->vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &familyCount, nullptr);
+        if (queueFamilyIndex >= familyCount) {
+            return VK_ERROR_UNKNOWN;
+        }
+        if (pQueueFamilyDataGraphProperties->operation.operationType !=
+            VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_OPTICAL_FLOW_ARM) {
+            *pFormatCount = 0;
+            return VK_ERROR_UNKNOWN;
+        }
+        const std::set<VkFormat> *pSupportedFormats = nullptr;
+
+        switch (pOpticalFlowImageFormatInfo->usage) {
+        case VK_DATA_GRAPH_OPTICAL_FLOW_IMAGE_USAGE_INPUT_BIT_ARM:
+            pSupportedFormats = &OpticalFlow::Spec::supportedImageFormats;
+            break;
+        case VK_DATA_GRAPH_OPTICAL_FLOW_IMAGE_USAGE_OUTPUT_BIT_ARM:
+        case VK_DATA_GRAPH_OPTICAL_FLOW_IMAGE_USAGE_HINT_BIT_ARM:
+            pSupportedFormats = &OpticalFlow::Spec::supportedFlowFormats;
+            break;
+        case VK_DATA_GRAPH_OPTICAL_FLOW_IMAGE_USAGE_COST_BIT_ARM:
+            pSupportedFormats = &OpticalFlow::Spec::supportedCostFormats;
+            break;
+        default:
+            *pFormatCount = 0;
+            return VK_SUCCESS;
+        }
+
+        const auto availableFormatCount = static_cast<uint32_t>(pSupportedFormats->size());
+
+        // First call: return count
+        if (pImageFormatProperties == nullptr) {
+            *pFormatCount = availableFormatCount;
+            return VK_SUCCESS;
+        }
+
+        // Second call: return formats
+        const uint32_t capacity = *pFormatCount;
+        const uint32_t numToWrite = std::min(capacity, availableFormatCount);
+
+        auto it = pSupportedFormats->cbegin();
+        for (uint32_t i = 0; i < numToWrite; ++i, ++it) {
+            pImageFormatProperties[i].sType = VK_STRUCTURE_TYPE_DATA_GRAPH_OPTICAL_FLOW_IMAGE_FORMAT_PROPERTIES_ARM;
+            pImageFormatProperties[i].pNext = nullptr;
+            pImageFormatProperties[i].format = *it;
+        }
+
+        *pFormatCount = numToWrite;
+        return (numToWrite < availableFormatCount) ? VK_INCOMPLETE : VK_SUCCESS;
+    }
+
     /**************************************************************************
      * Graph layer
      **************************************************************************/
@@ -451,113 +579,377 @@ class GraphLayer : public VulkanLayerImpl {
             const auto *dataGraphPipelineShaderModuleCreateInfo =
                 findType<VkDataGraphPipelineShaderModuleCreateInfoARM>(
                     createInfo.pNext, VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SHADER_MODULE_CREATE_INFO_ARM);
-            if (dataGraphPipelineShaderModuleCreateInfo == nullptr) {
-                graphLog(Severity::Error) << "Missing shader module create info" << std::endl;
+
+            const auto *singleNodeCreateInfo = findType<VkDataGraphPipelineSingleNodeCreateInfoARM>(
+                createInfo.pNext, VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SINGLE_NODE_CREATE_INFO_ARM);
+
+            const VkDataGraphPipelineOpticalFlowCreateInfoARM *opticalFlowCreateInfo = nullptr;
+            if (singleNodeCreateInfo != nullptr &&
+                singleNodeCreateInfo->nodeType == VK_DATA_GRAPH_PIPELINE_NODE_TYPE_OPTICAL_FLOW_ARM) {
+                opticalFlowCreateInfo = findType<VkDataGraphPipelineOpticalFlowCreateInfoARM>(
+                    createInfo.pNext, VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_OPTICAL_FLOW_CREATE_INFO_ARM);
+                if (opticalFlowCreateInfo == nullptr) {
+                    graphLog(Severity::Error) << "Missing OF create info in single node create info" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+            }
+
+            if (!dataGraphPipelineShaderModuleCreateInfo && !opticalFlowCreateInfo) {
+                graphLog(Severity::Error) << "DataGraphPipelineCreateInfo Missing pNext struct" << std::endl;
+                return VK_ERROR_UNKNOWN;
+            }
+            if (dataGraphPipelineShaderModuleCreateInfo && opticalFlowCreateInfo) {
+                graphLog(Severity::Error) << "Multiple DataGraphPipelineCreateInfo pNext structs" << std::endl;
                 return VK_ERROR_UNKNOWN;
             }
 
+            const auto type = dataGraphPipelineShaderModuleCreateInfo != nullptr
+                                  ? DataGraphPipelineARM::Type::GRAPH
+                                  : DataGraphPipelineARM::Type::OPTICAL_FLOW;
             // Create pipeline handle
             auto pipeline = std::allocate_shared<DataGraphPipelineARM>(Allocator<GraphPipeline>{callbacks},
-                                                                       deviceHandle, pipelineCacheHandle);
+                                                                       deviceHandle, pipelineCacheHandle, type);
             pipelines[i] = reinterpret_cast<VkPipeline>(pipeline.get());
-            auto graphPipeline = pipeline->graphPipeline;
             graphLog(Severity::Info) << graphPipelineCreatedLog << std::endl;
 
-            // Copy tensor resources to pipeline
-            for (uint32_t j = 0; j < createInfo.resourceInfoCount; j++) {
-                const auto &resourceInfo = createInfo.pResourceInfos[j];
-                const auto *tensorDescription =
-                    findType<VkTensorDescriptionARM>(resourceInfo.pNext, VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM);
+            if (pipeline->isGraph()) {
+                auto graphPipeline = pipeline->graphPipeline;
+                // Copy tensor resources to pipeline
+                for (uint32_t j = 0; j < createInfo.resourceInfoCount; j++) {
+                    const auto &resourceInfo = createInfo.pResourceInfos[j];
+                    const auto *tensorDescription =
+                        findType<VkTensorDescriptionARM>(resourceInfo.pNext, VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM);
 
-                if (tensorDescription == nullptr) {
-                    graphLog(Severity::Error) << "Missing tensor description" << std::endl;
-                    return VK_ERROR_UNKNOWN;
+                    if (tensorDescription == nullptr) {
+                        graphLog(Severity::Error) << "Missing tensor description" << std::endl;
+                        return VK_ERROR_UNKNOWN;
+                    }
+
+                    graphPipeline->makeDescriptorSetBinding(resourceInfo.descriptorSet, resourceInfo.binding,
+                                                            resourceInfo.arrayElement, *tensorDescription);
                 }
 
-                graphPipeline->makeDescriptorSetBinding(resourceInfo.descriptorSet, resourceInfo.binding,
-                                                        resourceInfo.arrayElement, *tensorDescription);
-            }
+                // Constants
+                for (uint32_t j = 0; j < dataGraphPipelineShaderModuleCreateInfo->constantCount; j++) {
+                    const auto &constant = dataGraphPipelineShaderModuleCreateInfo->pConstants[j];
 
-            // Constants
-            for (uint32_t j = 0; j < dataGraphPipelineShaderModuleCreateInfo->constantCount; j++) {
-                const auto &constant = dataGraphPipelineShaderModuleCreateInfo->pConstants[j];
+                    const auto *graphPipelineConstantTensor =
+                        findType<VkTensorDescriptionARM>(constant.pNext, VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM);
 
-                const auto *graphPipelineConstantTensor =
-                    findType<VkTensorDescriptionARM>(constant.pNext, VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM);
+                    if (graphPipelineConstantTensor == nullptr) {
+                        graphLog(Severity::Error) << "Missing const tensor description" << std::endl;
+                        return VK_ERROR_UNKNOWN;
+                    }
 
-                if (graphPipelineConstantTensor == nullptr) {
-                    graphLog(Severity::Error) << "Missing const tensor description" << std::endl;
-                    return VK_ERROR_UNKNOWN;
+                    graphPipeline->makeConstTensor(constant.id, *graphPipelineConstantTensor, constant.pConstantData);
                 }
+                std::shared_ptr<ShaderModule> shaderModule;
+                if (dataGraphPipelineShaderModuleCreateInfo->module == VK_NULL_HANDLE) {
+                    const auto *shaderModuleCreateInfo = findType<VkShaderModuleCreateInfo>(
+                        createInfo.pNext, VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);
+                    if (shaderModuleCreateInfo == nullptr) {
+                        graphLog(Severity::Error) << "Missing both shader handle and shader create info" << std::endl;
+                        return VK_ERROR_UNKNOWN;
+                    }
 
-                graphPipeline->makeConstTensor(constant.id, *graphPipelineConstantTensor, constant.pConstantData);
-            }
-            std::shared_ptr<ShaderModule> shaderModule;
-            if (dataGraphPipelineShaderModuleCreateInfo->module == VK_NULL_HANDLE) {
-                const auto *shaderModuleCreateInfo =
-                    findType<VkShaderModuleCreateInfo>(createInfo.pNext, VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);
-                if (shaderModuleCreateInfo == nullptr) {
-                    graphLog(Severity::Error) << "Missing both shader handle and shader create info" << std::endl;
-                    return VK_ERROR_UNKNOWN;
-                }
-
-                std::vector<uint32_t> spirvSource = {shaderModuleCreateInfo->pCode,
-                                                     shaderModuleCreateInfo->pCode +
-                                                         shaderModuleCreateInfo->codeSize / sizeof(uint32_t)};
-                auto isGraph = isGraphSpirv(spirvSource);
-                if (!isGraph.has_value()) {
-                    graphLog(Severity::Error) << "Failed to compile spirv code." << std::endl;
-                    return VK_ERROR_UNKNOWN;
-                }
-                if (isGraph.value()) {
-                    shaderModule = std::make_shared<ShaderModule>(shaderModuleCreateInfo);
+                    std::vector<uint32_t> spirvSource = {shaderModuleCreateInfo->pCode,
+                                                         shaderModuleCreateInfo->pCode +
+                                                             shaderModuleCreateInfo->codeSize / sizeof(uint32_t)};
+                    auto isGraph = isGraphSpirv(spirvSource);
+                    if (!isGraph.has_value()) {
+                        graphLog(Severity::Error) << "Failed to compile spirv code." << std::endl;
+                        return VK_ERROR_UNKNOWN;
+                    }
+                    if (isGraph.value()) {
+                        shaderModule = std::make_shared<ShaderModule>(shaderModuleCreateInfo);
+                    } else {
+                        graphLog(Severity::Error) << "spirv code does not contain graph." << std::endl;
+                        return VK_ERROR_UNKNOWN;
+                    }
                 } else {
-                    graphLog(Severity::Error) << "spirv code does not contain graph." << std::endl;
+                    shaderModule = getHandle(deviceHandle, dataGraphPipelineShaderModuleCreateInfo->module);
+                }
+
+                if (!shaderModule) {
+                    graphLog(Severity::Error) << "Shader module not recognized by Graph layer" << std::endl;
+                    return VK_ERROR_FEATURE_NOT_PRESENT;
+                }
+
+                // Create optimizer
+                spvtools::Optimizer optimizer{SPV_ENV_UNIVERSAL_1_6};
+
+                // Register passes
+                const auto tosaVersion = tryGetExtInstVersion(shaderModule->code.data(), shaderModule->code.size(),
+                                                              std::regex("^TOSA\\.\\d{6}\\.\\d"));
+                const auto motionEngineVersion = tryGetExtInstVersion(
+                    shaderModule->code.data(), shaderModule->code.size(), std::regex("^Arm\\.MotionEngine\\.\\d{3}"));
+
+                const bool isTosaVersionUnsupported = tosaVersion.has_value() && tosaVersion != tosaSpv100;
+                if (isTosaVersionUnsupported) {
+                    graphLog(Severity::Error) << "Unsupported Tosa version provided." << std::endl;
                     return VK_ERROR_UNKNOWN;
                 }
-            } else {
-                shaderModule = getHandle(deviceHandle, dataGraphPipelineShaderModuleCreateInfo->module);
+
+                const bool isMotionEngineVersionUnsupported =
+                    motionEngineVersion.has_value() && motionEngineVersion != motionEngine100;
+                if (isMotionEngineVersionUnsupported) {
+                    graphLog(Severity::Error) << "Unsupported MotionEngine version provided." << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+
+                optimizer.RegisterPass(spvtools::CreateGraphPass<spvtools::opt::GraphPassTosaSpv100>(*graphPipeline));
+
+                // Run passes
+                std::vector<uint32_t> optimizedModule;
+                if (!optimizer.Run(shaderModule->code.data(), shaderModule->code.size(), &optimizedModule,
+                                   spvtools::ValidatorOptions(), true)) {
+                    graphLog(Severity::Error) << "Failed to run optimizer passes" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+
+                // Create constants descriptor sets
+                pipeline->makeConstantsDescriptorSets();
+            } else if (pipeline->isOpticalFlow()) {
+                graphLog(Severity::Debug) << "Creating Optical Flow pipeline" << std::endl;
+                // Initialise OpticalFlow
+                const auto &opticalFlowPipeline = pipeline->opticalFlow;
+                OpticalFlow::Config config;
+                config.useMvInput =
+                    (opticalFlowCreateInfo->flags & VK_DATA_GRAPH_OPTICAL_FLOW_CREATE_ENABLE_HINT_BIT_ARM) != 0;
+                config.outputCost =
+                    (opticalFlowCreateInfo->flags & VK_DATA_GRAPH_OPTICAL_FLOW_CREATE_ENABLE_COST_BIT_ARM) != 0;
+                config.maxSearchRange = 3;
+
+                constexpr uint32_t supportedFlags = VK_DATA_GRAPH_OPTICAL_FLOW_CREATE_ENABLE_HINT_BIT_ARM |
+                                                    VK_DATA_GRAPH_OPTICAL_FLOW_CREATE_ENABLE_COST_BIT_ARM;
+                if (opticalFlowCreateInfo->flags & ~supportedFlags) {
+                    graphLog(Severity::Error) << "Invalid OF flags" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+
+                if (config.useMvInput && !OpticalFlow::Spec::hintSupported) {
+                    graphLog(Severity::Error) << "OF hint is not supported by this implementation" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+                if (config.outputCost && !OpticalFlow::Spec::costSupported) {
+                    graphLog(Severity::Error) << "OF cost output is not supported by this implementation" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+
+                switch (opticalFlowCreateInfo->outputGridSize) {
+                case VK_DATA_GRAPH_OPTICAL_FLOW_GRID_SIZE_1X1_BIT_ARM:
+                    config.levelOfLastEstimation = 0;
+                    break;
+                case VK_DATA_GRAPH_OPTICAL_FLOW_GRID_SIZE_2X2_BIT_ARM:
+                    config.levelOfLastEstimation = 1;
+                    break;
+                case VK_DATA_GRAPH_OPTICAL_FLOW_GRID_SIZE_4X4_BIT_ARM:
+                    config.levelOfLastEstimation = 2;
+                    break;
+                case VK_DATA_GRAPH_OPTICAL_FLOW_GRID_SIZE_8X8_BIT_ARM:
+                    config.levelOfLastEstimation = 3;
+                    break;
+                default:
+                    graphLog(Severity::Error) << "Invalid OF output grid size" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+
+                if (config.useMvInput && opticalFlowCreateInfo->hintGridSize == 0) {
+                    graphLog(Severity::Error) << "OF hint grid size cannot be zero when hint is enabled" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+                if (opticalFlowCreateInfo->hintGridSize != 0 &&
+                    opticalFlowCreateInfo->hintGridSize != opticalFlowCreateInfo->outputGridSize) {
+                    graphLog(Severity::Error)
+                        << "Output and hint grid sizes must match when hint grid size is set" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+                if (opticalFlowCreateInfo->hintGridSize != 0) {
+                    switch (opticalFlowCreateInfo->hintGridSize) {
+                    case VK_DATA_GRAPH_OPTICAL_FLOW_GRID_SIZE_1X1_BIT_ARM:
+                    case VK_DATA_GRAPH_OPTICAL_FLOW_GRID_SIZE_2X2_BIT_ARM:
+                    case VK_DATA_GRAPH_OPTICAL_FLOW_GRID_SIZE_4X4_BIT_ARM:
+                    case VK_DATA_GRAPH_OPTICAL_FLOW_GRID_SIZE_8X8_BIT_ARM:
+                        break;
+                    default:
+                        graphLog(Severity::Error) << "Invalid OF hint grid size" << std::endl;
+                        return VK_ERROR_UNKNOWN;
+                    }
+                }
+
+                switch (opticalFlowCreateInfo->performanceLevel) {
+                case VK_DATA_GRAPH_OPTICAL_FLOW_PERFORMANCE_LEVEL_SLOW_ARM:
+                    config.performanceLevel = OpticalFlow::PerformanceLevel::SLOW;
+                    break;
+                case VK_DATA_GRAPH_OPTICAL_FLOW_PERFORMANCE_LEVEL_MEDIUM_ARM:
+                    config.performanceLevel = OpticalFlow::PerformanceLevel::MEDIUM;
+                    break;
+                case VK_DATA_GRAPH_OPTICAL_FLOW_PERFORMANCE_LEVEL_FAST_ARM:
+                    config.performanceLevel = OpticalFlow::PerformanceLevel::FAST;
+                    break;
+                case VK_DATA_GRAPH_OPTICAL_FLOW_PERFORMANCE_LEVEL_UNKNOWN_ARM:
+                    config.performanceLevel = OpticalFlow::PerformanceLevel::UNKNOWN;
+                    break;
+                default:
+                    graphLog(Severity::Error) << "Invalid OF performance level" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+
+                config.imageFormat = opticalFlowCreateInfo->imageFormat;
+                config.flowFormat = opticalFlowCreateInfo->flowVectorFormat;
+                config.costFormat = opticalFlowCreateInfo->costFormat;
+
+                config.width = opticalFlowCreateInfo->width;
+                config.height = opticalFlowCreateInfo->height;
+
+                const auto *opticalFlowNodeCreateInfo = singleNodeCreateInfo;
+                if (opticalFlowNodeCreateInfo == nullptr ||
+                    opticalFlowNodeCreateInfo->nodeType != VK_DATA_GRAPH_PIPELINE_NODE_TYPE_OPTICAL_FLOW_ARM) {
+                    graphLog(Severity::Error) << "Missing OF single node create info" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+                if (opticalFlowNodeCreateInfo->connectionCount == 0 ||
+                    opticalFlowNodeCreateInfo->pConnections == nullptr) {
+                    graphLog(Severity::Error) << "Missing OF connectivity map" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+
+                const auto isFormatSupported = [](VkFormat format, const auto &supported) {
+                    return supported.find(format) != supported.end();
+                };
+                if (!isFormatSupported(config.imageFormat, OpticalFlow::Spec::supportedImageFormats)) {
+                    graphLog(Severity::Error) << "Invalid OF input/reference image format" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+                if (!isFormatSupported(config.flowFormat, OpticalFlow::Spec::supportedFlowFormats)) {
+                    graphLog(Severity::Error) << "Invalid OF flow vector format" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+                if (config.outputCost &&
+                    !isFormatSupported(config.costFormat, OpticalFlow::Spec::supportedCostFormats)) {
+                    graphLog(Severity::Error) << "Invalid OF cost format" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+                if (config.width < OpticalFlow::Spec::minWidth || config.width > OpticalFlow::Spec::maxWidth) {
+                    graphLog(Severity::Error) << "Invalid OF width" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+                if (config.height < OpticalFlow::Spec::minHeight || config.height > OpticalFlow::Spec::maxHeight) {
+                    graphLog(Severity::Error) << "Invalid OF height" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+
+                auto getLayout = [&createInfo](uint32_t binding, uint32_t set) -> std::optional<VkImageLayout> {
+                    for (uint32_t i = 0; i < createInfo.resourceInfoCount; ++i) {
+                        if (createInfo.pResourceInfos[i].descriptorSet == set &&
+                            createInfo.pResourceInfos[i].binding == binding) {
+                            const auto *const resourceInfoImageLayout =
+                                findType<VkDataGraphPipelineResourceInfoImageLayoutARM>(
+                                    createInfo.pResourceInfos[i].pNext,
+                                    VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_RESOURCE_INFO_IMAGE_LAYOUT_ARM);
+                            if (resourceInfoImageLayout == nullptr) {
+                                graphLog(Severity::Error)
+                                    << "Missing pipeline resource image info layout struct" << std::endl;
+                                return std::nullopt;
+                            }
+                            return resourceInfoImageLayout->layout;
+                        }
+                    }
+                    graphLog(Severity::Error) << "Missing OF resource info for connection set/binding" << std::endl;
+                    return std::nullopt;
+                };
+
+                bool hasInput = false;
+                bool hasReference = false;
+                bool hasHint = false;
+                bool hasFlowVector = false;
+                bool hasCost = false;
+                std::set<VkDataGraphPipelineNodeConnectionTypeARM> seenConnectionTypes;
+                std::set<std::pair<uint32_t, uint32_t>> seenSetBindingPairs;
+
+                for (uint32_t connection = 0; connection < opticalFlowNodeCreateInfo->connectionCount; connection++) {
+                    if (opticalFlowNodeCreateInfo->pConnections[connection].pNext != nullptr) {
+                        graphLog(Severity::Error) << "OF connection pNext must be null" << std::endl;
+                        return VK_ERROR_UNKNOWN;
+                    }
+
+                    const uint32_t set = opticalFlowNodeCreateInfo->pConnections[connection].set;
+                    const uint32_t binding = opticalFlowNodeCreateInfo->pConnections[connection].binding;
+                    const auto connectionType = opticalFlowNodeCreateInfo->pConnections[connection].connection;
+
+                    if (!seenSetBindingPairs.insert({set, binding}).second) {
+                        graphLog(Severity::Error) << "Duplicate OF set/binding in connectivity map" << std::endl;
+                        return VK_ERROR_UNKNOWN;
+                    }
+                    if (!seenConnectionTypes.insert(connectionType).second) {
+                        graphLog(Severity::Error) << "Duplicate OF connection type in connectivity map" << std::endl;
+                        return VK_ERROR_UNKNOWN;
+                    }
+
+                    const auto layout = getLayout(binding, set);
+                    if (!layout.has_value()) {
+                        return VK_ERROR_UNKNOWN;
+                    }
+
+                    /* Create configuration */
+                    switch (connectionType) {
+                    case VK_DATA_GRAPH_PIPELINE_NODE_CONNECTION_TYPE_OPTICAL_FLOW_REFERENCE_ARM:
+                        /* Input Image storage */
+                        hasReference = true;
+                        config.srcSearch.binding = binding;
+                        config.srcSearch.set = set;
+                        config.srcSearch.layout = *layout;
+                        break;
+                    case VK_DATA_GRAPH_PIPELINE_NODE_CONNECTION_TYPE_OPTICAL_FLOW_INPUT_ARM:
+                        /* Input Template Image storage */
+                        hasInput = true;
+                        config.srcTemplate.binding = binding;
+                        config.srcTemplate.set = set;
+                        config.srcTemplate.layout = *layout;
+                        break;
+                    case VK_DATA_GRAPH_PIPELINE_NODE_CONNECTION_TYPE_OPTICAL_FLOW_HINT_ARM:
+                        /* Input Flow Input hint storage */
+                        hasHint = true;
+                        config.srcFlow.binding = binding;
+                        config.srcFlow.set = set;
+                        config.srcFlow.layout = *layout;
+                        break;
+                    case VK_DATA_GRAPH_PIPELINE_NODE_CONNECTION_TYPE_OPTICAL_FLOW_FLOW_VECTOR_ARM:
+                        /* Output Flow Image storage */
+                        hasFlowVector = true;
+                        config.dstFlow.binding = binding;
+                        config.dstFlow.set = set;
+                        config.dstFlow.layout = *layout;
+                        break;
+                    case VK_DATA_GRAPH_PIPELINE_NODE_CONNECTION_TYPE_OPTICAL_FLOW_COST_ARM:
+                        /* Output Cost Image storage */
+                        hasCost = true;
+                        config.dstCost.binding = binding;
+                        config.dstCost.set = set;
+                        config.dstCost.layout = *layout;
+                        break;
+                    default:
+                        graphLog(Severity::Error) << "Invalid OF connection" << std::endl;
+                        return VK_ERROR_UNKNOWN;
+                    }
+                }
+
+                if (!hasInput || !hasReference || !hasFlowVector) {
+                    graphLog(Severity::Error)
+                        << "Missing required OF connections (input/reference/flow output)" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+                if (config.useMvInput != hasHint) {
+                    graphLog(Severity::Error) << "OF hint connection does not match hint create flag" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+                if (config.outputCost != hasCost) {
+                    graphLog(Severity::Error) << "OF cost connection does not match cost create flag" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+
+                opticalFlowPipeline->init(config);
             }
-
-            if (!shaderModule) {
-                graphLog(Severity::Error) << "Shader module not recognized by Graph layer" << std::endl;
-                return VK_ERROR_FEATURE_NOT_PRESENT;
-            }
-
-            // Create optimizer
-            spvtools::Optimizer optimizer{SPV_ENV_UNIVERSAL_1_6};
-
-            // Register passes
-            const auto tosaVersion = tryGetExtInstVersion(shaderModule->code.data(), shaderModule->code.size(),
-                                                          std::regex("^TOSA\\.\\d{6}\\.\\d"));
-            const auto motionEngineVersion = tryGetExtInstVersion(shaderModule->code.data(), shaderModule->code.size(),
-                                                                  std::regex("^Arm\\.MotionEngine\\.\\d{3}"));
-
-            const bool isTosaVersionUnsupported = tosaVersion.has_value() && tosaVersion != tosaSpv100;
-            if (isTosaVersionUnsupported) {
-                graphLog(Severity::Error) << "Unsupported Tosa version provided." << std::endl;
-                return VK_ERROR_UNKNOWN;
-            }
-
-            const bool isMotionEngineVersionUnsupported =
-                motionEngineVersion.has_value() && motionEngineVersion != motionEngine100;
-            if (isMotionEngineVersionUnsupported) {
-                graphLog(Severity::Error) << "Unsupported MotionEngine version provided." << std::endl;
-                return VK_ERROR_UNKNOWN;
-            }
-
-            optimizer.RegisterPass(spvtools::CreateGraphPass<spvtools::opt::GraphPassTosaSpv100>(*graphPipeline));
-
-            // Run passes
-            std::vector<uint32_t> optimizedModule;
-            if (!optimizer.Run(shaderModule->code.data(), shaderModule->code.size(), &optimizedModule,
-                               spvtools::ValidatorOptions(), true)) {
-                graphLog(Severity::Error) << "Failed to run optimizer passes" << std::endl;
-                return VK_ERROR_UNKNOWN;
-            }
-
-            // Create constants descriptor sets
-            pipeline->makeConstantsDescriptorSets();
 
             {
                 scopedMutex l(globalMutex);
@@ -601,6 +993,12 @@ class GraphLayer : public VulkanLayerImpl {
         if (pPipelineCreationCacheControlFeatures) {
             pPipelineCreationCacheControlFeatures->pipelineCreationCacheControl = VK_FALSE;
         }
+
+        auto *pDataGraphOpticalFlowFeatures = findTypeMutable<VkPhysicalDeviceDataGraphOpticalFlowFeaturesARM>(
+            pFeatures->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_OPTICAL_FLOW_FEATURES_ARM);
+        if (pDataGraphOpticalFlowFeatures) {
+            pDataGraphOpticalFlowFeatures->dataGraphOpticalFlow = VK_TRUE;
+        }
     }
 
     static VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *createInfo,
@@ -610,6 +1008,9 @@ class GraphLayer : public VulkanLayerImpl {
         VkDeviceCreateInfo newCreateInfo{*createInfo};
         findAndRemoveType<VkPhysicalDeviceDataGraphFeaturesARM>(
             &newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM);
+        findAndRemoveType<VkPhysicalDeviceDataGraphOpticalFlowFeaturesARM>(
+            &newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_OPTICAL_FLOW_FEATURES_ARM);
+
         auto result = VulkanLayerImpl::vkCreateDevice(physicalDevice, &newCreateInfo, allocator, device);
 
         loadVkStructureList(const_cast<VkDeviceCreateInfo *>(createInfo), originCreateInfoChain);
@@ -636,11 +1037,35 @@ class GraphLayer : public VulkanLayerImpl {
     static VkResult VKAPI_CALL vkCreateDataGraphPipelineSessionARM(
         VkDevice device, const VkDataGraphPipelineSessionCreateInfoARM *createInfo,
         const VkAllocationCallbacks *callbacks, VkDataGraphPipelineSessionARM *session) {
+        if (!createInfo || !session) {
+            return VK_ERROR_UNKNOWN;
+        }
+
         auto deviceHandle = VulkanLayerImpl::getHandle(device);
         auto pipelineImpl = getHandle(deviceHandle, createInfo->dataGraphPipeline);
+        if (!pipelineImpl) {
+            return VK_ERROR_UNKNOWN;
+        }
+
+        constexpr VkDataGraphPipelineSessionCreateFlagsARM supportedSessionCreateFlags =
+            VK_DATA_GRAPH_PIPELINE_SESSION_CREATE_OPTICAL_FLOW_CACHE_BIT_ARM;
+        if ((createInfo->flags & ~supportedSessionCreateFlags) != 0) {
+            graphLog(Severity::Error) << "Unsupported data graph session create flags" << std::endl;
+            return VK_ERROR_UNKNOWN;
+        }
+        if (pipelineImpl->isGraph() &&
+            (createInfo->flags & VK_DATA_GRAPH_PIPELINE_SESSION_CREATE_OPTICAL_FLOW_CACHE_BIT_ARM) != 0) {
+            graphLog(Severity::Error) << "OF cache create flag is invalid for non-OF pipelines" << std::endl;
+            return VK_ERROR_UNKNOWN;
+        }
+        if (pipelineImpl->isOpticalFlow() &&
+            (createInfo->flags & VK_DATA_GRAPH_PIPELINE_SESSION_CREATE_OPTICAL_FLOW_CACHE_BIT_ARM) == 0) {
+            graphLog(Severity::Error) << "OF sessions currently require OF cache create flag" << std::endl;
+            return VK_ERROR_UNKNOWN;
+        }
 
         *session = reinterpret_cast<VkDataGraphPipelineSessionARM>(
-            allocateObject<DataGraphPipelineSessionARM>(callbacks, deviceHandle, pipelineImpl));
+            allocateObject<DataGraphPipelineSessionARM>(callbacks, deviceHandle, pipelineImpl, createInfo->flags));
 
         return VK_SUCCESS;
     }
@@ -651,9 +1076,13 @@ class GraphLayer : public VulkanLayerImpl {
         auto *const session = reinterpret_cast<DataGraphPipelineSessionARM *>(info->session);
 
         const auto needsTransient = session->needsTransientRequirements();
+        const auto needsOpticalFlowCache = session->needsOpticalFlowCacheRequirements();
 
         uint32_t requiredCount = 0;
         if (needsTransient) {
+            ++requiredCount;
+        }
+        if (needsOpticalFlowCache) {
             ++requiredCount;
         }
 
@@ -682,6 +1111,10 @@ class GraphLayer : public VulkanLayerImpl {
             writeRequirement(VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM);
         }
 
+        if (needsOpticalFlowCache) {
+            writeRequirement(VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_OPTICAL_FLOW_CACHE_ARM);
+        }
+
         *bindPointRequirementCount = written;
 
         return (capacity < requiredCount) ? VK_INCOMPLETE : VK_SUCCESS;
@@ -693,7 +1126,7 @@ class GraphLayer : public VulkanLayerImpl {
         auto *const session = reinterpret_cast<DataGraphPipelineSessionARM *>(info->session);
 
         // Calculate how much memory pipelines hidden layers require
-        requirements->memoryRequirements = session->getGraphPipelineMemoryRequirements();
+        requirements->memoryRequirements = session->getGraphPipelineMemoryRequirements(info->bindPoint);
     }
 
     static VkResult VKAPI_CALL vkBindDataGraphPipelineSessionMemoryARM(
@@ -705,6 +1138,18 @@ class GraphLayer : public VulkanLayerImpl {
             switch (bindInfos[i].bindPoint) {
             case VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM: {
                 session->bindTransientMemory(bindInfos[i].memory, bindInfos[i].memoryOffset);
+                break;
+            }
+            case VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_OPTICAL_FLOW_CACHE_ARM: {
+                if (!session->pipeline->isOpticalFlow()) {
+                    graphLog(Severity::Error) << "Invalid bind point for pipeline type" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+                if (!session->hasOpticalFlowCache()) {
+                    graphLog(Severity::Error) << "OF cache bind point requires session create cache flag" << std::endl;
+                    return VK_ERROR_UNKNOWN;
+                }
+                session->bindOpticalFlowCacheMemory(bindInfos[i].memory, bindInfos[i].memoryOffset);
                 break;
             }
             default:
@@ -775,6 +1220,27 @@ class GraphLayer : public VulkanLayerImpl {
             return VK_ERROR_UNKNOWN;
         }
 
+        if ((pQueueFamilyDataGraphProperties->operation.operationType ==
+             VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_OPTICAL_FLOW_ARM) &&
+            (pProperties->sType == VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_OPTICAL_FLOW_PROPERTIES_ARM)) {
+            auto *opticalFlowProps = reinterpret_cast<VkQueueFamilyDataGraphOpticalFlowPropertiesARM *>(pProperties);
+
+            VkDataGraphOpticalFlowGridSizeFlagsARM gridSizes = 0;
+            for (size_t lvl : OpticalFlow::Spec::supportedLevelOfLastEstimation) {
+                gridSizes = static_cast<VkDataGraphOpticalFlowGridSizeFlagsARM>(gridSizes | (1u << lvl));
+            }
+            opticalFlowProps->supportedOutputGridSizes = gridSizes;
+            opticalFlowProps->supportedHintGridSizes = gridSizes;
+            opticalFlowProps->hintSupported = OpticalFlow::Spec::hintSupported;
+            opticalFlowProps->costSupported = OpticalFlow::Spec::costSupported;
+            opticalFlowProps->minWidth = OpticalFlow::Spec::minWidth;
+            opticalFlowProps->minHeight = OpticalFlow::Spec::minHeight;
+            opticalFlowProps->maxWidth = OpticalFlow::Spec::maxWidth;
+            opticalFlowProps->maxHeight = OpticalFlow::Spec::maxHeight;
+
+            return VK_SUCCESS;
+        }
+
         if (pQueueFamilyDataGraphProperties->engine.type !=
                 VK_PHYSICAL_DEVICE_DATA_GRAPH_PROCESSING_ENGINE_TYPE_DEFAULT_ARM ||
             pQueueFamilyDataGraphProperties->operation.operationType !=
@@ -810,7 +1276,7 @@ class GraphLayer : public VulkanLayerImpl {
             return VK_ERROR_UNKNOWN;
         }
 
-        constexpr uint32_t propertyCount = 1;
+        constexpr uint32_t propertyCount = 2;
 
         if (pQueueFamilyDataGraphProperties == nullptr) {
             *pQueueFamilyDataGraphPropertyCount = propertyCount;
@@ -831,12 +1297,24 @@ class GraphLayer : public VulkanLayerImpl {
             {},
         };
 
+        const VkPhysicalDeviceDataGraphOperationSupportARM operationSupportOF = {
+            VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_OPTICAL_FLOW_ARM,
+            "OpticalFlow",
+            {},
+        };
+
         const VkQueueFamilyDataGraphPropertiesARM availableProperties[propertyCount] = {
             {
                 VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_PROPERTIES_ARM,
                 nullptr,
                 processingEngine,
                 operationSupportTOSA,
+            },
+            {
+                VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_PROPERTIES_ARM,
+                nullptr,
+                processingEngine,
+                operationSupportOF,
             },
         };
 
@@ -984,68 +1462,126 @@ class GraphLayer : public VulkanLayerImpl {
     }
 
     static void VKAPI_CALL vkCmdDispatchDataGraphARM(VkCommandBuffer commandBuffer,
-                                                     VkDataGraphPipelineSessionARM _session) {
+                                                     VkDataGraphPipelineSessionARM _session,
+                                                     const VkDataGraphPipelineDispatchInfoARM *pInfo) {
         auto handle = VulkanLayerImpl::getHandle(commandBuffer);
         auto *session = reinterpret_cast<DataGraphPipelineSessionARM *>(_session);
         auto pipeline = session->pipeline;
         auto *vkPipeline = reinterpret_cast<VkPipeline>(pipeline.get());
-        auto graphPipeline = pipeline->graphPipeline;
         auto deviceHandle = VulkanLayerImpl::getHandle(handle->device->device);
 
-        /*
-         * Merge descriptor sets, they can have three different origins:
-         * - Constants owned by the pipeline
-         * - Session ram owned by the session
-         * - External owned by the application
-         */
-        ComputeDescriptorSetMap allDescriptorSetMap;
+        if (pipeline->isGraph()) {
+            auto graphPipeline = pipeline->graphPipeline;
+            /*
+             * Merge descriptor sets, they can have three different origins:
+             * - Constants owned by the pipeline
+             * - Session ram owned by the session
+             * - External owned by the application
+             */
+            ComputeDescriptorSetMap allDescriptorSetMap;
 
-        for (const auto &[set, vkDescriptorSet] : handle->descriptorSets) {
-            auto descriptorSet = getHandle(deviceHandle, vkDescriptorSet);
+            for (const auto &[set, vkDescriptorSet] : handle->descriptorSets) {
+                auto descriptorSet = getHandle(deviceHandle, vkDescriptorSet);
 
-            auto &externalDescriptorSets = descriptorSet->externalDescriptorSets;
-            if (externalDescriptorSets.find({vkPipeline, set}) == externalDescriptorSets.end()) {
-                /*
-                 * A resource bound to the graph with {set, binding} can be used by multiple compute jobs,
-                 * with different {set, binding}.
-                 *
-                 * The list of compute jobs is first known when the pipeline is dispatched. A DescriptorSet is bound to
-                 * a PipelineLayout, which is why the compute DescriptorSets must be created here.
-                 *
-                 *               <- Defined by the PipelineLayout ->
-                 * +----------+    +----------+     +------------+
-                 * | GRAPH    |    | COMPUTE1 |     | COMPUTE<n> |
-                 * +----------+    +----------+     +------------+
-                 * | set      | => | set1     | ... | set<n>     |
-                 * | binding  |    | binding1 |     | binding<n> |
-                 * | resource |    | resource |     | resource   |
-                 * +----------+    +----------+     +------------+
-                 */
+                auto &externalDescriptorSets = descriptorSet->externalDescriptorSets;
+                if (externalDescriptorSets.find({vkPipeline, set}) == externalDescriptorSets.end()) {
+                    /*
+                     * A resource bound to the graph with {set, binding} can be used by multiple compute jobs,
+                     * with different {set, binding}.
+                     *
+                     * The list of compute jobs is first known when the pipeline is dispatched. A DescriptorSet is bound
+                     * to a PipelineLayout, which is why the compute DescriptorSets must be created here.
+                     *
+                     *               <- Defined by the PipelineLayout ->
+                     * +----------+    +----------+     +------------+
+                     * | GRAPH    |    | COMPUTE1 |     | COMPUTE<n> |
+                     * +----------+    +----------+     +------------+
+                     * | set      | => | set1     | ... | set<n>     |
+                     * | binding  |    | binding1 |     | binding<n> |
+                     * | resource |    | resource |     | resource   |
+                     * +----------+    +----------+     +------------+
+                     */
 
-                // Create compute descriptor sets
-                auto descriptorSetMapTemp = graphPipeline->makeExternalDescriptorSets(set);
-                auto &computeDescriptorSetMap = externalDescriptorSets[{vkPipeline, set}];
-                computeDescriptorSetMap.insert(descriptorSetMapTemp.begin(), descriptorSetMapTemp.end());
+                    // Create compute descriptor sets
+                    auto descriptorSetMapTemp = graphPipeline->makeExternalDescriptorSets(set);
+                    auto &computeDescriptorSetMap = externalDescriptorSets[{vkPipeline, set}];
+                    computeDescriptorSetMap.insert(descriptorSetMapTemp.begin(), descriptorSetMapTemp.end());
 
-                for (const auto &[binding, tensorViews] : descriptorSet->tensorViews) {
-                    for (uint32_t arrayIndex = 0; arrayIndex < tensorViews.size(); arrayIndex++) {
-                        if (tensorViews[arrayIndex] == nullptr) {
+                    for (const auto &[binding, tensorViews] : descriptorSet->tensorViews) {
+                        for (uint32_t arrayIndex = 0; arrayIndex < tensorViews.size(); arrayIndex++) {
+                            if (tensorViews[arrayIndex] == nullptr) {
+                                continue;
+                            }
+                            updateDescriptorSet(deviceHandle, tensorViews, arrayIndex, graphPipeline, set, binding,
+                                                computeDescriptorSetMap);
+                        }
+                    }
+                } // end if no entry
+
+                auto &externals = descriptorSet->externalDescriptorSets.at({vkPipeline, set});
+                allDescriptorSetMap.insert(externals.begin(), externals.end());
+            }
+
+            allDescriptorSetMap.insert(pipeline->constantsDescriptorSets.begin(),
+                                       pipeline->constantsDescriptorSets.end());
+            allDescriptorSetMap.insert(session->sessionRamDescriptorSets.begin(),
+                                       session->sessionRamDescriptorSets.end());
+
+            graphPipeline->cmdBindAndDispatch(commandBuffer, allDescriptorSetMap);
+        } else if (pipeline->isOpticalFlow()) {
+            const auto &opticalFlowPipeline = pipeline->opticalFlow;
+
+            VkDataGraphOpticalFlowExecuteFlagsARM opticalFlowFlags = 0;
+            uint32_t meanFlowL1NormHint = 0;
+            if (pInfo != nullptr) {
+                const auto *opticalFlowDispatchInfo = findType<VkDataGraphPipelineOpticalFlowDispatchInfoARM>(
+                    pInfo, VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_OPTICAL_FLOW_DISPATCH_INFO_ARM);
+                if (opticalFlowDispatchInfo) {
+                    opticalFlowFlags = opticalFlowDispatchInfo->flags;
+                    meanFlowL1NormHint = opticalFlowDispatchInfo->meanFlowL1NormHint;
+                }
+            }
+
+            constexpr VkDataGraphOpticalFlowExecuteFlagsARM cacheDependentExecuteFlags =
+                VK_DATA_GRAPH_OPTICAL_FLOW_EXECUTE_INPUT_UNCHANGED_BIT_ARM |
+                VK_DATA_GRAPH_OPTICAL_FLOW_EXECUTE_REFERENCE_UNCHANGED_BIT_ARM |
+                VK_DATA_GRAPH_OPTICAL_FLOW_EXECUTE_INPUT_IS_PREVIOUS_REFERENCE_BIT_ARM |
+                VK_DATA_GRAPH_OPTICAL_FLOW_EXECUTE_REFERENCE_IS_PREVIOUS_INPUT_BIT_ARM;
+            constexpr VkDataGraphOpticalFlowExecuteFlagsARM supportedExecuteFlags =
+                VK_DATA_GRAPH_OPTICAL_FLOW_EXECUTE_DISABLE_TEMPORAL_HINTS_BIT_ARM | cacheDependentExecuteFlags;
+
+            if (opticalFlowFlags & ~supportedExecuteFlags) {
+                graphLog(Severity::Error) << "Unsupported OF execute flags" << std::endl;
+                return;
+            }
+            if (!session->transientMemoryBound) {
+                graphLog(Severity::Error) << "OF session transient memory is not bound" << std::endl;
+                return;
+            }
+            if ((opticalFlowFlags & cacheDependentExecuteFlags) && !session->hasOpticalFlowCache()) {
+                graphLog(Severity::Error) << "OF execute flags require session create OF cache flag" << std::endl;
+                return;
+            }
+            if ((opticalFlowFlags & cacheDependentExecuteFlags) && !session->opticalFlowCacheMemoryBound) {
+                graphLog(Severity::Error) << "OF execute flags require OF cache memory to be bound" << std::endl;
+                return;
+            }
+
+            OpticalFlowDescriptorMap descriptorMap;
+            for (const auto &[set, vkDescriptorSet] : handle->descriptorSets) {
+                auto descriptorSet = getHandle(deviceHandle, vkDescriptorSet);
+                for (const auto &[binding, imageViews] : descriptorSet->imageViews) {
+                    for (uint32_t arrayIndex = 0; arrayIndex < imageViews.size(); arrayIndex++) {
+                        if (imageViews[arrayIndex] == VK_NULL_HANDLE) {
                             continue;
                         }
-                        updateDescriptorSet(deviceHandle, tensorViews, arrayIndex, graphPipeline, set, binding,
-                                            computeDescriptorSetMap);
+                        descriptorMap[{set, binding, arrayIndex}] = {vkDescriptorSet, imageViews[arrayIndex]};
                     }
                 }
-            } // end if no entry
-
-            auto &externals = descriptorSet->externalDescriptorSets.at({vkPipeline, set});
-            allDescriptorSetMap.insert(externals.begin(), externals.end());
+                opticalFlowPipeline->updateDescriptorSets(descriptorMap);
+            }
+            opticalFlowPipeline->cmdBindAndDispatch(commandBuffer, opticalFlowFlags, meanFlowL1NormHint);
         }
-
-        allDescriptorSetMap.insert(pipeline->constantsDescriptorSets.begin(), pipeline->constantsDescriptorSets.end());
-        allDescriptorSetMap.insert(session->sessionRamDescriptorSets.begin(), session->sessionRamDescriptorSets.end());
-
-        graphPipeline->cmdBindAndDispatch(commandBuffer, allDescriptorSetMap);
     }
 
     /*******************************************************************************
