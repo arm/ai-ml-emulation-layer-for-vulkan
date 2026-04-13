@@ -42,9 +42,9 @@ class FormatBase {
     virtual std::string toInt() const = 0;
 };
 
-std::shared_ptr<FormatBase> makeFormat(const VkFormat format);
+std::shared_ptr<FormatBase> makeFormat(VkFormat format);
 
-std::shared_ptr<FormatBase> makeFormat(const VkFormat format, const bool isUnsigned);
+std::shared_ptr<FormatBase> makeFormat(VkFormat format, bool isUnsigned);
 
 template <typename T> class Span {
   private:

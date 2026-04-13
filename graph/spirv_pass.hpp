@@ -50,19 +50,18 @@ class GraphPassBase : public Pass {
     const Graph *getGraphById(const Operand &operand);
     std::tuple<std::vector<analysis::TensorARM *>, std::vector<analysis::TensorARM *>>
     getGraphType(const Operand &operand);
-    analysis::TensorARM *getTensorType(const Operand &operand, const uint32_t index = 0) const;
-    analysis::TensorARM *getTensorType(uint32_t id, const uint32_t index = 0) const;
+    analysis::TensorARM *getTensorType(const Operand &operand, uint32_t index = 0) const;
+    analysis::TensorARM *getTensorType(uint32_t id, uint32_t index = 0) const;
     std::tuple<uint64_t, uint64_t> getDescriptorSetAndBinding(const Operand &operand);
     std::tuple<uint64_t, uint64_t, std::shared_ptr<mlsdk::el::compute::TensorDescriptor>>
-    getTensorByDecoration(const Operand &operand, const uint32_t arrayIndex);
-    void mapTensorByDecoration(uint32_t resultId, const Operand &operand, const uint32_t arrayIndex = 0);
+    getTensorByDecoration(const Operand &operand, uint32_t arrayIndex);
+    void mapTensorByDecoration(uint32_t resultId, const Operand &operand, uint32_t arrayIndex = 0);
     std::shared_ptr<mlsdk::el::compute::TensorDescriptor> getTensor(const Instruction &instruction,
-                                                                    const uint32_t arrayIndex = 0);
-    std::shared_ptr<mlsdk::el::compute::TensorDescriptor> getTensor(const Operand &operand,
-                                                                    const uint32_t arrayIndex = 0);
+                                                                    uint32_t arrayIndex = 0);
+    std::shared_ptr<mlsdk::el::compute::TensorDescriptor> getTensor(const Operand &operand, uint32_t arrayIndex = 0);
     std::shared_ptr<mlsdk::el::compute::TensorDescriptor> makeTensor(const analysis::TensorARM *tensor) const;
-    std::shared_ptr<mlsdk::el::compute::TensorDescriptor> getOrMakeCompositeTensor(const uint32_t id) const;
-    std::shared_ptr<mlsdk::el::compute::TensorDescriptor> makeCompositeTensor(const uint32_t id) const;
+    std::shared_ptr<mlsdk::el::compute::TensorDescriptor> getOrMakeCompositeTensor(uint32_t id) const;
+    std::shared_ptr<mlsdk::el::compute::TensorDescriptor> makeCompositeTensor(uint32_t id) const;
     VkFormat getVkFormat(const analysis::Type *type) const;
     bool getBoolConstant(const Operand &operand);
     std::string extractDebugInfoFromSPV(const Instruction *opExtInst, const std::string &defaultname);

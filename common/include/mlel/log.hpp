@@ -34,7 +34,7 @@ enum class Severity { Error, Warning, Info, Debug };
 class Log {
   public:
     Log(const std::string &_environmentVariable, const std::string &_loggerName,
-        const Severity _defaultLogLevel = Severity::Error);
+        Severity _defaultLogLevel = Severity::Error);
 
     /**
      * Output log entry if log level is higher or equal to the severity.
@@ -56,15 +56,15 @@ class Log {
     /**
      * Set log level, output log header and return reference to logger.
      */
-    Log &operator()(const Severity _severity);
+    Log &operator()(Severity _severity);
 
     /**
      * Return true if log is enable for severity.
      */
-    bool enabled(const Severity _severity) const;
+    bool enabled(Severity _severity) const;
 
   private:
-    static Severity getLogLevel(const std::string &environmentVariable, const Severity defaultLogLevel);
+    static Severity getLogLevel(const std::string &environmentVariable, Severity defaultLogLevel);
     std::string severityToString() const;
 
     static inline const std::map<std::string, Severity> stringToSeverityMap = {

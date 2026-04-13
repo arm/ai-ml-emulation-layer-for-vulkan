@@ -45,10 +45,10 @@ class PhysicalDevice {
 
     vk::raii::PhysicalDevice const &operator&() const;
     const std::shared_ptr<Instance> &getInstance() const;
-    std::vector<vk::DeviceQueueCreateInfo> getQueueCreateInfo(const vk::QueueFlags flags) const;
+    std::vector<vk::DeviceQueueCreateInfo> getQueueCreateInfo(vk::QueueFlags flags) const;
     uint32_t getComputeFamilyIndex() const;
-    std::vector<uint32_t> getMemoryTypeIndices(const vk::MemoryPropertyFlags memoryPropertyFlags = {},
-                                               const uint32_t memoryTypeBits = 0xffffffff) const;
+    std::vector<uint32_t> getMemoryTypeIndices(vk::MemoryPropertyFlags memoryPropertyFlags = {},
+                                               uint32_t memoryTypeBits = 0xffffffff) const;
 
   private:
     bool hasExtensionProperties(const vk::raii::PhysicalDevice &physicalDevice,
@@ -58,7 +58,7 @@ class PhysicalDevice {
     vk::raii::PhysicalDevice createPhysicalDevice(const std::vector<const char *> &extensions) const;
     static std::vector<vk::DeviceQueueCreateInfo> getQueueCreateInfo(const vk::raii::PhysicalDevice &physicalDevice,
                                                                      const std::array<const float, 16> &queuePriorities,
-                                                                     const vk::QueueFlags flags);
+                                                                     vk::QueueFlags flags);
 
     std::shared_ptr<Instance> instance;
     vk::raii::PhysicalDevice physicalDevice;
@@ -76,9 +76,9 @@ class Device {
 
     vk::raii::Device const &operator&() const;
     const std::shared_ptr<PhysicalDevice> &getPhysicalDevice() const;
-    std::shared_ptr<vk::raii::DeviceMemory> allocateDeviceMemory(const vk::DeviceSize size,
-                                                                 const vk::MemoryPropertyFlags memoryPropertyFlags = {},
-                                                                 const uint32_t memoryTypeBits = 0xffffffff) const;
+    std::shared_ptr<vk::raii::DeviceMemory> allocateDeviceMemory(vk::DeviceSize size,
+                                                                 vk::MemoryPropertyFlags memoryPropertyFlags = {},
+                                                                 uint32_t memoryTypeBits = 0xffffffff) const;
 
   private:
     vk::raii::Device createDevice(const std::vector<const char *> &layers, const std::vector<const char *> &extensions,
