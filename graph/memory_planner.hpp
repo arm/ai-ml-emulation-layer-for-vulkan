@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2024-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -10,7 +10,7 @@
  * Includes
  *******************************************************************************/
 
-#include "compute.hpp"
+#include "compute_graph_op.hpp"
 #include "tensor.hpp"
 
 #include <map>
@@ -18,7 +18,7 @@
 #include <vector>
 #include <vulkan/vulkan_core.h>
 
-namespace mlsdk::el::compute {
+namespace mlsdk::el::compute::graph_op {
 
 /*******************************************************************************
  * MemoryPlanner
@@ -94,4 +94,4 @@ class BestFitMemoryPlanner : public MemoryPlanner {
     std::vector<ComputePipelineBase *> getTopologicalOrder() const;
 };
 
-} // namespace mlsdk::el::compute
+} // namespace mlsdk::el::compute::graph_op

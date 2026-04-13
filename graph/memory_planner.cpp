@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2024-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -21,7 +21,7 @@
 using namespace mlsdk::el::utils;
 using namespace mlsdk::el::log;
 
-namespace mlsdk::el::compute {
+namespace mlsdk::el::compute::graph_op {
 
 /*******************************************************************************
  * MemoryPlanner
@@ -376,4 +376,4 @@ bool BestFitMemoryPlanner::isSafeToReuse(const std::shared_ptr<Tensors> &occupat
     return true;
 }
 
-} // namespace mlsdk::el::compute
+} // namespace mlsdk::el::compute::graph_op

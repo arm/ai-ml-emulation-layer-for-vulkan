@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "compute.hpp"
+#include "compute_graph_op.hpp"
 #include "mlel/float.hpp"
 #include "source/opt/pass.h"
 
@@ -21,6 +21,8 @@
 /*******************************************************************************
  * Base Graph Pass
  *******************************************************************************/
+
+using namespace mlsdk::el::compute::graph_op;
 
 namespace spvtools {
 
@@ -34,7 +36,7 @@ enum RoundingMode {
 
 class GraphPassBase : public Pass {
   public:
-    GraphPassBase(mlsdk::el::compute::GraphPipeline &_graphPipeline) : graphPipeline{_graphPipeline} {}
+    GraphPassBase(GraphPipeline &_graphPipeline) : graphPipeline{_graphPipeline} {}
 
     ~GraphPassBase() override = default;
 
@@ -186,7 +188,7 @@ class GraphPassBase : public Pass {
         throw std::runtime_error(std::string("Unsupported constant type: ") + std::to_string(constant->type()->kind()));
     }
 
-    mlsdk::el::compute::GraphPipeline &graphPipeline;
+    GraphPipeline &graphPipeline;
     VkDevice device = {};
     std::map<uint32_t, std::array<std::shared_ptr<mlsdk::el::compute::TensorDescriptor>, 2>> tensorMap;
 };
@@ -198,7 +200,7 @@ class GraphPassBase : public Pass {
  *******************************************************************************/
 
 template <typename T, std::enable_if_t<std::is_base_of_v<opt::GraphPassBase, T>, bool> = true>
-Optimizer::PassToken CreateGraphPass(mlsdk::el::compute::GraphPipeline &graphPipeline) {
+Optimizer::PassToken CreateGraphPass(GraphPipeline &graphPipeline) {
     return Optimizer::PassToken{MakeUnique<T>(graphPipeline)};
 }
 

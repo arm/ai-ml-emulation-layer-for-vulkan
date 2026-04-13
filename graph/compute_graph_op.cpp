@@ -8,7 +8,7 @@
  * Includes
  *******************************************************************************/
 
-#include "compute.hpp"
+#include "compute_graph_op.hpp"
 #include "graph_log.hpp"
 
 #include <cmath>
@@ -21,7 +21,8 @@ using namespace mlsdk::el::utils;
 namespace mlsdk::el::compute {
 
 namespace {
-void makeAndConnectVirtualTensor(const std::shared_ptr<TensorDescriptor> &tensor, ComputePipelineBase *descendant) {
+void makeAndConnectVirtualTensor(const std::shared_ptr<TensorDescriptor> &tensor,
+                                 graph_op::ComputePipelineBase *descendant) {
     auto *parent = tensor->getPipeline();
     auto virtualTensor = std::make_shared<VirtualTensor>(tensor, parent, descendant);
 
@@ -78,6 +79,8 @@ std::string compTypeString(const std::shared_ptr<FormatBase> &type) {
 }
 
 } // namespace
+
+namespace graph_op {
 
 /*******************************************************************************
  * ComputeDescriptorSet
@@ -438,67 +441,15 @@ void ComputePipeline::cmdDispatch(VkCommandBuffer commandBuffer) {
 }
 
 VkPipeline ComputePipeline::createComputePipeline(const SpecConstants &_constants) const {
-    std::vector<VkSpecializationMapEntry> spec_entries;
-    for (uint32_t i = 0; i < _constants.size(); ++i) {
-        const VkSpecializationMapEntry entry = {
-            i,                                                             // constantID
-            static_cast<uint32_t>(spec_entries.size() * sizeof(uint32_t)), // offset
-            sizeof(uint32_t),                                              // size
-        };
-        spec_entries.emplace_back(entry);
-    }
+    const auto specializationConstants = common::makeSpecializationConstantsView(_constants);
+    const auto *specialization = _constants.empty() ? nullptr : &specializationConstants;
 
-    const VkSpecializationInfo spec_info = {
-        static_cast<uint32_t>(spec_entries.size()),                 // mapEntryCount
-        spec_entries.data(),                                        // pMapEntries
-        static_cast<uint32_t>(_constants.size() * sizeof(int32_t)), // dataSize
-        _constants.data(),                                          // pData
-    };
-
-    const VkPipelineShaderStageCreateInfo pipelineShaderCreateInfo = {
-        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, // type
-        nullptr,                                             // next
-        0,                                                   // flags
-        VK_SHADER_STAGE_COMPUTE_BIT,                         // stage flag bits
-        shaderModule,                                        // shader module
-        "main",                                              // name
-        !_constants.empty() ? &spec_info : nullptr,          // specialization info
-    };
-
-    const VkComputePipelineCreateInfo computePipelineCreateInfo = {
-        VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, // type
-        nullptr,                                        // next
-        0,                                              // flags
-        pipelineShaderCreateInfo,                       // create info
-        pipelineLayout->getVkPipelineLayout(),          // pipeline layout
-        nullptr,                                        // base pipeline handle
-        0,                                              // base pipeline index
-    };
-
-    VkPipeline vkPipeline;
-    if (loader->vkCreateComputePipelines(device, pipelineCache->getPipelineCache(), 1, &computePipelineCreateInfo,
-                                         nullptr, &vkPipeline) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create compute pipelines");
-    }
-
-    return vkPipeline;
+    return common::createComputePipeline(loader, device, pipelineCache->getPipelineCache(), shaderModule,
+                                         pipelineLayout->getVkPipelineLayout(), specialization);
 }
 
 VkShaderModule ComputePipeline::createShaderModule(const SpirvBinary &code) const {
-    const VkShaderModuleCreateInfo shaderModuleCreateInfo = {
-        VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,           // type
-        nullptr,                                               // next
-        0,                                                     // flags
-        static_cast<uint32_t>(code.size() * sizeof(uint32_t)), // code size
-        code.data(),                                           // code
-    };
-
-    VkShaderModule vkShaderModule;
-    if (loader->vkCreateShaderModule(device, &shaderModuleCreateInfo, nullptr, &vkShaderModule) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create shader module");
-    }
-
-    return vkShaderModule;
+    return common::createShaderModule(loader, device, code);
 }
 
 void ComputePipeline::connectPipelines() {
@@ -2242,9 +2193,10 @@ DescriptorMap BlockMatch::createDescriptorMap(const std::shared_ptr<TensorDescri
 
 SpirvBinary BlockMatch::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                     const SearchType searchType) const {
-    return _pipelineCache->lookup(shaderName, {std::to_string(searchType)},
+    const auto searchTypeStr = std::to_string(static_cast<uint32_t>(searchType));
+    return _pipelineCache->lookup(shaderName, {searchTypeStr},
                                   {
-                                      {"%search_type%", std::to_string(searchType)},
+                                      {"%search_type%", searchTypeStr},
                                       {"%warpX%", std::to_string(warpX)},
                                       {"%warpY%", std::to_string(warpY)},
                                   });
@@ -2320,7 +2272,7 @@ std::shared_ptr<TensorDescriptor> GraphPipeline::makeConstCompositeTensor(const 
 ComputeDescriptorSetMap GraphPipeline::makeConstantsDescriptorSets() const {
     TensorDescriptorMap filter;
 
-    for (const auto &[id, tensor] : constTensorMap) {
+    for ([[maybe_unused]] const auto &[_, tensor] : constTensorMap) {
         filter[tensor->getTensorDescriptor()] = tensor;
     }
 
@@ -2897,4 +2849,5 @@ void GraphPipeline::makeRawSad(const std::shared_ptr<TensorDescriptor> &inTempla
                              windowStrides, windowOffsets, padding, 0, BlockMatch::SearchType::RAW_SAD, debugName);
 }
 
+} // namespace graph_op
 } // namespace mlsdk::el::compute

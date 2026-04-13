@@ -17,7 +17,8 @@ target_set_vulkan_exports(VkLayer_Graph)
 target_compile_options(VkLayer_Graph PRIVATE ${VMEL_COMPILE_OPTIONS})
 
 target_sources(VkLayer_Graph PRIVATE
-    compute.cpp
+    compute_graph_op.cpp
+    compute_pipeline_common.cpp
     graph_layer.cpp
     graph_log.cpp
     memory_planner.cpp
