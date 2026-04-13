@@ -10,7 +10,7 @@
 
 #include "mlel/vulkan_layer.hpp"
 
-#include "compute.hpp"
+#include "compute_graph_op.hpp"
 #include "graph_log.hpp"
 #include "memory_planner.hpp"
 #include "pipeline_cache.hpp"
@@ -25,6 +25,7 @@
 #include <regex>
 
 using namespace mlsdk::el::compute;
+using namespace mlsdk::el::compute::graph_op;
 using namespace mlsdk::el::log;
 
 /*****************************************************************************

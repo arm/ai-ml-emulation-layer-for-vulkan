@@ -10,6 +10,7 @@
  * Includes
  *******************************************************************************/
 
+#include "compute_pipeline_common.hpp"
 #include "mlel/utils.hpp"
 #include "pipeline_cache.hpp"
 #include "tensor.hpp"
@@ -24,7 +25,7 @@
 #include <utility>
 #include <vector>
 
-namespace mlsdk::el::compute {
+namespace mlsdk::el::compute::graph_op {
 
 enum NanPropagationMode {
     Propagate = 1,
@@ -1115,11 +1116,7 @@ class TransposeConv2D : public ComputePipeline {
 
 class BlockMatch : public ComputePipeline {
   public:
-    enum SearchType : uint32_t {
-        MIN_SAD = 0,
-        MIN_SAD_COST = 1,
-        RAW_SAD = 2,
-    };
+    using SearchType = common::BlockMatchMode;
 
     BlockMatch(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, VkDevice _device,
                const std::shared_ptr<PipelineCache> &_pipelineCache,
@@ -1507,4 +1504,4 @@ class GraphPipeline {
     ComputePipelineBase outputs{nullptr};
 };
 
-} // namespace mlsdk::el::compute
+} // namespace mlsdk::el::compute::graph_op

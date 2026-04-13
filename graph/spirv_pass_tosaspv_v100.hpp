@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2025-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "compute.hpp"
+#include "compute_graph_op.hpp"
 #include "spirv_pass.hpp"
 
 static constexpr std::string_view tosaSpv100 = "TOSA.001000.1";
@@ -20,11 +20,13 @@ static constexpr std::string_view motionEngine100 = "Arm.MotionEngine.100";
  * GraphPass TosaSpv100
  *******************************************************************************/
 
+using namespace mlsdk::el::compute::graph_op;
+
 namespace spvtools::opt {
 
 class GraphPassTosaSpv100 final : public GraphPassBase {
   public:
-    explicit GraphPassTosaSpv100(mlsdk::el::compute::GraphPipeline &_pipelines) : GraphPassBase(_pipelines) {}
+    explicit GraphPassTosaSpv100(GraphPipeline &_pipelines) : GraphPassBase(_pipelines) {}
     const char *name() const override { return "graph-pass-tosaspv-v100"; }
 
   private:
@@ -43,15 +45,13 @@ class GraphPassTosaSpv100 final : public GraphPassBase {
     void handleDepthwiseConv2D(const Instruction *opExtInst, const std::string &debugName);
     void handleElementwiseBinary(
         const Instruction *opExtInst, const std::string &debugName,
-        std::function<void(mlsdk::el::compute::GraphPipeline *,
-                           const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &,
+        std::function<void(GraphPipeline *, const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &,
                            const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &,
                            const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &, const std::string &)>
             function);
     void handleElementwiseUnary(
         const Instruction *opExtInst, const std::string &debugName,
-        std::function<void(mlsdk::el::compute::GraphPipeline *,
-                           const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &,
+        std::function<void(GraphPipeline *, const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &,
                            const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &, const std::string &)>
             function);
     void handleFft2D(const Instruction *opExtInst, const std::string &debugName);
@@ -62,12 +62,11 @@ class GraphPassTosaSpv100 final : public GraphPassBase {
     void handleMinimum(const Instruction *opExtInst, const std::string &debugName);
     void handleMul(const Instruction *opExtInst, const std::string &debugName);
     void handleNegate(const Instruction *opExtInst, const std::string &debugName);
-    void handleReduce(
-        const Instruction *opExtInst, const std::string &debugName,
-        std::function<
-            void(mlsdk::el::compute::GraphPipeline *, const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &,
-                 const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &, const uint32_t, const std::string &)>
-            function);
+    void handleReduce(const Instruction *opExtInst, const std::string &debugName,
+                      std::function<void(GraphPipeline *, const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &,
+                                         const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &, const uint32_t,
+                                         const std::string &)>
+                          function);
     void handleReduceMax(const Instruction *opExtInst, const std::string &debugName);
     void handleReduceMin(const Instruction *opExtInst, const std::string &debugName);
     void handlePad(const Instruction *opExtInst, const std::string &debugName);
