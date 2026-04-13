@@ -21,6 +21,7 @@
 #include "spirv_pass_tosaspv_v100.hpp"
 
 #include <chrono>
+#include <cstdlib>
 #include <optional>
 #include <regex>
 
@@ -253,8 +254,10 @@ std::optional<std::string> tryGetExtInstVersion(const uint32_t *spirvCode, const
 
 } // namespace
 
-constexpr std::array<const VkExtensionProperties, 1> extensions{
+constexpr std::array<const VkExtensionProperties, 2> extensions{
     VkExtensionProperties{VK_ARM_DATA_GRAPH_EXTENSION_NAME, VK_ARM_DATA_GRAPH_SPEC_VERSION},
+    VkExtensionProperties{VK_ARM_DATA_GRAPH_INSTRUCTION_SET_TOSA_EXTENSION_NAME,
+                          VK_ARM_DATA_GRAPH_INSTRUCTION_SET_TOSA_SPEC_VERSION},
 };
 
 constexpr std::array<const VkExtensionProperties, 2> requiredExtensions = {
@@ -281,6 +284,8 @@ class GraphLayer : public VulkanLayerImpl {
             {"vk_layerGetPhysicalDeviceProcAddr", PFN_vkVoidFunction(vk_layerGetPhysicalDeviceProcAddr)},
 
             // PhysicalDevice functions
+            {"vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM",
+             PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM)},
             {"vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM",
              PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM)},
             {"vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM",
@@ -356,6 +361,8 @@ class GraphLayer : public VulkanLayerImpl {
         static const vTable vtable = {
             {"vk_layerGetPhysicalDeviceProcAddr", PFN_vkVoidFunction(vk_layerGetPhysicalDeviceProcAddr)},
             // PhysicalDevice functions
+            {"vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM",
+             PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM)},
             {"vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM",
              PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM)},
             {"vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM",
@@ -756,6 +763,41 @@ class GraphLayer : public VulkanLayerImpl {
             * /*pQueueFamilyDataGraphProcessingEngineInfo*/,
         VkQueueFamilyDataGraphProcessingEnginePropertiesARM * /*pQueueFamilyDataGraphProcessingEngineProperties*/) {
         // No properties available
+    }
+
+    static VkResult VKAPI_CALL vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+        VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+        const VkQueueFamilyDataGraphPropertiesARM *pQueueFamilyDataGraphProperties, VkBaseOutStructure *pProperties) {
+        auto handle = VulkanLayerImpl::getHandle(physicalDevice);
+        uint32_t familyCount = 0;
+        handle->loader->vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &familyCount, nullptr);
+        if (queueFamilyIndex >= familyCount || pQueueFamilyDataGraphProperties == nullptr || pProperties == nullptr) {
+            return VK_ERROR_UNKNOWN;
+        }
+
+        if (pQueueFamilyDataGraphProperties->engine.type !=
+                VK_PHYSICAL_DEVICE_DATA_GRAPH_PROCESSING_ENGINE_TYPE_DEFAULT_ARM ||
+            pQueueFamilyDataGraphProperties->operation.operationType !=
+                VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_SPIRV_EXTENDED_INSTRUCTION_SET_ARM) {
+            return VK_ERROR_UNKNOWN;
+        }
+
+        auto *tosaProperties = findTypeMutable<VkQueueFamilyDataGraphTOSAPropertiesARM>(
+            pProperties, VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_TOSA_PROPERTIES_ARM);
+        if (tosaProperties == nullptr) {
+            return VK_SUCCESS;
+        }
+
+        const static VkDataGraphTOSANameQualityARM profile = {"Emulation Layer",
+                                                              VK_DATA_GRAPH_TOSA_QUALITY_CONFORMANT_ARM};
+
+        tosaProperties->profileCount = 1;
+        tosaProperties->pProfiles = &profile;
+        tosaProperties->extensionCount = 0;
+        tosaProperties->pExtensions = nullptr;
+        tosaProperties->level = VK_DATA_GRAPH_TOSA_LEVEL_8K_ARM;
+
+        return VK_SUCCESS;
     }
 
     static VkResult VKAPI_CALL vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
