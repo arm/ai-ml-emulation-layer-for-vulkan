@@ -61,7 +61,7 @@ using ComputePipelineBase = graph_op::ComputePipelineBase;
 class TensorDescriptor {
   public:
     TensorDescriptor(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader,
-                     VkPhysicalDevice _physicalDevice, VkDevice _device, const VkFormat _format,
+                     VkPhysicalDevice _physicalDevice, VkDevice _device, VkFormat _format,
                      const std::vector<int64_t> &_dimensions = {}, const std::vector<int64_t> &_strides = {});
 
     TensorDescriptor(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader,
@@ -90,13 +90,13 @@ class TensorDescriptor {
   private:
     std::vector<int64_t> createStrides(const VkTensorDescriptionARM &tensorDescription) const;
     VkTensorARM createTensorARM(const VkTensorDescriptionARM &tensorDescription) const;
-    VkTensorViewARM createTensorViewARM(const VkTensorARM tensor, const VkFormat _format) const;
+    VkTensorViewARM createTensorViewARM(VkTensorARM tensor, VkFormat _format) const;
     std::vector<VkQueueFamilyProperties> enumerateQueueFamilyProperties() const;
     uint32_t getComputeFamilyIndex() const;
 
-    VkDeviceMemory allocateDeviceMemory(const size_t size, const uint32_t memoryTypeBits) const;
-    std::vector<uint32_t> getMemoryTypeIndices(const VkMemoryPropertyFlags memoryPropertyFlags,
-                                               const uint32_t memoryTypeBits) const;
+    VkDeviceMemory allocateDeviceMemory(size_t size, uint32_t memoryTypeBits) const;
+    std::vector<uint32_t> getMemoryTypeIndices(VkMemoryPropertyFlags memoryPropertyFlags,
+                                               uint32_t memoryTypeBits) const;
 
     std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> loader;
     VkPhysicalDevice physicalDevice;
@@ -125,7 +125,7 @@ class VirtualTensor {
                   ComputePipelineBase *_descendant);
 
     bool getVisited() const;
-    void setVisited(const bool _visited);
+    void setVisited(bool _visited);
 
     std::shared_ptr<TensorDescriptor> getTensor() const;
     ComputePipelineBase *getParentPipeline() const;

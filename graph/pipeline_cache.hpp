@@ -35,7 +35,7 @@ class PipelineCache {
     using KeyList = std::initializer_list<std::string_view>;
     using ReplaceList = std::initializer_list<std::pair<std::string_view, std::string_view>>;
 
-    PipelineCache(const void *data, const size_t size, VkPipelineCache _pipelineCache);
+    PipelineCache(const void *data, size_t size, VkPipelineCache _pipelineCache);
     ~PipelineCache() = default;
 
     SpirvBinary lookup(std::string_view shaderName, const KeyList &keys, const ReplaceList &repl);

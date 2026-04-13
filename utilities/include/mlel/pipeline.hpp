@@ -24,7 +24,7 @@ namespace mlsdk::el::utilities {
 
 class GraphPipelineConstantTensor {
   public:
-    explicit GraphPipelineConstantTensor(const Shape &_shape, const uint8_t *pointer = nullptr, const size_t size = 0);
+    explicit GraphPipelineConstantTensor(const Shape &_shape, const uint8_t *pointer = nullptr, size_t size = 0);
 
     size_t size() const;
     const uint8_t *data() const;
@@ -46,7 +46,7 @@ class GraphPipelineConstantTensor {
 
 class GraphConstants {
   public:
-    void makeGraphPipelineConstantTensor(uint32_t id, const Shape &shape, const uint8_t *pointer, const size_t size);
+    void makeGraphPipelineConstantTensor(uint32_t id, const Shape &shape, const uint8_t *pointer, size_t size);
 
     template <typename T>
     void makeGraphPipelineConstantTensor(uint32_t id, const Shape &shape, const std::vector<T> &data) {

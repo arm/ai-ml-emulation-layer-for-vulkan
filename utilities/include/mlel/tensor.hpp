@@ -28,7 +28,7 @@ namespace mlsdk::el::utilities {
 
 class Shape {
   public:
-    Shape(const vk::Format _format, const std::vector<int64_t> &_dimensions, const std::vector<int64_t> &_strides = {});
+    Shape(vk::Format _format, const std::vector<int64_t> &_dimensions, const std::vector<int64_t> &_strides = {});
 
     const std::vector<int64_t> &getDimensions() const;
     const std::vector<int64_t> &getStrides() const;
@@ -54,7 +54,7 @@ class Tensor {
     // Set useForCopy to make this tensor having the buffer bit set in BufferInfo struct
     Tensor(const std::shared_ptr<Device> &_device, const Shape &shape, const std::vector<uint8_t> &data = {},
            bool useForCopy = false);
-    Tensor(const std::shared_ptr<Device> &_device, const Shape &shape, const uint8_t *pointer, const size_t size,
+    Tensor(const std::shared_ptr<Device> &_device, const Shape &shape, const uint8_t *pointer, size_t size,
            bool useForCopy = false);
 
     vk::TensorARM const &operator&() const { return *tensor; }
@@ -117,7 +117,7 @@ class Tensor {
     size_t size() const;
     size_t getElementOffset(size_t index) const;
     uint8_t *data() const;
-    void setData(const uint8_t *pointer, const size_t size) const;
+    void setData(const uint8_t *pointer, size_t size) const;
     void clear() const;
     vk::Format getFormat() const;
     const std::vector<int64_t> &getDimensions() const;
