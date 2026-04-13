@@ -42,12 +42,20 @@
                     "vkGetDeviceQueue",
                     "vkGetDeviceQueue2",
                     "vkGetPhysicalDeviceFeatures2",
+                    "vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM",
                     "vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM",
                     "vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM",
                     "vkGetPhysicalDeviceQueueFamilyProperties",
                     "vkGetPhysicalDeviceToolPropertiesEXT",
                     "vkSetDebugUtilsObjectNameEXT",
                     "vkUpdateDescriptorSets"
+                ]
+            },
+            {
+                "name": "VK_ARM_data_graph_instruction_set_tosa",
+                "spec_version": "1",
+                "entrypoints": [
+                    "vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM"
                 ]
             }
         ]

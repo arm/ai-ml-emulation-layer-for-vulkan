@@ -2023,6 +2023,47 @@ TEST_F(MLEmulationLayerForVulkan, GetQueueFamilyDataGraphPropertiesARM_TwoCallPa
     ASSERT_EQ(retrieveCount, count);
 }
 
+TEST_F(MLEmulationLayerForVulkan, GetQueueFamilyDataGraphEngineOperationPropertiesARM_TosaProfile) {
+    const auto device = createDevice();
+    const auto &physicalDevice = device->getPhysicalDevice();
+    const auto &vkPhysicalDevice = &(*physicalDevice);
+    const uint32_t queueFamilyIndex = physicalDevice->getComputeFamilyIndex();
+
+    uint32_t count = 0;
+    const VkResult firstResult = vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
+        *vkPhysicalDevice, queueFamilyIndex, &count, nullptr);
+    ASSERT_EQ(firstResult, VK_SUCCESS);
+    ASSERT_GT(count, 0u);
+
+    std::vector<VkQueueFamilyDataGraphPropertiesARM> properties(count);
+    for (auto &property : properties) {
+        property = {};
+        property.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_PROPERTIES_ARM;
+    }
+
+    uint32_t retrieveCount = count;
+    const VkResult secondResult =
+        vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
+            *vkPhysicalDevice, queueFamilyIndex, &retrieveCount, properties.data());
+    ASSERT_EQ(secondResult, VK_SUCCESS);
+    ASSERT_GT(retrieveCount, 0u);
+
+    VkQueueFamilyDataGraphTOSAPropertiesARM tosaProperties = {};
+    tosaProperties.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_TOSA_PROPERTIES_ARM;
+
+    const VkResult result =
+        vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+            *vkPhysicalDevice, queueFamilyIndex, &properties[0],
+            reinterpret_cast<VkBaseOutStructure *>(&tosaProperties));
+    ASSERT_EQ(result, VK_SUCCESS);
+    ASSERT_EQ(tosaProperties.profileCount, 1u);
+    ASSERT_NE(tosaProperties.pProfiles, nullptr);
+    ASSERT_EQ(tosaProperties.pProfiles[0].qualityFlags, VK_DATA_GRAPH_TOSA_QUALITY_CONFORMANT_ARM);
+    ASSERT_EQ(tosaProperties.extensionCount, 0u);
+    ASSERT_EQ(tosaProperties.pExtensions, nullptr);
+    ASSERT_EQ(tosaProperties.level, VK_DATA_GRAPH_TOSA_LEVEL_8K_ARM);
+}
+
 TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelineSessionBindPointRequirementsARM_TwoCallPattern) {
     auto device = createDevice();
 
