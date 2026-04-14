@@ -42,7 +42,6 @@
                     "vkGetDeviceQueue",
                     "vkGetDeviceQueue2",
                     "vkGetPhysicalDeviceFeatures2",
-                    "vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM",
                     "vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM",
                     "vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM",
                     "vkGetPhysicalDeviceQueueFamilyProperties",
