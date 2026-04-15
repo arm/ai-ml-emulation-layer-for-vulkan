@@ -778,21 +778,18 @@ class TensorLayer : public VulkanLayerImpl {
                                                 const VkAllocationCallbacks *pAllocator, VkDeviceMemory *pMemory) {
         const auto originalAllocateChain = dumpVkStructureList(pAllocateInfo);
         VkMemoryAllocateInfo newAllocateInfo{*pAllocateInfo};
-        findAndRemoveType<VkMemoryAllocateFlagsInfo>(&newAllocateInfo, VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO);
+        const auto originalAllocateFlags = findAndRemoveType<VkMemoryAllocateFlagsInfo>(
+            &newAllocateInfo, VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO);
 
-        auto newAllocateFlagInfo =
-            getType<VkMemoryAllocateFlagsInfo>(pAllocateInfo->pNext, VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO,
-                                               VkMemoryAllocateFlagsInfo{
-                                                   VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO,
-                                                   nullptr,
-                                                   VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT,
-                                                   0,
-                                               });
+        auto newAllocateFlagInfo = originalAllocateFlags.current ? *originalAllocateFlags.current
+                                                                 : VkMemoryAllocateFlagsInfo{
+                                                                       VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO,
+                                                                       nullptr,
+                                                                       VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT,
+                                                                       0,
+                                                                   };
+
         newAllocateFlagInfo.flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
-        if (getBufferDeviceAddressCaptureReplayFeat(device) == VK_TRUE) {
-            newAllocateFlagInfo.flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT;
-        }
-
         appendType(&newAllocateInfo, &newAllocateFlagInfo);
 
         auto handle = VulkanLayerImpl::getHandle(device);

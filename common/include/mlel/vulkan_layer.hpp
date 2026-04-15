@@ -819,7 +819,6 @@ class VulkanLayer {
         layerVulkan12Feature.shaderFloat16 = queryVulkan12Feature.shaderFloat16;
         layerVulkan12Feature.storageBuffer8BitAccess = queryVulkan12Feature.storageBuffer8BitAccess;
         layerVulkan12Feature.bufferDeviceAddress = queryVulkan12Feature.bufferDeviceAddress;
-        layerVulkan12Feature.bufferDeviceAddressCaptureReplay = queryVulkan12Feature.bufferDeviceAddressCaptureReplay;
         layerVulkan12Feature.descriptorBindingStorageBufferUpdateAfterBind =
             queryVulkan12Feature.descriptorBindingStorageBufferUpdateAfterBind;
         appendType(&newCreateInfo, &layerVulkan12Feature);
@@ -858,7 +857,6 @@ class VulkanLayer {
             scopedMutex l(globalMutex);
             deviceMap[*device] = std::allocate_shared<DeviceImpl>(Allocator<DeviceImpl>{allocator}, handle, *device,
                                                                   getInstanceProcAddr, getDeviceProcAddr, allocator);
-            bufferDeviceAddressCaptureReplayFeatMap[*device] = layerVulkan12Feature.bufferDeviceAddressCaptureReplay;
         }
 
         return VK_SUCCESS;
@@ -1028,10 +1026,6 @@ class VulkanLayer {
         return commandBufferMap[handle];
     }
 
-    static VkBool32 getBufferDeviceAddressCaptureReplayFeat(const VkDevice handle) {
-        return bufferDeviceAddressCaptureReplayFeatMap[handle];
-    }
-
     static VkLayerInstanceCreateInfo *findInstanceCreateInfo(const VkInstanceCreateInfo *createInfo) {
         const auto *info = reinterpret_cast<const VkLayerInstanceCreateInfo *>(createInfo->pNext);
         while (info != nullptr) {
@@ -1067,7 +1061,6 @@ class VulkanLayer {
     static std::map<VkDescriptorSetLayout, std::shared_ptr<DescriptorSetLayout>> descriptorSetLayoutMap;
     static std::map<VkQueue, std::shared_ptr<DeviceImpl>> queueMap;
     static std::map<VkCommandBuffer, std::shared_ptr<CommandBuffer>> commandBufferMap;
-    static std::map<VkDevice, VkBool32> bufferDeviceAddressCaptureReplayFeatMap;
 };
 
 template <const auto &layerProperties, const auto &extensions, const auto &requiredExtensions, typename InstanceImpl,
@@ -1105,10 +1098,5 @@ template <const auto &layerProperties, const auto &extensions, const auto &requi
           typename PhysicalDeviceImpl, typename DeviceImpl>
 std::map<VkCommandBuffer, std::shared_ptr<CommandBuffer>> VulkanLayer<
     layerProperties, extensions, requiredExtensions, InstanceImpl, PhysicalDeviceImpl, DeviceImpl>::commandBufferMap;
-
-template <const auto &layerProperties, const auto &extensions, const auto &requiredExtensions, typename InstanceImpl,
-          typename PhysicalDeviceImpl, typename DeviceImpl>
-std::map<VkDevice, VkBool32> VulkanLayer<layerProperties, extensions, requiredExtensions, InstanceImpl,
-                                         PhysicalDeviceImpl, DeviceImpl>::bufferDeviceAddressCaptureReplayFeatMap;
 
 } // namespace mlsdk::el::layer
