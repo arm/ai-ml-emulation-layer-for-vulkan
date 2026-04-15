@@ -590,7 +590,8 @@ class GraphLayer : public VulkanLayerImpl {
                 pFeatures->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM));
         if (pDataGraphFeatures) {
             pDataGraphFeatures->dataGraph = VK_TRUE;
-            pDataGraphFeatures->dataGraphUpdateAfterBind = VK_TRUE;
+            pDataGraphFeatures->dataGraphUpdateAfterBind =
+                supportsDataGraphUpdateAfterBind(physicalDevice, handle) ? VK_TRUE : VK_FALSE;
             pDataGraphFeatures->dataGraphShaderModule = VK_TRUE;
         }
         auto *pPipelineCreationCacheControlFeatures =
@@ -601,6 +602,19 @@ class GraphLayer : public VulkanLayerImpl {
         if (pPipelineCreationCacheControlFeatures) {
             pPipelineCreationCacheControlFeatures->pipelineCreationCacheControl = VK_FALSE;
         }
+    }
+
+    static bool supportsDataGraphUpdateAfterBind(VkPhysicalDevice physicalDevice,
+                                                 const std::shared_ptr<PhysicalDevice> &handle) {
+        VkPhysicalDeviceVulkan12Features vulkan12Features{};
+        vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+        VkPhysicalDeviceFeatures2 features2{};
+        features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        features2.pNext = &vulkan12Features;
+
+        handle->loader->vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
+
+        return vulkan12Features.descriptorBindingUniformBufferUpdateAfterBind == VK_TRUE;
     }
 
     static VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *createInfo,
