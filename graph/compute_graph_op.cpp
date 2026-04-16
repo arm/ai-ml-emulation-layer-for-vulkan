@@ -11,6 +11,7 @@
 #include "compute_graph_op.hpp"
 #include "graph_log.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <numeric>
 #include <regex>
@@ -88,9 +89,17 @@ namespace graph_op {
 
 ComputeDescriptorSet::ComputeDescriptorSet(
     const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, const VkDevice _device,
-    VkDescriptorPool _descriptorPool, VkDescriptorSet _descriptorSet, const std::shared_ptr<Tensor> &_tensor)
-    : loader{_loader}, device{_device}, descriptorPool{_descriptorPool}, descriptorSet{_descriptorSet}, tensor{_tensor},
-      tensorARM{_tensor->getVkTensorARM()}, tensorViewARM{_tensor->getVkTensorViewARM()} {}
+    VkDescriptorPool _descriptorPool, VkDescriptorSet _descriptorSet,
+    const std::vector<DescriptorSetTensorBinding> &_tensorBindings)
+    : loader{_loader}, device{_device}, descriptorPool{_descriptorPool}, descriptorSet{_descriptorSet} {
+    for (const auto &descriptorBinding : _tensorBindings) {
+        const auto key = std::make_tuple(descriptorBinding.binding, descriptorBinding.arrayIndex);
+        tensorMap[key] = descriptorBinding.tensor;
+        tensorHandleMap[key] = descriptorBinding.tensor->getVkTensorARM();
+        tensorViewMap[key] = descriptorBinding.tensor->getVkTensorViewARM();
+        tensorDescriptorMap[descriptorBinding.tensorDescriptor].push_back(key);
+    }
+}
 
 ComputeDescriptorSet::~ComputeDescriptorSet() {
     loader->vkFreeDescriptorSets(device, descriptorPool, 1, &descriptorSet);
@@ -99,32 +108,61 @@ ComputeDescriptorSet::~ComputeDescriptorSet() {
 
 VkDescriptorSet ComputeDescriptorSet::getVkDescriptorSet() const { return descriptorSet; }
 
-std::shared_ptr<Tensor> ComputeDescriptorSet::getTensor() const { return tensor; }
+bool ComputeDescriptorSet::KeyCompare::operator()(const TensorBindingKey &a, const TensorBindingKey &b) const {
+    return a < b;
+}
 
-VkTensorARM ComputeDescriptorSet::getVkTensorARM() const { return tensorARM; }
+std::vector<std::shared_ptr<Tensor>> ComputeDescriptorSet::getTensors() const {
+    std::vector<std::shared_ptr<Tensor>> tensors;
+    tensors.reserve(tensorMap.size());
+    for (const auto &entry : tensorMap) {
+        tensors.push_back(entry.second);
+    }
+    return tensors;
+}
 
-VkTensorViewARM ComputeDescriptorSet::getVkTensorViewARM() const { return tensorViewARM; }
+VkTensorARM ComputeDescriptorSet::getVkTensorARM(const uint32_t binding, const uint32_t arrayIndex) const {
+    return tensorHandleMap.at(std::make_tuple(binding, arrayIndex));
+}
 
-void ComputeDescriptorSet::updateDescriptorSet(VkTensorARM _tensor, VkTensorViewARM tensorView) {
-    tensorARM = _tensor;
-    tensorViewARM = tensorView;
-    updateDescriptorSet();
+bool ComputeDescriptorSet::updateDescriptorSet(const std::shared_ptr<TensorDescriptor> &tensorDescriptor,
+                                               const VkTensorARM tensor, const VkTensorViewARM tensorView) {
+    if (const auto tensorDescriptorIt = tensorDescriptorMap.find(tensorDescriptor);
+        tensorDescriptorIt != tensorDescriptorMap.end()) {
+        for (const auto &[binding, arrayIndex] : tensorDescriptorIt->second) {
+            tensorHandleMap[{binding, arrayIndex}] = tensor;
+            tensorViewMap[{binding, arrayIndex}] = tensorView;
+            updateDescriptorSet(binding, arrayIndex);
+        }
+        return true;
+    }
+
+    return false;
 }
 
 void ComputeDescriptorSet::updateDescriptorSet() {
+    for (const auto &[key, _] : tensorMap) {
+        updateDescriptorSet(std::get<0>(key), std::get<1>(key));
+    }
+}
+
+void ComputeDescriptorSet::updateDescriptorSet(const uint32_t binding, const uint32_t arrayIndex) {
+    const auto key = std::make_tuple(binding, arrayIndex);
+    auto *const tensorView = tensorViewMap.at(key);
+
     const VkWriteDescriptorSetTensorARM descriptorInfo = {
         VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_TENSOR_ARM, // type
         nullptr,                                           // next
         1,                                                 // tensor view count
-        &tensorViewARM,                                    // tensor views
+        &tensorView,                                       // tensor views
     };
 
     const VkWriteDescriptorSet writeDescriptorSet = {
         VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, // type
         &descriptorInfo,                        // next
         descriptorSet,                          // descriptor set
-        0,                                      // binding
-        0,                                      // dst array element
+        binding,                                // binding
+        arrayIndex,                             // dst array element
         1,                                      // descriptor count
         VK_DESCRIPTOR_TYPE_TENSOR_ARM,          // descriptor type
         nullptr,                                // image info
@@ -142,8 +180,28 @@ void ComputeDescriptorSet::updateDescriptorSet() {
 ComputePipelineLayout::ComputePipelineLayout(
     const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, VkDevice _device,
     DescriptorMap _descriptorMap, const PushConstant &_pushConstant)
-    : loader{_loader}, device{_device}, descriptorMap{std::move(_descriptorMap)}, pushConstant{_pushConstant},
-      descriptorSetLayouts{createDescriptorSetLayouts()}, pipelineLayout{createPipelineLayout()} {}
+    : loader{_loader}, device{_device}, descriptorMap{std::move(_descriptorMap)}, pushConstant{_pushConstant} {
+    std::set<uint32_t> usedSets;
+    for (auto &descriptor : descriptorMap) {
+        if (descriptor.id.set != UINT32_MAX) {
+            usedSets.insert(descriptor.id.set);
+        }
+    }
+
+    uint32_t nextSet = 0;
+    for (auto &descriptor : descriptorMap) {
+        if (descriptor.id.set == UINT32_MAX) {
+            while (usedSets.count(nextSet) > 0) {
+                nextSet++;
+            }
+            descriptor.id.set = nextSet;
+            usedSets.insert(nextSet);
+        }
+    }
+
+    descriptorSetLayouts = createDescriptorSetLayouts();
+    pipelineLayout = createPipelineLayout();
+}
 
 ComputePipelineLayout::~ComputePipelineLayout() {
     for (auto *descriptorSetLayout : descriptorSetLayouts) {
@@ -158,7 +216,19 @@ VkPipelineLayout ComputePipelineLayout::getVkPipelineLayout() const { return pip
 const DescriptorMap &ComputePipelineLayout::getDescriptorMap() const { return descriptorMap; }
 
 std::shared_ptr<TensorDescriptor> ComputePipelineLayout::getTensor(const uint32_t set) {
-    return std::get<1>(descriptorMap[set]);
+    for (const auto &descriptor : descriptorMap) {
+        if (descriptor.id.set == set && descriptor.direction == Output) {
+            return descriptor.tensor;
+        }
+    }
+
+    for (const auto &descriptor : descriptorMap) {
+        if (descriptor.id.set == set) {
+            return descriptor.tensor;
+        }
+    }
+
+    throw std::runtime_error("Tensor descriptor not found for set " + std::to_string(set));
 }
 
 void ComputePipelineLayout::cmdBindAndDispatch(VkCommandBuffer commandBuffer,
@@ -170,7 +240,12 @@ void ComputePipelineLayout::cmdBindAndDispatch(VkCommandBuffer commandBuffer,
 
 void ComputePipelineLayout::cmdBindDescriptorSets(VkCommandBuffer commandBuffer,
                                                   const ComputeDescriptorSetMap &descriptorSetMap) {
-    for (uint32_t set = 0; set < descriptorMap.size(); set++) {
+    std::set<uint32_t> boundSets;
+    for (const auto &descriptor : descriptorMap) {
+        boundSets.insert(descriptor.id.set);
+    }
+
+    for (const auto set : boundSets) {
         const auto &descriptorSet = descriptorSetMap.at({pipelineLayout, set});
 
         auto *const vkDescriptorSet = descriptorSet->getVkDescriptorSet();
@@ -190,26 +265,27 @@ void ComputePipelineLayout::cmdPipelineBarrier(VkCommandBuffer commandBuffer,
                                                const ComputeDescriptorSetMap &descriptorSetMap) const {
     std::vector<VkTensorMemoryBarrierARM> tensorMemoryBarriers;
 
-    for (uint32_t set = 0; set < descriptorMap.size(); set++) {
-        const auto &[direction, tensor] = descriptorMap[set];
-
+    for (const auto &descriptor : descriptorMap) {
         // Only add barriers for input tensors
-        if (direction != Input) {
+        if (descriptor.direction != Input) {
             continue;
         }
 
+        const auto set = descriptor.id.set;
+        const auto binding = descriptor.id.binding;
+        const auto arrayIndex = descriptor.id.arrayIndex;
         const auto &descriptorSet = descriptorSetMap.at({pipelineLayout, set});
 
         tensorMemoryBarriers.push_back({
-            VK_STRUCTURE_TYPE_TENSOR_MEMORY_BARRIER_ARM, // type
-            nullptr,                                     // next
-            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,      // src stage mask
-            VK_ACCESS_2_SHADER_WRITE_BIT,                // src access mask
-            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,      // dst stage mask
-            VK_ACCESS_2_SHADER_READ_BIT,                 // dst access mask
-            VK_QUEUE_FAMILY_IGNORED,                     // src queue family index
-            VK_QUEUE_FAMILY_IGNORED,                     // dst queue family index
-            descriptorSet->getVkTensorARM(),             // tensor
+            VK_STRUCTURE_TYPE_TENSOR_MEMORY_BARRIER_ARM,        // type
+            nullptr,                                            // next
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,             // src stage mask
+            VK_ACCESS_2_SHADER_WRITE_BIT,                       // src access mask
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,             // dst stage mask
+            VK_ACCESS_2_SHADER_READ_BIT,                        // dst access mask
+            VK_QUEUE_FAMILY_IGNORED,                            // src queue family index
+            VK_QUEUE_FAMILY_IGNORED,                            // dst queue family index
+            descriptorSet->getVkTensorARM(binding, arrayIndex), // tensor
         });
     }
 
@@ -235,47 +311,67 @@ void ComputePipelineLayout::cmdPipelineBarrier(VkCommandBuffer commandBuffer,
     loader->vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
 }
 
-std::vector<VkDescriptorSetLayoutBinding> ComputePipelineLayout::getDescriptorSetLayoutBinding() const {
+std::vector<VkDescriptorSetLayoutBinding>
+ComputePipelineLayout::getDescriptorSetLayoutBinding(const uint32_t set) const {
     std::vector<VkDescriptorSetLayoutBinding> descriptorSetLayoutBindings;
 
-    const VkDescriptorSetLayoutBinding descriptorSetLayoutBinding = {
-        0,                             // binding
-        VK_DESCRIPTOR_TYPE_TENSOR_ARM, // descriptor type
-        1,                             // descriptor count
-        VK_SHADER_STAGE_COMPUTE_BIT,   // type
-        nullptr,                       // sampler
-    };
+    std::map<uint32_t, uint32_t> bindingCountMap;
+    for (const auto &descriptor : descriptorMap) {
+        if (descriptor.id.set != set) {
+            continue;
+        }
 
-    descriptorSetLayoutBindings.emplace_back(descriptorSetLayoutBinding);
+        auto &count = bindingCountMap[descriptor.id.binding];
+        count = std::max(count, descriptor.id.arrayIndex + 1);
+    }
+
+    for (const auto &[binding, descriptorCount] : bindingCountMap) {
+        const VkDescriptorSetLayoutBinding descriptorSetLayoutBinding = {
+            binding,                       // binding
+            VK_DESCRIPTOR_TYPE_TENSOR_ARM, // descriptor type
+            descriptorCount,               // descriptor count
+            VK_SHADER_STAGE_COMPUTE_BIT,   // type
+            nullptr,                       // sampler
+        };
+        descriptorSetLayoutBindings.emplace_back(descriptorSetLayoutBinding);
+    }
 
     return descriptorSetLayoutBindings;
 }
 
 std::vector<VkDescriptorSetLayout> ComputePipelineLayout::createDescriptorSetLayouts() const {
-    std::vector<VkDescriptorSetLayout> layouts;
-    for ([[maybe_unused]] const auto &[direction, tensor] : descriptorMap) {
-        const auto &descriptorSetLayoutBindings = getDescriptorSetLayoutBinding();
+    if (descriptorMap.empty()) {
+        return {};
+    }
+
+    uint32_t maxSet = 0;
+    for (const auto &descriptor : descriptorMap) {
+        maxSet = std::max(maxSet, descriptor.id.set);
+    }
+
+    std::vector<VkDescriptorSetLayout> layouts(maxSet + 1, nullptr);
+    for (uint32_t set = 0; set <= maxSet; set++) {
+        const auto &descriptorSetLayoutBindings = getDescriptorSetLayoutBinding(set);
 
         std::vector<VkDescriptorSetLayoutCreateFlags> bindingFlags(descriptorSetLayoutBindings.size(),
                                                                    VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT);
 
         const VkDescriptorSetLayoutBindingFlagsCreateInfo descriptorSetBindingFlagsCreateInfo{
-            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO, // type
-            nullptr,                                                           // next
-            static_cast<uint32_t>(descriptorSetLayoutBindings.size()),         // binding count
-            bindingFlags.data(),                                               // binding flags
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,   // type
+            nullptr,                                                             // next
+            static_cast<uint32_t>(descriptorSetLayoutBindings.size()),           // binding count
+            descriptorSetLayoutBindings.empty() ? nullptr : bindingFlags.data(), // binding flags
         };
 
         const VkDescriptorSetLayoutCreateInfo descriptorSetCreateInfo = {
-            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,        // type
-            &descriptorSetBindingFlagsCreateInfo,                       // next
-            VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT, // flags
-            static_cast<uint32_t>(descriptorSetLayoutBindings.size()),  // binding count
-            descriptorSetLayoutBindings.data(),                         // bindings
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,                                  // type
+            descriptorSetLayoutBindings.empty() ? nullptr : &descriptorSetBindingFlagsCreateInfo, // next
+            VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT,                           // flags
+            static_cast<uint32_t>(descriptorSetLayoutBindings.size()),                            // binding count
+            descriptorSetLayoutBindings.empty() ? nullptr : descriptorSetLayoutBindings.data(),   // bindings
         };
 
-        layouts.emplace_back(nullptr);
-        if (loader->vkCreateDescriptorSetLayout(device, &descriptorSetCreateInfo, nullptr, &layouts.back()) !=
+        if (loader->vkCreateDescriptorSetLayout(device, &descriptorSetCreateInfo, nullptr, &layouts[set]) !=
             VK_SUCCESS) {
             throw std::runtime_error("Failed to create descriptor set layout");
         }
@@ -284,10 +380,15 @@ std::vector<VkDescriptorSetLayout> ComputePipelineLayout::createDescriptorSetLay
     return layouts;
 }
 
-VkDescriptorPool ComputePipelineLayout::createDescriptorPool() const {
+VkDescriptorPool ComputePipelineLayout::createDescriptorPool(const uint32_t set) const {
+    uint32_t descriptorCount = 0;
+    for (const auto &binding : getDescriptorSetLayoutBinding(set)) {
+        descriptorCount += binding.descriptorCount;
+    }
+
     const VkDescriptorPoolSize descriptorPoolSize = {
-        VK_DESCRIPTOR_TYPE_TENSOR_ARM,  // type
-        uint32_t(descriptorMap.size()), // descriptor count
+        VK_DESCRIPTOR_TYPE_TENSOR_ARM, // type
+        descriptorCount,               // descriptor count
     };
 
     const VkDescriptorPoolCreateFlags descriptorPoolCreateFlags =
@@ -297,7 +398,7 @@ VkDescriptorPool ComputePipelineLayout::createDescriptorPool() const {
         VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, // type
         nullptr,                                       // next
         descriptorPoolCreateFlags,                     // flags,
-        static_cast<uint32_t>(descriptorMap.size()),   // max sets
+        1,                                             // max sets
         1,                                             // pool size count
         &descriptorPoolSize,                           // descriptor pool size
     };
@@ -312,15 +413,39 @@ VkDescriptorPool ComputePipelineLayout::createDescriptorPool() const {
 
 void ComputePipelineLayout::makeDescriptorSets(ComputeDescriptorSetMap &mapping,
                                                const TensorDescriptorMap &filter) const {
-    for (uint32_t set = 0; set < descriptorMap.size(); set++) {
-        [[maybe_unused]] const auto &[_, tensorDescriptor] = descriptorMap[set];
+    std::map<uint32_t, std::vector<DescriptorSetTensorBinding>> bindingsPerSet;
+    std::set<uint32_t> allSets;
 
-        // Compare if tensor descriptor from descriptor map and argument are matching
-        if (auto it = filter.find(tensorDescriptor); it != filter.end()) {
-            auto *vkDescriptorPool = createDescriptorPool();
-            mapping[{pipelineLayout, set}] = std::make_shared<ComputeDescriptorSet>(
-                loader, device, vkDescriptorPool, createDescriptorSet(vkDescriptorPool, set), it->second);
+    for (const auto &descriptor : descriptorMap) {
+        allSets.insert(descriptor.id.set);
+
+        if (const auto filterIt = filter.find(descriptor.tensor); filterIt != filter.end()) {
+            bindingsPerSet[descriptor.id.set].push_back({
+                descriptor.id.binding,
+                descriptor.id.arrayIndex,
+                descriptor.tensor,
+                filterIt->second,
+            });
         }
+    }
+
+    for (const auto set : allSets) {
+        const auto bindingIt = bindingsPerSet.find(set);
+        if (bindingIt == bindingsPerSet.end()) {
+            continue;
+        }
+
+        const auto expectedBindings =
+            static_cast<size_t>(std::count_if(descriptorMap.begin(), descriptorMap.end(),
+                                              [set](const auto &descriptor) { return descriptor.id.set == set; }));
+        if (bindingIt->second.size() != expectedBindings) {
+            throw std::runtime_error("Descriptor set " + std::to_string(set) +
+                                     " has split ownership across descriptor sources");
+        }
+
+        auto *vkDescriptorPool = createDescriptorPool(set);
+        mapping[{pipelineLayout, set}] = std::make_shared<ComputeDescriptorSet>(
+            loader, device, vkDescriptorPool, createDescriptorSet(vkDescriptorPool, set), bindingIt->second);
     }
 }
 
@@ -456,16 +581,16 @@ void ComputePipeline::connectPipelines() {
     const auto &descriptorMap = pipelineLayout->getDescriptorMap();
 
     // Set current pipeline as producer for output tensors
-    for (const auto &[direction, tensor] : descriptorMap) {
-        if (direction == Output) {
-            tensor->setPipeline(this);
+    for (const auto &descriptor : descriptorMap) {
+        if (descriptor.direction == Output) {
+            descriptor.tensor->setPipeline(this);
         }
     }
 
     // Create connections to parent pipelines
-    for (const auto &[direction, tensor] : descriptorMap) {
-        if (direction == Input) {
-            makeAndConnectVirtualTensor(tensor, this);
+    for (const auto &descriptor : descriptorMap) {
+        if (descriptor.direction == Input) {
+            makeAndConnectVirtualTensor(descriptor.tensor, this);
         }
     }
 }
@@ -2337,7 +2462,12 @@ ComputeDescriptorSetMap GraphPipeline::makeSessionRamDescriptorSets() const {
 }
 
 ComputeDescriptorSetMap GraphPipeline::makeExternalDescriptorSets(const uint32_t set) const {
-    const auto &filter = tensorDescriptorMap.at(set);
+    const auto filterIt = tensorDescriptorMap.find(set);
+    if (filterIt == tensorDescriptorMap.end()) {
+        return {};
+    }
+
+    const auto &filter = filterIt->second;
     ComputeDescriptorSetMap mapping;
     for (const auto &pipeline : pipelines) {
         const auto &pipelineLayout = pipeline->getComputePipelineLayout();

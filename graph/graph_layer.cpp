@@ -1354,10 +1354,8 @@ class GraphLayer : public VulkanLayerImpl {
 
         // Find and update all descriptor sets with matching tensor descriptor
         for ([[maybe_unused]] const auto &[_, descSet] : computeDescriptorSetMap) {
-            if (descSet->getTensor()->getTensorDescriptor() == tensorDescriptor) {
-                // Store tensor and tensor view and update descriptor set
-                descSet->updateDescriptorSet(tensorView->info.tensor, tensorViews[arrayIndex]);
-            }
+            // Store tensor and tensor view and update descriptor set
+            (void)descSet->updateDescriptorSet(tensorDescriptor, tensorView->info.tensor, tensorViews[arrayIndex]);
         }
     }
 

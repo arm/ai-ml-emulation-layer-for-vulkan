@@ -77,16 +77,18 @@ void LinearMemoryPlanner::bindGraphPipelineSessionMemory(VkDeviceMemory memory, 
 
     std::set<VkTensorARM> tensorSet;
     for ([[maybe_unused]] const auto &[_, descriptorSet] : descriptorSetsMapping) {
-        const auto &tensorARM = descriptorSet->getVkTensorARM();
-        if (tensorSet.find(tensorARM) != tensorSet.end()) {
-            continue;
+        for (const auto &tensor : descriptorSet->getTensors()) {
+            auto *const tensorARM = tensor->getVkTensorARM();
+            if (tensorSet.find(tensorARM) != tensorSet.end()) {
+                continue;
+            }
+
+            // To avoid duplicates
+            tensorSet.insert(tensorARM);
+
+            offset = roundUp(offset, alignment);
+            offset = roundUp(offset + tensor->bindTensorMemory(memory, offset), alignment);
         }
-
-        // To avoid duplicates
-        tensorSet.insert(tensorARM);
-
-        offset = roundUp(offset, alignment);
-        offset = roundUp(offset + descriptorSet->getTensor()->bindTensorMemory(memory, offset), alignment);
     }
 }
 
@@ -119,17 +121,18 @@ void BestFitMemoryPlanner::bindGraphPipelineSessionMemory(VkDeviceMemory memory,
                                                           const ComputeDescriptorSetMap &descriptorSetsMapping) {
     std::set<VkTensorARM> tensorSet;
     for ([[maybe_unused]] const auto &[_, descriptorSet] : descriptorSetsMapping) {
-        const auto &tensorARM = descriptorSet->getVkTensorARM();
-        if (tensorSet.find(tensorARM) != tensorSet.end()) {
-            continue;
+        for (const auto &tensor : descriptorSet->getTensors()) {
+            auto *const tensorARM = tensor->getVkTensorARM();
+            if (tensorSet.find(tensorARM) != tensorSet.end()) {
+                continue;
+            }
+
+            // To avoid duplicates
+            tensorSet.insert(tensorARM);
+
+            const auto newOffset = offset + tensorOffsets.at(tensor->getTensorDescriptor());
+            (void)tensor->bindTensorMemory(memory, newOffset);
         }
-
-        // To avoid duplicates
-        tensorSet.insert(tensorARM);
-
-        const auto &tensor = descriptorSet->getTensor();
-        const auto newOffset = offset + tensorOffsets.at(tensor->getTensorDescriptor());
-        (void)tensor->bindTensorMemory(memory, newOffset);
     }
 }
 
