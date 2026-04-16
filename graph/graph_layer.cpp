@@ -40,28 +40,6 @@ namespace {
 constexpr char graphPipelineCreatedLog[] = "Graph pipeline created";
 }
 
-/*****************************************************************************
- * Instance
- *****************************************************************************/
-
-class GraphInstance : public Instance {
-  public:
-    explicit GraphInstance(VkInstance _instance, PFN_vkGetInstanceProcAddr _gipr,
-                           const VkAllocationCallbacks *_callbacks, PFN_vkGetInstanceProcAddr nextGetInstanceProcAddr,
-                           PFN_GetPhysicalDeviceProcAddr nextGetPhysicalDeviceProcAddr)
-        : Instance(_instance, _gipr, _callbacks, nextGetInstanceProcAddr, nextGetPhysicalDeviceProcAddr) {}
-};
-
-/*****************************************************************************
- * PhysicalDevice
- *****************************************************************************/
-
-class GraphPhysicalDevice : public PhysicalDevice {
-  public:
-    explicit GraphPhysicalDevice(const std::shared_ptr<Instance> &_instance, VkPhysicalDevice _physicalDevice)
-        : PhysicalDevice(_instance, _physicalDevice) {}
-};
-
 /**************************************************************************
  * DataGraphDescriptorSet
  **************************************************************************/
@@ -335,8 +313,7 @@ constexpr VkLayerProperties layerProperties = {
     "ML Graph Emulation Layer",
 };
 
-using VulkanLayerImpl =
-    VulkanLayer<layerProperties, extensions, requiredExtensions, Instance, PhysicalDevice, GraphDevice>;
+using VulkanLayerImpl = VulkanLayer<layerProperties, extensions, requiredExtensions, GraphDevice>;
 
 class GraphLayer : public VulkanLayerImpl {
   public:
@@ -977,18 +954,16 @@ class GraphLayer : public VulkanLayerImpl {
         auto handle = VulkanLayerImpl::getHandle(physicalDevice);
         handle->loader->vkGetPhysicalDeviceFeatures2(physicalDevice, pFeatures);
 
-        auto *pDataGraphFeatures =
-            const_cast<VkPhysicalDeviceDataGraphFeaturesARM *>(findType<VkPhysicalDeviceDataGraphFeaturesARM>(
-                pFeatures->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM));
+        auto *pDataGraphFeatures = findTypeMutable<VkPhysicalDeviceDataGraphFeaturesARM>(
+            pFeatures->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM);
         if (pDataGraphFeatures) {
             pDataGraphFeatures->dataGraph = VK_TRUE;
             pDataGraphFeatures->dataGraphUpdateAfterBind = VK_TRUE;
             pDataGraphFeatures->dataGraphShaderModule = VK_TRUE;
         }
         auto *pPipelineCreationCacheControlFeatures =
-            const_cast<VkPhysicalDevicePipelineCreationCacheControlFeatures *>(
-                findType<VkPhysicalDevicePipelineCreationCacheControlFeatures>(
-                    pFeatures->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_CREATION_CACHE_CONTROL_FEATURES));
+            findTypeMutable<VkPhysicalDevicePipelineCreationCacheControlFeatures>(
+                pFeatures->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_CREATION_CACHE_CONTROL_FEATURES);
         // Pipeline caching is currently not supported
         if (pPipelineCreationCacheControlFeatures) {
             pPipelineCreationCacheControlFeatures->pipelineCreationCacheControl = VK_FALSE;
@@ -1073,7 +1048,7 @@ class GraphLayer : public VulkanLayerImpl {
     static VkResult VKAPI_CALL vkGetDataGraphPipelineSessionBindPointRequirementsARM(
         VkDevice, const VkDataGraphPipelineSessionBindPointRequirementsInfoARM *info,
         uint32_t *bindPointRequirementCount, VkDataGraphPipelineSessionBindPointRequirementARM *bindPointRequirements) {
-        auto *const session = reinterpret_cast<DataGraphPipelineSessionARM *>(info->session);
+        const auto *const session = reinterpret_cast<DataGraphPipelineSessionARM *>(info->session);
 
         const auto needsTransient = session->needsTransientRequirements();
         const auto needsOpticalFlowCache = session->needsOpticalFlowCacheRequirements();
@@ -1123,7 +1098,7 @@ class GraphLayer : public VulkanLayerImpl {
     static void VKAPI_CALL vkGetDataGraphPipelineSessionMemoryRequirementsARM(
         VkDevice, const VkDataGraphPipelineSessionMemoryRequirementsInfoARM *info,
         VkMemoryRequirements2 *requirements) {
-        auto *const session = reinterpret_cast<DataGraphPipelineSessionARM *>(info->session);
+        const auto *const session = reinterpret_cast<DataGraphPipelineSessionARM *>(info->session);
 
         // Calculate how much memory pipelines hidden layers require
         requirements->memoryRequirements = session->getGraphPipelineMemoryRequirements(info->bindPoint);
@@ -1465,13 +1440,13 @@ class GraphLayer : public VulkanLayerImpl {
                                                      VkDataGraphPipelineSessionARM _session,
                                                      const VkDataGraphPipelineDispatchInfoARM *pInfo) {
         auto handle = VulkanLayerImpl::getHandle(commandBuffer);
-        auto *session = reinterpret_cast<DataGraphPipelineSessionARM *>(_session);
-        auto pipeline = session->pipeline;
+        const auto *session = reinterpret_cast<DataGraphPipelineSessionARM *>(_session);
+        const auto &pipeline = session->pipeline;
         auto *vkPipeline = reinterpret_cast<VkPipeline>(pipeline.get());
         auto deviceHandle = VulkanLayerImpl::getHandle(handle->device->device);
 
         if (pipeline->isGraph()) {
-            auto graphPipeline = pipeline->graphPipeline;
+            const auto &graphPipeline = pipeline->graphPipeline;
             /*
              * Merge descriptor sets, they can have three different origins:
              * - Constants owned by the pipeline
@@ -1629,7 +1604,7 @@ class GraphLayer : public VulkanLayerImpl {
             return VK_ERROR_UNKNOWN;
         }
         if (isGraph.value()) {
-            std::shared_ptr<ShaderModule> shaderModule = std::make_shared<ShaderModule>(pCreateInfo);
+            auto shaderModule = std::make_shared<ShaderModule>(pCreateInfo);
             *pShaderModule = reinterpret_cast<VkShaderModule>(shaderModule.get());
             {
                 scopedMutex l(globalMutex);

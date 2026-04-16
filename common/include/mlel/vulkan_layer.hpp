@@ -259,7 +259,7 @@ class Instance : public Loader {
 
 class PhysicalDevice : public Loader {
   public:
-    explicit PhysicalDevice(std::shared_ptr<Instance> _instance, VkPhysicalDevice _physicalDevice)
+    explicit PhysicalDevice(const std::shared_ptr<Instance> &_instance, VkPhysicalDevice _physicalDevice)
         : Loader(*_instance), instance{_instance}, physicalDevice{_physicalDevice} {}
 
     std::shared_ptr<Instance> instance;
@@ -272,8 +272,9 @@ class PhysicalDevice : public Loader {
 
 class Device : public Loader {
   public:
-    explicit Device(std::shared_ptr<PhysicalDevice> _physicalDevice, VkDevice _device, PFN_vkGetInstanceProcAddr _gipr,
-                    PFN_vkGetDeviceProcAddr _gdpr, const VkAllocationCallbacks *_callbacks)
+    explicit Device(const std::shared_ptr<PhysicalDevice> &_physicalDevice, VkDevice _device,
+                    PFN_vkGetInstanceProcAddr _gipr, PFN_vkGetDeviceProcAddr _gdpr,
+                    const VkAllocationCallbacks *_callbacks)
         : Loader(_callbacks, _physicalDevice->instance->instance, _gipr, _device, _gdpr),
           physicalDevice{_physicalDevice}, device{_device}, callbacks{_callbacks} {}
 
@@ -288,7 +289,8 @@ class Device : public Loader {
 
 class CommandBuffer : public Loader {
   public:
-    explicit CommandBuffer(std::shared_ptr<Device> _device, VkCommandBuffer _commandBuffer, VkCommandPool _commandPool)
+    explicit CommandBuffer(const std::shared_ptr<Device> &_device, VkCommandBuffer _commandBuffer,
+                           VkCommandPool _commandPool)
         : Loader(_device->loader), device{_device}, commandBuffer{_commandBuffer}, commandPool{_commandPool} {}
 
     virtual ~CommandBuffer() {
@@ -404,7 +406,7 @@ class DescriptorSet {
  *****************************************************************************/
 
 template <const auto &layerProperties, const auto &extensions, const auto &requiredExtensions,
-          typename InstanceImpl = Instance, typename PhysicalDeviceImpl = PhysicalDevice, typename DeviceImpl = Device>
+          typename DeviceImpl = Device>
 class VulkanLayer {
   public:
     VulkanLayer() = delete;
@@ -617,8 +619,8 @@ class VulkanLayer {
         {
             scopedMutex l(globalMutex);
             instanceMap[*instance] =
-                std::allocate_shared<InstanceImpl>(Allocator<InstanceImpl>{allocator}, *instance, getInstanceProcAddr,
-                                                   allocator, getInstanceProcAddr, getNextPhysicalDeviceProcAddr);
+                std::allocate_shared<Instance>(Allocator<Instance>{allocator}, *instance, getInstanceProcAddr,
+                                               allocator, getInstanceProcAddr, getNextPhysicalDeviceProcAddr);
         }
         return VK_SUCCESS;
     }
@@ -657,8 +659,8 @@ class VulkanLayer {
 
             if (physicalDevices != nullptr) {
                 for (uint32_t i = 0; i < *physicalDeviceCount; i++) {
-                    physicalDeviceMap[physicalDevices[i]] = std::allocate_shared<PhysicalDeviceImpl>(
-                        Allocator<PhysicalDeviceImpl>{handle->callbacks}, handle, physicalDevices[i]);
+                    physicalDeviceMap[physicalDevices[i]] = std::allocate_shared<PhysicalDevice>(
+                        Allocator<PhysicalDevice>{handle->callbacks}, handle, physicalDevices[i]);
                 }
             }
         }
@@ -1004,12 +1006,12 @@ class VulkanLayer {
     }
 
   protected:
-    static std::shared_ptr<InstanceImpl> getHandle(const VkInstance handle) {
+    static std::shared_ptr<Instance> getHandle(const VkInstance handle) {
         scopedMutex l(globalMutex);
         return instanceMap[handle];
     }
 
-    static std::shared_ptr<PhysicalDeviceImpl> getHandle(const VkPhysicalDevice handle) {
+    static std::shared_ptr<PhysicalDevice> getHandle(const VkPhysicalDevice handle) {
         scopedMutex l(globalMutex);
         return physicalDeviceMap[handle];
     }
@@ -1060,51 +1062,15 @@ class VulkanLayer {
         return nullptr;
     }
 
-    static std::recursive_mutex globalMutex;
+    static inline std::recursive_mutex globalMutex;
     using scopedMutex = std::lock_guard<std::recursive_mutex>;
 
-    static std::map<VkInstance, std::shared_ptr<InstanceImpl>> instanceMap;
-    static std::map<VkPhysicalDevice, std::shared_ptr<PhysicalDeviceImpl>> physicalDeviceMap;
-    static std::map<VkDevice, std::shared_ptr<DeviceImpl>> deviceMap;
-    static std::map<VkDescriptorSetLayout, std::shared_ptr<DescriptorSetLayout>> descriptorSetLayoutMap;
-    static std::map<VkQueue, std::shared_ptr<DeviceImpl>> queueMap;
-    static std::map<VkCommandBuffer, std::shared_ptr<CommandBuffer>> commandBufferMap;
+    static inline std::map<VkInstance, std::shared_ptr<Instance>> instanceMap;
+    static inline std::map<VkPhysicalDevice, std::shared_ptr<PhysicalDevice>> physicalDeviceMap;
+    static inline std::map<VkDevice, std::shared_ptr<DeviceImpl>> deviceMap;
+    static inline std::map<VkDescriptorSetLayout, std::shared_ptr<DescriptorSetLayout>> descriptorSetLayoutMap;
+    static inline std::map<VkQueue, std::shared_ptr<DeviceImpl>> queueMap;
+    static inline std::map<VkCommandBuffer, std::shared_ptr<CommandBuffer>> commandBufferMap;
 };
-
-template <const auto &layerProperties, const auto &extensions, const auto &requiredExtensions, typename InstanceImpl,
-          typename PhysicalDeviceImpl, typename DeviceImpl>
-std::recursive_mutex VulkanLayer<layerProperties, extensions, requiredExtensions, InstanceImpl, PhysicalDeviceImpl,
-                                 DeviceImpl>::globalMutex;
-
-template <const auto &layerProperties, const auto &extensions, const auto &requiredExtensions, typename InstanceImpl,
-          typename PhysicalDeviceImpl, typename DeviceImpl>
-std::map<VkInstance, std::shared_ptr<InstanceImpl>> VulkanLayer<
-    layerProperties, extensions, requiredExtensions, InstanceImpl, PhysicalDeviceImpl, DeviceImpl>::instanceMap;
-
-template <const auto &layerProperties, const auto &extensions, const auto &requiredExtensions, typename InstanceImpl,
-          typename PhysicalDeviceImpl, typename DeviceImpl>
-std::map<VkPhysicalDevice, std::shared_ptr<PhysicalDeviceImpl>> VulkanLayer<
-    layerProperties, extensions, requiredExtensions, InstanceImpl, PhysicalDeviceImpl, DeviceImpl>::physicalDeviceMap;
-
-template <const auto &layerProperties, const auto &extensions, const auto &requiredExtensions, typename InstanceImpl,
-          typename PhysicalDeviceImpl, typename DeviceImpl>
-std::map<VkDevice, std::shared_ptr<DeviceImpl>> VulkanLayer<layerProperties, extensions, requiredExtensions,
-                                                            InstanceImpl, PhysicalDeviceImpl, DeviceImpl>::deviceMap;
-
-template <const auto &layerProperties, const auto &extensions, const auto &requiredExtensions, typename InstanceImpl,
-          typename PhysicalDeviceImpl, typename DeviceImpl>
-std::map<VkDescriptorSetLayout, std::shared_ptr<DescriptorSetLayout>>
-    VulkanLayer<layerProperties, extensions, requiredExtensions, InstanceImpl, PhysicalDeviceImpl,
-                DeviceImpl>::descriptorSetLayoutMap;
-
-template <const auto &layerProperties, const auto &extensions, const auto &requiredExtensions, typename InstanceImpl,
-          typename PhysicalDeviceImpl, typename DeviceImpl>
-std::map<VkQueue, std::shared_ptr<DeviceImpl>> VulkanLayer<layerProperties, extensions, requiredExtensions,
-                                                           InstanceImpl, PhysicalDeviceImpl, DeviceImpl>::queueMap;
-
-template <const auto &layerProperties, const auto &extensions, const auto &requiredExtensions, typename InstanceImpl,
-          typename PhysicalDeviceImpl, typename DeviceImpl>
-std::map<VkCommandBuffer, std::shared_ptr<CommandBuffer>> VulkanLayer<
-    layerProperties, extensions, requiredExtensions, InstanceImpl, PhysicalDeviceImpl, DeviceImpl>::commandBufferMap;
 
 } // namespace mlsdk::el::layer

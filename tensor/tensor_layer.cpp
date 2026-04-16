@@ -29,28 +29,6 @@ using namespace mlsdk::el::log;
 namespace mlsdk::el::layer {
 
 /*******************************************************************************
- * Instance
- *******************************************************************************/
-
-class TensorInstance : public Instance {
-  public:
-    TensorInstance(VkInstance instance, PFN_vkGetInstanceProcAddr gipr, const VkAllocationCallbacks *callbacks,
-                   PFN_vkGetInstanceProcAddr nextGetInstanceProcAddr,
-                   PFN_GetPhysicalDeviceProcAddr nextGetPhysicalDeviceProcAddr)
-        : Instance(instance, gipr, callbacks, nextGetInstanceProcAddr, nextGetPhysicalDeviceProcAddr) {}
-};
-
-/*******************************************************************************
- * PhysicalDevice
- *******************************************************************************/
-
-class TensorPhysicalDevice : public PhysicalDevice {
-  public:
-    TensorPhysicalDevice(const std::shared_ptr<Instance> &_instance, VkPhysicalDevice _physicalDevice)
-        : PhysicalDevice(_instance, _physicalDevice) {}
-};
-
-/*******************************************************************************
  * Device
  *******************************************************************************/
 
@@ -60,16 +38,6 @@ class TensorDevice : public Device {
                  PFN_vkGetInstanceProcAddr _gipr, PFN_vkGetDeviceProcAddr _gdpr,
                  const VkAllocationCallbacks *_callbacks)
         : Device(_physicalDevice, _device, _gipr, _gdpr, _callbacks) {}
-};
-
-/*******************************************************************************
- * DeviceMemory
- *******************************************************************************/
-
-class DeviceMemory {
-  public:
-    VkImage boundImage = VK_NULL_HANDLE;
-    VkTensorARM boundTensor = VK_NULL_HANDLE;
 };
 
 /*******************************************************************************
@@ -143,8 +111,7 @@ constexpr VkLayerProperties layerProperties = {
     "ML Tensor Emulation Layer",
 };
 
-using VulkanLayerImpl =
-    VulkanLayer<layerProperties, extensions, requiredExtensions, TensorInstance, TensorPhysicalDevice, TensorDevice>;
+using VulkanLayerImpl = VulkanLayer<layerProperties, extensions, requiredExtensions, TensorDevice>;
 
 class TensorLayer : public VulkanLayerImpl {
   public:
@@ -812,8 +779,8 @@ class TensorLayer : public VulkanLayerImpl {
     static void VKAPI_CALL vkGetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice, VkFormat format,
                                                                 VkFormatProperties2 *pFormatProperties) {
         auto handle = VulkanLayerImpl::getHandle(physicalDevice);
-        auto *pTensorFormatProp = const_cast<VkTensorFormatPropertiesARM *>(findType<VkTensorFormatPropertiesARM>(
-            pFormatProperties->pNext, VK_STRUCTURE_TYPE_TENSOR_FORMAT_PROPERTIES_ARM));
+        auto *pTensorFormatProp = findTypeMutable<VkTensorFormatPropertiesARM>(
+            pFormatProperties->pNext, VK_STRUCTURE_TYPE_TENSOR_FORMAT_PROPERTIES_ARM);
         handle->loader->vkGetPhysicalDeviceFormatProperties2(physicalDevice, format, pFormatProperties);
         if (pTensorFormatProp) {
             pTensorFormatProp->optimalTilingTensorFeatures =
@@ -826,9 +793,8 @@ class TensorLayer : public VulkanLayerImpl {
     static void VKAPI_CALL vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
                                                         VkPhysicalDeviceFeatures2 *pFeatures) {
         auto handle = VulkanLayerImpl::getHandle(physicalDevice);
-        auto *pTensorFeatures =
-            const_cast<VkPhysicalDeviceTensorFeaturesARM *>(findType<VkPhysicalDeviceTensorFeaturesARM>(
-                pFeatures->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_FEATURES_ARM));
+        auto *pTensorFeatures = findTypeMutable<VkPhysicalDeviceTensorFeaturesARM>(
+            pFeatures->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_FEATURES_ARM);
         handle->loader->vkGetPhysicalDeviceFeatures2(physicalDevice, pFeatures);
         if (pTensorFeatures) {
             // query buffer feature
