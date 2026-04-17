@@ -20,7 +20,7 @@ def get_deploy_paths():
 
 def main():
     print(
-        "To use the ML SDK for Vulkan Emulation Layer, set these environment variables:"
+        "# To use the ML SDK for Vulkan Emulation Layer, set these environment variables:"
     )
     paths = get_deploy_paths()
     if sys.platform.startswith("linux"):
@@ -30,7 +30,9 @@ def main():
             "export VK_INSTANCE_LAYERS=VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation"
         )
     elif sys.platform.startswith("win"):
-        print(f"$env:VK_LAYER_PATH={paths['VK_LAYER_PATH_windows']};$VK_LAYER_PATH")
+        print(
+            f'$env:VK_LAYER_PATH="{paths["VK_LAYER_PATH_windows"]};$env:VK_LAYER_PATH"'
+        )
         print(
             '$env:VK_INSTANCE_LAYERS="VK_LAYER_ML_Graph_Emulation;VK_LAYER_ML_Tensor_Emulation"'
         )
