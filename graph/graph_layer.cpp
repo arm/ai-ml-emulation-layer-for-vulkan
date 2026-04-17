@@ -1484,7 +1484,7 @@ class GraphLayer : public VulkanLayerImpl {
                     // Create compute descriptor sets
                     auto descriptorSetMapTemp = graphPipeline->makeExternalDescriptorSets(set);
                     auto &computeDescriptorSetMap = externalDescriptorSets[{vkPipeline, set}];
-                    computeDescriptorSetMap.insert(descriptorSetMapTemp.begin(), descriptorSetMapTemp.end());
+                    computeDescriptorSetMap.merge(descriptorSetMapTemp);
 
                     for (const auto &[binding, tensorViews] : descriptorSet->tensorViews) {
                         for (uint32_t arrayIndex = 0; arrayIndex < tensorViews.size(); arrayIndex++) {

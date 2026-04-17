@@ -141,7 +141,7 @@ class GraphPipeline : public PipelineBase {
     std::shared_ptr<vk::raii::DeviceMemory> bindGraphPipelineSessionMemory(
         const vk::raii::DataGraphPipelineSessionARM &graphPipelineSession,
         const std::map<vk::DataGraphPipelineSessionBindPointARM, vk::MemoryRequirements> &memoryRequirements) const;
-    void *mapGraphPipelineSessionMemory(std::shared_ptr<vk::raii::DeviceMemory> deviceMemory) const;
+    void *mapGraphPipelineSessionMemory(const std::shared_ptr<vk::raii::DeviceMemory> &deviceMemory) const;
 
     const GraphConstants &graphConstants;
     bool hostMemory = false;

@@ -261,31 +261,25 @@ void ComputePipeline::dispatchPipeline(VkCommandBuffer cmdBuf) {
 
 RGBToY::RGBToY(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader,
                const VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
-               std::shared_ptr<Image> srcRGBImage, std::shared_ptr<Image> dstDownsampledImage,
+               std::shared_ptr<Image> srcRGBImage, const std::shared_ptr<Image> &dstDownsampledImage,
                std::shared_ptr<Image> dstFullImage, bool outputDownsample, bool outputFullRes, float downsampleScale,
                const std::string &debugName)
     : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0,
                       {dstDownsampledImage->width(), dstDownsampledImage->height()}, debugName),
-      srcImage_(srcRGBImage), dstYDownsampled_(dstDownsampledImage), dstYFull_(dstFullImage),
-      outputDS_(outputDownsample), outputFull_(outputFullRes),
-      scale_(downsampleScale), specConstants_{makeSpecConstants(srcRGBImage, dstDownsampledImage, dstFullImage,
-                                                                outputDownsample, outputFullRes, scale_)},
+      srcImage_(std::move(srcRGBImage)), dstYDownsampled_(dstDownsampledImage), dstYFull_(std::move(dstFullImage)),
+      outputDS_(outputDownsample), outputFull_(outputFullRes), specConstants_{makeSpecConstants(downsampleScale)},
       linearSampler_{createSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
-RGBToY::SpecConstants RGBToY::makeSpecConstants(const std::shared_ptr<Image> &srcRGBImage,
-                                                const std::shared_ptr<Image> &dstDownsampledImage,
-                                                const std::shared_ptr<Image> &dstFullImage, bool outputDownsample,
-                                                bool outputFullRes, float downsampleScale) const {
-    VkBool32 isLumaInput = srcRGBImage->componentCount() == 1;
+RGBToY::SpecConstants RGBToY::makeSpecConstants(float downsampleScale) const {
+    VkBool32 isLumaInput = srcImage_->componentCount() == 1;
     VkBool32 isImageStore = true;
-    if (outputDownsample) {
-        isImageStore = dstDownsampledImage->isImageStore() == true;
-    } else if (outputFullRes) {
-        isImageStore = dstFullImage->isImageStore() == true;
+    if (outputDS_) {
+        isImageStore = dstYDownsampled_->isImageStore() == true;
+    } else if (outputFull_) {
+        isImageStore = dstYFull_->isImageStore() == true;
     }
-    assert((outputDownsample & outputFullRes) ? dstFullImage->isImageStore() == dstDownsampledImage->isImageStore()
-                                              : true);
+    assert((outputDS_ & outputFull_) ? dstYFull_->isImageStore() == dstYDownsampled_->isImageStore() : true);
 
     SpecConstants specConstants = {
         32,
@@ -293,17 +287,17 @@ RGBToY::SpecConstants RGBToY::makeSpecConstants(const std::shared_ptr<Image> &sr
         1,
         1,
         isLumaInput,
-        outputDownsample,
-        outputFullRes,
+        outputDS_,
+        outputFull_,
         isImageStore,
         downsampleScale,
         downsampleScale,
-        outputDownsample ? dstDownsampledImage->width() : 1,
-        outputDownsample ? dstDownsampledImage->height() : 1,
-        outputDownsample ? dstDownsampledImage->stride() : 1,
-        outputFullRes ? dstFullImage->width() : 1,
-        outputFullRes ? dstFullImage->height() : 1,
-        outputFullRes ? dstFullImage->stride() : 1,
+        outputDS_ ? dstYDownsampled_->width() : 1,
+        outputDS_ ? dstYDownsampled_->height() : 1,
+        outputDS_ ? dstYDownsampled_->stride() : 1,
+        outputFull_ ? dstYFull_->width() : 1,
+        outputFull_ ? dstYFull_->height() : 1,
+        outputFull_ ? dstYFull_->stride() : 1,
     };
     return specConstants;
 }
@@ -332,25 +326,24 @@ void RGBToY::bindAndDispatch(VkCommandBuffer cmdBuf) {
 
 Downsample::Downsample(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader,
                        const VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
-                       std::shared_ptr<Image> src, std::shared_ptr<Image> dst, const std::string &debugName)
+                       std::shared_ptr<Image> src, const std::shared_ptr<Image> &dst, const std::string &debugName)
     : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dst->width(), dst->height()}, debugName),
-      srcImage_(src), dstImage_(dst), specConstants_{makeSpecConstants(src, dst)},
+      srcImage_(std::move(src)), dstImage_(dst), specConstants_{makeSpecConstants()},
       linearSampler_{createSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
-Downsample::SpecConstants Downsample::makeSpecConstants(const std::shared_ptr<Image> &src,
-                                                        const std::shared_ptr<Image> &dst) const {
+Downsample::SpecConstants Downsample::makeSpecConstants() const {
     SpecConstants specConstants = {
         32,
         8,
         1,
         1,
-        dst->isImageStore(),
-        src->width() != dst->width() * 2,
-        src->height() != dst->height() * 2,
-        dst->width(),
-        dst->height(),
-        dst->stride(),
+        dstImage_->isImageStore(),
+        srcImage_->width() != dstImage_->width() * 2,
+        srcImage_->height() != dstImage_->height() * 2,
+        dstImage_->width(),
+        dstImage_->height(),
+        dstImage_->stride(),
     };
     return specConstants;
 }
@@ -370,30 +363,29 @@ void Downsample::bindAndDispatch(VkCommandBuffer cmdBuf) {
 MVProcessAndWarp::MVProcessAndWarp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader,
                                    const VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
                                    std::shared_ptr<Image> srcImage, std::shared_ptr<Image> srcFlow,
-                                   std::shared_ptr<Image> dstImage, std::shared_ptr<Image> dstFlow,
+                                   const std::shared_ptr<Image> &dstImage, std::shared_ptr<Image> dstFlow,
                                    const std::string &debugName)
     : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstImage->width(), dstImage->height()}, debugName),
-      srcSearch_(srcImage), srcFlow_(srcFlow), dstWarped_(dstImage),
-      dstFlow_(dstFlow), specConstants_{makeSpecConstants(dstImage, dstFlow)},
+      srcSearch_(std::move(srcImage)), srcFlow_(std::move(srcFlow)), dstWarped_(dstImage),
+      dstFlow_(std::move(dstFlow)), specConstants_{makeSpecConstants()},
       linearSampler_{createSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
-MVProcessAndWarp::SpecConstants MVProcessAndWarp::makeSpecConstants(const std::shared_ptr<Image> &dstImage,
-                                                                    const std::shared_ptr<Image> &dstFlow) const {
+MVProcessAndWarp::SpecConstants MVProcessAndWarp::makeSpecConstants() const {
     SpecConstants specConstants = {
         32,
         8,
         1,
         1,
-        dstImage->isImageStore(),
+        dstWarped_->isImageStore(),
         2.0f,
         2.0f,
         0.5f,
         0.5f,
-        dstFlow->width(),
-        dstFlow->height(),
-        dstImage->stride(),
-        dstFlow->stride(),
+        dstFlow_->width(),
+        dstFlow_->height(),
+        dstWarped_->stride(),
+        dstFlow_->stride(),
     };
     return specConstants;
 }
@@ -414,27 +406,26 @@ void MVProcessAndWarp::bindAndDispatch(VkCommandBuffer cmdBuf) {
 
 DenseWarp::DenseWarp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader,
                      const VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
-                     std::shared_ptr<Image> srcImage, std::shared_ptr<Image> srcFlow, std::shared_ptr<Image> dstImage,
-                     float inputFlowScale, const std::string &debugName)
+                     std::shared_ptr<Image> srcImage, std::shared_ptr<Image> srcFlow,
+                     const std::shared_ptr<Image> &dstImage, float inputFlowScale, const std::string &debugName)
     : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstImage->width(), dstImage->height()}, debugName),
-      srcSearch_(srcImage), srcFlow_(srcFlow),
-      dstWarped_(dstImage), specConstants_{makeSpecConstants(dstImage, inputFlowScale)},
+      srcSearch_(std::move(srcImage)), srcFlow_(std::move(srcFlow)),
+      dstWarped_(dstImage), specConstants_{makeSpecConstants(inputFlowScale)},
       linearSampler_{createSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)},
       nearestSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
-DenseWarp::SpecConstants DenseWarp::makeSpecConstants(const std::shared_ptr<Image> &dstImage,
-                                                      float inputFlowScale) const {
+DenseWarp::SpecConstants DenseWarp::makeSpecConstants(float inputFlowScale) const {
     SpecConstants specConstants = {
         32,
         8,
         1,
         1,
-        dstImage->isImageStore(),
+        dstWarped_->isImageStore(),
         inputFlowScale,
-        dstImage->width(),
-        dstImage->height(),
-        dstImage->stride(),
+        dstWarped_->width(),
+        dstWarped_->height(),
+        dstWarped_->stride(),
     };
     return specConstants;
 }
@@ -459,25 +450,24 @@ void DenseWarp::bindAndDispatch(VkCommandBuffer cmdBuf) {
 
 MedianFilter::MedianFilter(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader,
                            const VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
-                           std::shared_ptr<Image> srcImage, std::shared_ptr<Image> dstImage, float outputFlowScale,
-                           const std::string &debugName)
+                           std::shared_ptr<Image> srcImage, const std::shared_ptr<Image> &dstImage,
+                           float outputFlowScale, const std::string &debugName)
     : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstImage->width(), dstImage->height()}, debugName),
-      srcFlow_(srcImage), dstFlow_(dstImage), specConstants_{makeSpecConstants(dstImage, outputFlowScale)},
+      srcFlow_(std::move(srcImage)), dstFlow_(dstImage), specConstants_{makeSpecConstants(outputFlowScale)},
       nearestSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
-MedianFilter::SpecConstants MedianFilter::makeSpecConstants(const std::shared_ptr<Image> &dstImage,
-                                                            float outputFlowScale) const {
+MedianFilter::SpecConstants MedianFilter::makeSpecConstants(float outputFlowScale) const {
     SpecConstants specConstants = {
         32,
         8,
         1,
         1,
-        dstImage->isImageStore(),
+        dstFlow_->isImageStore(),
         outputFlowScale,
-        dstImage->width(),
-        dstImage->height(),
-        dstImage->stride(),
+        dstFlow_->width(),
+        dstFlow_->height(),
+        dstFlow_->stride(),
     };
     return specConstants;
 }
@@ -502,17 +492,25 @@ void MedianFilter::bindAndDispatch(VkCommandBuffer cmdBuf) {
 BilateralFilter::BilateralFilter(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader,
                                  const VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
                                  std::shared_ptr<Image> srcImage, std::shared_ptr<Image> srcFlow,
-                                 std::shared_ptr<Image> dstFlow, float outputFlowScale, const std::string &debugName)
+                                 const std::shared_ptr<Image> &dstFlow, float outputFlowScale,
+                                 const std::string &debugName)
     : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstFlow->width(), dstFlow->height()}, debugName),
-      srcTemplate_(srcImage), srcFlow_(srcFlow),
-      dstFlow_(dstFlow), specConstants_{makeSpecConstants(dstFlow, outputFlowScale)},
+      srcTemplate_(std::move(srcImage)), srcFlow_(std::move(srcFlow)),
+      dstFlow_(dstFlow), specConstants_{makeSpecConstants(outputFlowScale)},
       nearestSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
-BilateralFilter::SpecConstants BilateralFilter::makeSpecConstants(const std::shared_ptr<Image> &dstFlow,
-                                                                  float outputFlowScale) const {
+BilateralFilter::SpecConstants BilateralFilter::makeSpecConstants(float outputFlowScale) const {
     SpecConstants specConstants = {
-        32, 8, 1, 1, dstFlow->isImageStore(), outputFlowScale, dstFlow->width(), dstFlow->height(), dstFlow->stride(),
+        32,
+        8,
+        1,
+        1,
+        dstFlow_->isImageStore(),
+        outputFlowScale,
+        dstFlow_->width(),
+        dstFlow_->height(),
+        dstFlow_->stride(),
     };
     return specConstants;
 }
@@ -539,31 +537,28 @@ SubpixelME::SubpixelME(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispa
                        const VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
                        std::shared_ptr<Image> srcImageSearch, std::shared_ptr<Image> srcImageTemplate,
                        std::shared_ptr<Image> srcFlow, std::shared_ptr<Image> prevLevelFlow,
-                       std::shared_ptr<Image> dstFlow, bool doAccumulate, const std::string &debugName)
+                       const std::shared_ptr<Image> &dstFlow, bool doAccumulate, const std::string &debugName)
     : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstFlow->width(), dstFlow->height()}, debugName),
-      srcSearch_(srcImageSearch), srcTemplate_(srcImageTemplate), srcFlow_(srcFlow), srcPrevLevelFlow_(prevLevelFlow),
-      dstFlow_(dstFlow), specConstants_{makeSpecConstants(srcFlow, prevLevelFlow, dstFlow, doAccumulate)},
+      srcSearch_(std::move(srcImageSearch)), srcTemplate_(std::move(srcImageTemplate)), srcFlow_(std::move(srcFlow)),
+      srcPrevLevelFlow_(std::move(prevLevelFlow)), dstFlow_(dstFlow), specConstants_{makeSpecConstants(doAccumulate)},
       nearestZeroPadSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER)},
       nearestRepeatPadSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
-SubpixelME::SpecConstants SubpixelME::makeSpecConstants(const std::shared_ptr<Image> &srcFlow,
-                                                        const std::shared_ptr<Image> &prevLevelFlow,
-                                                        const std::shared_ptr<Image> &dstFlow,
-                                                        bool doAccumulate) const {
+SubpixelME::SpecConstants SubpixelME::makeSpecConstants(bool doAccumulate) const {
     SpecConstants specConstants = {
         32,
         8,
         1,
         1,
         doAccumulate,
-        doAccumulate ? prevLevelFlow->isBufferLoad() : false,
-        dstFlow->isImageStore(),
-        dstFlow->width(),
-        dstFlow->height(),
-        srcFlow->stride(),
-        doAccumulate ? prevLevelFlow->stride() : 1,
-        dstFlow->stride(),
+        doAccumulate ? srcPrevLevelFlow_->isBufferLoad() : false,
+        dstFlow_->isImageStore(),
+        dstFlow_->width(),
+        dstFlow_->height(),
+        srcFlow_->stride(),
+        doAccumulate ? srcPrevLevelFlow_->stride() : 1,
+        dstFlow_->stride(),
     };
     return specConstants;
 }
@@ -592,31 +587,29 @@ MVReplace::MVReplace(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispatc
                      const VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
                      std::shared_ptr<Image> mvInput, std::shared_ptr<Image> flowBlockMatch,
                      std::shared_ptr<Image> costAtInput, std::shared_ptr<Image> minCostBlockMatch,
-                     std::shared_ptr<Image> dstFlow, std::shared_ptr<Image> dstCost, bool outputCost,
+                     const std::shared_ptr<Image> &dstFlow, std::shared_ptr<Image> dstCost, bool outputCost,
                      const std::string &debugName)
     : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstFlow->width(), dstFlow->height()}, debugName),
-      srcInputMV_(mvInput), srcBlockMatchFlow_(flowBlockMatch), srcInputMVCost_(costAtInput),
-      srcBlockMatchCost_(minCostBlockMatch), dstFlow_(dstFlow), dstCost_(dstCost),
-      outputCost_(outputCost), specConstants_{makeSpecConstants(costAtInput, dstFlow, dstCost, outputCost)},
+      srcInputMV_(std::move(mvInput)), srcBlockMatchFlow_(std::move(flowBlockMatch)),
+      srcInputMVCost_(std::move(costAtInput)), srcBlockMatchCost_(std::move(minCostBlockMatch)), dstFlow_(dstFlow),
+      dstCost_(std::move(dstCost)), outputCost_(outputCost), specConstants_{makeSpecConstants()},
       nearestSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
-MVReplace::SpecConstants MVReplace::makeSpecConstants(const std::shared_ptr<Image> &costAtInput,
-                                                      const std::shared_ptr<Image> &dstFlow,
-                                                      const std::shared_ptr<Image> &dstCost, bool outputCost) const {
+MVReplace::SpecConstants MVReplace::makeSpecConstants() const {
     SpecConstants specConstants = {
         32,
         8,
         1,
         1,
-        outputCost,
-        costAtInput->isBufferLoad(),
-        dstFlow->isImageStore(),
-        dstFlow->width(),
-        dstFlow->height(),
-        costAtInput->stride(),
-        dstFlow->stride(),
-        outputCost ? dstCost->stride() : 1,
+        outputCost_,
+        srcInputMVCost_->isBufferLoad(),
+        dstFlow_->isImageStore(),
+        dstFlow_->width(),
+        dstFlow_->height(),
+        srcInputMVCost_->stride(),
+        dstFlow_->stride(),
+        outputCost_ ? dstCost_->stride() : 1,
     };
     return specConstants;
 }
@@ -657,16 +650,15 @@ void MVReplace::bindAndDispatch(VkCommandBuffer cmdBuf) {
 
 BlockMatch::BlockMatch(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader,
                        const VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
-                       SearchType searchType, int32_t maxSearchRange, std::shared_ptr<Image> srcSearch,
+                       SearchType searchType, int32_t maxSearchRange, const std::shared_ptr<Image> &srcSearch,
                        std::shared_ptr<Image> srcTemplate, std::shared_ptr<Image> dstFlow,
                        std::shared_ptr<Image> dstCost, const std::string &debugName)
     : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, sizeof(PushConstants),
                       {srcSearch->width(), srcSearch->height()}, debugName),
-      srcSearch_(srcSearch), srcTemplate_(srcTemplate), dstFlow_(dstFlow), dstCost_(dstCost), searchType_(searchType),
-      maxSearchRange_(maxSearchRange),
-      searchRangeLimit_(maxSearchRange), specConstants_{makeSpecConstants(searchType_, maxSearchRange_, dstFlow_,
-                                                                          dstCost_)},
+      srcSearch_(srcSearch), srcTemplate_(std::move(srcTemplate)), dstFlow_(std::move(dstFlow)),
+      dstCost_(std::move(dstCost)), searchType_(searchType), maxSearchRange_(maxSearchRange),
+      searchRangeLimit_(maxSearchRange), specConstants_{makeSpecConstants()},
       nearestSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER)} {
     // MIN_SAD* assumes maxSearchRange > 0
     assert(!(searchType_ != SearchType::RAW_SAD && maxSearchRange_ == 0));
@@ -674,21 +666,19 @@ BlockMatch::BlockMatch(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispa
     assert(!(searchType_ == SearchType::RAW_SAD && maxSearchRange_ != 0));
 }
 
-BlockMatch::SpecConstants BlockMatch::makeSpecConstants(SearchType searchType, int32_t maxSearchRange,
-                                                        const std::shared_ptr<Image> &dstFlow,
-                                                        const std::shared_ptr<Image> &dstCost) const {
+BlockMatch::SpecConstants BlockMatch::makeSpecConstants() const {
     SpecConstants specConstants = {
         32,
         8,
         1,
         1,
-        static_cast<int32_t>(searchType),
-        maxSearchRange,
-        hasFlowOutput() ? dstFlow->width() : dstCost->width(),
-        hasFlowOutput() ? dstFlow->height() : dstCost->height(),
-        hasFlowOutput() ? dstFlow->stride() : 0,
-        hasCostOutput() ? dstCost->stride() : 0,
-        hasCostOutput() && dstCost->isImageStore(),
+        static_cast<int32_t>(searchType_),
+        maxSearchRange_,
+        hasFlowOutput() ? dstFlow_->width() : dstCost_->width(),
+        hasFlowOutput() ? dstFlow_->height() : dstCost_->height(),
+        hasFlowOutput() ? dstFlow_->stride() : 0,
+        hasCostOutput() ? dstCost_->stride() : 0,
+        hasCostOutput() && dstCost_->isImageStore(),
     };
     return specConstants;
 }

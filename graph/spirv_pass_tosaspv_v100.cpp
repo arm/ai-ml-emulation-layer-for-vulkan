@@ -560,10 +560,9 @@ void GraphPassTosaSpv100::handleDepthwiseConv2D(const Instruction *opExtInst, co
 
 void GraphPassTosaSpv100::handleElementwiseBinary(
     const Instruction *opExtInst, const std::string &debugName,
-    std::function<void(GraphPipeline *, const std::shared_ptr<TensorDescriptor> &,
-                       const std::shared_ptr<TensorDescriptor> &, const std::shared_ptr<TensorDescriptor> &,
-                       const std::string &)>
-        function) {
+    const std::function<void(GraphPipeline *, const std::shared_ptr<TensorDescriptor> &,
+                             const std::shared_ptr<TensorDescriptor> &, const std::shared_ptr<TensorDescriptor> &,
+                             const std::string &)> &function) {
     // OpExtInst <result id> <OpExtInstImport id> OPERATION input1 input2
     assert(opExtInst->NumInOperands() == 4);
 
@@ -579,9 +578,8 @@ void GraphPassTosaSpv100::handleElementwiseBinary(
 
 void GraphPassTosaSpv100::handleElementwiseUnary(
     const Instruction *opExtInst, const std::string &debugName,
-    std::function<void(GraphPipeline *, const std::shared_ptr<TensorDescriptor> &,
-                       const std::shared_ptr<TensorDescriptor> &, const std::string &)>
-        function) {
+    const std::function<void(GraphPipeline *, const std::shared_ptr<TensorDescriptor> &,
+                             const std::shared_ptr<TensorDescriptor> &, const std::string &)> &function) {
     // OpExtInst <result id> <OpExtInstImport id> OPERATION input1
     assert(opExtInst->NumInOperands() == 3);
 
@@ -831,9 +829,9 @@ void GraphPassTosaSpv100::handleRescale(const Instruction *opExtInst, const std:
 
 void GraphPassTosaSpv100::handleReduce(
     const Instruction *opExtInst, const std::string &debugName,
-    std::function<void(GraphPipeline *, const std::shared_ptr<TensorDescriptor> &,
-                       const std::shared_ptr<TensorDescriptor> &, const uint32_t, const std::string &)>
-        function) {
+    const std::function<void(GraphPipeline *, const std::shared_ptr<TensorDescriptor> &,
+                             const std::shared_ptr<TensorDescriptor> &, const uint32_t, const std::string &)>
+        &function) {
     // OpExtInst <result id> <OpExtInstImport id> REDUCE_* axis input
     assert(opExtInst->NumInOperands() == 4);
 

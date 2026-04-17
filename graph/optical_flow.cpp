@@ -28,7 +28,7 @@ namespace mlsdk::el::compute::optical_flow {
 OpticalFlow::OpticalFlow(std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> loader,
                          VkPhysicalDevice physicalDevice, VkDevice device,
                          const std::shared_ptr<PipelineCache> &pipelineCache)
-    : loader_(loader), physicalDevice_(physicalDevice), device_(device), pipelineCache_(pipelineCache) {}
+    : loader_(std::move(loader)), physicalDevice_(physicalDevice), device_(device), pipelineCache_(pipelineCache) {}
 
 void OpticalFlow::init(const Config &config) {
     // Check configuration is supported
@@ -101,22 +101,19 @@ void OpticalFlow::init(const Config &config) {
     }
 }
 
-void OpticalFlow::setInputSearch(std::shared_ptr<Image> input) {
-    inputSearchRGB_ = input;
+void OpticalFlow::setInputSearch() const {
     if (rgbToYSearch_) {
         rgbToYSearch_->setInput(inputSearchRGB_);
     }
 }
 
-void OpticalFlow::setInputTemplate(std::shared_ptr<Image> input) {
-    inputTemplateRGB_ = input;
+void OpticalFlow::setInputTemplate() const {
     if (rgbToYTemplate_) {
         rgbToYTemplate_->setInput(inputTemplateRGB_);
     }
 }
 
-void OpticalFlow::setInputMV(std::shared_ptr<Image> input) {
-    inputMV_ = input;
+void OpticalFlow::setInputMV() const {
     if (warpByMvInput_) {
         warpByMvInput_->setInputFlow(inputMV_);
     }
@@ -125,9 +122,7 @@ void OpticalFlow::setInputMV(std::shared_ptr<Image> input) {
     }
 }
 
-void OpticalFlow::setOutputFlow(std::shared_ptr<Image> output) {
-    outputFlow_ = output;
-
+void OpticalFlow::setOutputFlow() {
     if (config_.useMvInput) {
         mvReplaceFlowOut_ = outputFlow_;
         if (mvReplace_) {
@@ -150,9 +145,7 @@ void OpticalFlow::setOutputFlow(std::shared_ptr<Image> output) {
     }
 }
 
-void OpticalFlow::setOutputCost(std::shared_ptr<Image> output) {
-    outputCost_ = output;
-
+void OpticalFlow::setOutputCost() {
     if (config_.useMvInput) {
         mvReplaceCostOut_ = outputCost_;
         if (mvReplace_) {
@@ -221,8 +214,8 @@ void OpticalFlow::makeDownsamplePyramid(std::vector<DownsampleBlock> &blocks, st
 void OpticalFlow::makeMotionEstimationBlocks() {
     MEBlocks_.resize(pyramidLevels_);
 
-    setOutputFlow(outputFlow_);
-    setOutputCost(outputCost_);
+    setOutputFlow();
+    setOutputCost();
 
     // Start at the bottom of the pyramid and work up.
     const auto first = pyramidLevels_ - 1;
@@ -414,26 +407,26 @@ void OpticalFlow::updateDescriptorSets(const OpticalFlowDescriptorMap &descripto
 
     std::tie(vkDescriptorSet, vkImageView) = getDescriptorSetAndImageView(config_.srcSearch);
     inputSearchRGB_->setExternalDescriptor(vkDescriptorSet, config_.srcSearch.binding, vkImageView);
-    setInputSearch(inputSearchRGB_);
+    setInputSearch();
 
     std::tie(vkDescriptorSet, vkImageView) = getDescriptorSetAndImageView(config_.srcTemplate);
     inputTemplateRGB_->setExternalDescriptor(vkDescriptorSet, config_.srcTemplate.binding, vkImageView);
-    setInputTemplate(inputTemplateRGB_);
+    setInputTemplate();
 
     if (config_.useMvInput) {
         std::tie(vkDescriptorSet, vkImageView) = getDescriptorSetAndImageView(config_.srcFlow);
         inputMV_->setExternalDescriptor(vkDescriptorSet, config_.srcFlow.binding, vkImageView);
-        setInputMV(inputMV_);
+        setInputMV();
     }
 
     std::tie(vkDescriptorSet, vkImageView) = getDescriptorSetAndImageView(config_.dstFlow);
     outputFlow_->setExternalDescriptor(vkDescriptorSet, config_.dstFlow.binding, vkImageView);
-    setOutputFlow(outputFlow_);
+    setOutputFlow();
 
     if (config_.outputCost) {
         std::tie(vkDescriptorSet, vkImageView) = getDescriptorSetAndImageView(config_.dstCost);
         outputCost_->setExternalDescriptor(vkDescriptorSet, config_.dstCost.binding, vkImageView);
-        setOutputCost(outputCost_);
+        setOutputCost();
     }
 }
 
