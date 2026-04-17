@@ -21,10 +21,10 @@ namespace mlsdk::el::compute::optical_flow {
 
 ComputePipeline::ComputePipeline(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader,
                                  const VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
-                                 const SpirvBinary &spirv, const DescriptorConfigs &descriptorConfigs,
+                                 const std::string_view shaderName, const DescriptorConfigs &descriptorConfigs,
                                  const SpecConstants &specConstants, uint32_t pushConstantsSize,
                                  const ScheduleHelper &schedule, const std::string &debugName)
-    : loader_(loader), device_(device), pipelineCache_(pipelineCache), spirv_(spirv),
+    : loader_(loader), device_(device), pipelineCache_(pipelineCache), spirv_(createSpirv(shaderName)),
       descriptorConfigs_(descriptorConfigs), specConstants_(specConstants), pushConstantsSize_(pushConstantsSize),
       scheduler_(schedule), debugName_(debugName) {}
 
@@ -174,6 +174,10 @@ void ComputePipeline::setOutputStorage(VkCommandBuffer cmdBuf, uint32_t binding,
     }
 }
 
+SpirvBinary ComputePipeline::createSpirv(const std::string_view shaderName) const {
+    return pipelineCache_->lookup(shaderName, {}, {});
+}
+
 void ComputePipeline::setCombinedImageSampler(uint32_t binding, const std::shared_ptr<Image> &image,
                                               VkSampler sampler) {
     setImage(binding, image, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, sampler);
@@ -260,7 +264,7 @@ RGBToY::RGBToY(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoade
                std::shared_ptr<Image> srcRGBImage, std::shared_ptr<Image> dstDownsampledImage,
                std::shared_ptr<Image> dstFullImage, bool outputDownsample, bool outputFullRes, float downsampleScale,
                const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache), descriptorConfigs_,
+    : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0,
                       {dstDownsampledImage->width(), dstDownsampledImage->height()}, debugName),
       srcImage_(srcRGBImage), dstYDownsampled_(dstDownsampledImage), dstYFull_(dstFullImage),
@@ -304,10 +308,6 @@ RGBToY::SpecConstants RGBToY::makeSpecConstants(const std::shared_ptr<Image> &sr
     return specConstants;
 }
 
-SpirvBinary RGBToY::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache) {
-    return pipelineCache->lookup(shaderName, {}, {});
-}
-
 void RGBToY::setInput(std::shared_ptr<Image> src) {
     assert(Image::isCompatible(srcImage_, src));
     srcImage_ = std::move(src);
@@ -333,7 +333,7 @@ void RGBToY::bindAndDispatch(VkCommandBuffer cmdBuf) {
 Downsample::Downsample(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader,
                        const VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
                        std::shared_ptr<Image> src, std::shared_ptr<Image> dst, const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache), descriptorConfigs_,
+    : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dst->width(), dst->height()}, debugName),
       srcImage_(src), dstImage_(dst), specConstants_{makeSpecConstants(src, dst)},
       linearSampler_{createSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
@@ -355,10 +355,6 @@ Downsample::SpecConstants Downsample::makeSpecConstants(const std::shared_ptr<Im
     return specConstants;
 }
 
-SpirvBinary Downsample::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache) {
-    return pipelineCache->lookup(shaderName, {}, {});
-}
-
 void Downsample::bindAndDispatch(VkCommandBuffer cmdBuf) {
     setInputStorage(cmdBuf, 0, srcImage_, linearSampler_);
     setOutputStorage(cmdBuf, dstImage_->isImageStore() ? 1 : 2, dstImage_);
@@ -376,7 +372,7 @@ MVProcessAndWarp::MVProcessAndWarp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::d
                                    std::shared_ptr<Image> srcImage, std::shared_ptr<Image> srcFlow,
                                    std::shared_ptr<Image> dstImage, std::shared_ptr<Image> dstFlow,
                                    const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache), descriptorConfigs_,
+    : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstImage->width(), dstImage->height()}, debugName),
       srcSearch_(srcImage), srcFlow_(srcFlow), dstWarped_(dstImage),
       dstFlow_(dstFlow), specConstants_{makeSpecConstants(dstImage, dstFlow)},
@@ -402,10 +398,6 @@ MVProcessAndWarp::SpecConstants MVProcessAndWarp::makeSpecConstants(const std::s
     return specConstants;
 }
 
-SpirvBinary MVProcessAndWarp::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache) {
-    return pipelineCache->lookup(shaderName, {}, {});
-}
-
 void MVProcessAndWarp::bindAndDispatch(VkCommandBuffer cmdBuf) {
     setInputStorage(cmdBuf, 0, srcSearch_, linearSampler_);
     setInputStorage(cmdBuf, 1, srcFlow_, linearSampler_);
@@ -424,7 +416,7 @@ DenseWarp::DenseWarp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispatc
                      const VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
                      std::shared_ptr<Image> srcImage, std::shared_ptr<Image> srcFlow, std::shared_ptr<Image> dstImage,
                      float inputFlowScale, const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache), descriptorConfigs_,
+    : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstImage->width(), dstImage->height()}, debugName),
       srcSearch_(srcImage), srcFlow_(srcFlow),
       dstWarped_(dstImage), specConstants_{makeSpecConstants(dstImage, inputFlowScale)},
@@ -445,10 +437,6 @@ DenseWarp::SpecConstants DenseWarp::makeSpecConstants(const std::shared_ptr<Imag
         dstImage->stride(),
     };
     return specConstants;
-}
-
-SpirvBinary DenseWarp::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache) {
-    return pipelineCache->lookup(shaderName, {}, {});
 }
 
 void DenseWarp::setInputFlow(std::shared_ptr<Image> srcFlow) {
@@ -473,7 +461,7 @@ MedianFilter::MedianFilter(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::D
                            const VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
                            std::shared_ptr<Image> srcImage, std::shared_ptr<Image> dstImage, float outputFlowScale,
                            const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache), descriptorConfigs_,
+    : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstImage->width(), dstImage->height()}, debugName),
       srcFlow_(srcImage), dstFlow_(dstImage), specConstants_{makeSpecConstants(dstImage, outputFlowScale)},
       nearestSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
@@ -492,10 +480,6 @@ MedianFilter::SpecConstants MedianFilter::makeSpecConstants(const std::shared_pt
         dstImage->stride(),
     };
     return specConstants;
-}
-
-SpirvBinary MedianFilter::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache) {
-    return pipelineCache->lookup(shaderName, {}, {});
 }
 
 void MedianFilter::setOutput(std::shared_ptr<Image> dstImage) {
@@ -519,7 +503,7 @@ BilateralFilter::BilateralFilter(const std::shared_ptr<VULKAN_HPP_NAMESPACE::det
                                  const VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
                                  std::shared_ptr<Image> srcImage, std::shared_ptr<Image> srcFlow,
                                  std::shared_ptr<Image> dstFlow, float outputFlowScale, const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache), descriptorConfigs_,
+    : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstFlow->width(), dstFlow->height()}, debugName),
       srcTemplate_(srcImage), srcFlow_(srcFlow),
       dstFlow_(dstFlow), specConstants_{makeSpecConstants(dstFlow, outputFlowScale)},
@@ -531,10 +515,6 @@ BilateralFilter::SpecConstants BilateralFilter::makeSpecConstants(const std::sha
         32, 8, 1, 1, dstFlow->isImageStore(), outputFlowScale, dstFlow->width(), dstFlow->height(), dstFlow->stride(),
     };
     return specConstants;
-}
-
-SpirvBinary BilateralFilter::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache) {
-    return pipelineCache->lookup(shaderName, {}, {});
 }
 
 void BilateralFilter::setOutput(std::shared_ptr<Image> dstFlow) {
@@ -560,7 +540,7 @@ SubpixelME::SubpixelME(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispa
                        std::shared_ptr<Image> srcImageSearch, std::shared_ptr<Image> srcImageTemplate,
                        std::shared_ptr<Image> srcFlow, std::shared_ptr<Image> prevLevelFlow,
                        std::shared_ptr<Image> dstFlow, bool doAccumulate, const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache), descriptorConfigs_,
+    : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstFlow->width(), dstFlow->height()}, debugName),
       srcSearch_(srcImageSearch), srcTemplate_(srcImageTemplate), srcFlow_(srcFlow), srcPrevLevelFlow_(prevLevelFlow),
       dstFlow_(dstFlow), specConstants_{makeSpecConstants(srcFlow, prevLevelFlow, dstFlow, doAccumulate)},
@@ -586,10 +566,6 @@ SubpixelME::SpecConstants SubpixelME::makeSpecConstants(const std::shared_ptr<Im
         dstFlow->stride(),
     };
     return specConstants;
-}
-
-SpirvBinary SubpixelME::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache) {
-    return pipelineCache->lookup(shaderName, {}, {});
 }
 
 void SubpixelME::setOutput(std::shared_ptr<Image> dstFlow) {
@@ -618,7 +594,7 @@ MVReplace::MVReplace(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispatc
                      std::shared_ptr<Image> costAtInput, std::shared_ptr<Image> minCostBlockMatch,
                      std::shared_ptr<Image> dstFlow, std::shared_ptr<Image> dstCost, bool outputCost,
                      const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache), descriptorConfigs_,
+    : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstFlow->width(), dstFlow->height()}, debugName),
       srcInputMV_(mvInput), srcBlockMatchFlow_(flowBlockMatch), srcInputMVCost_(costAtInput),
       srcBlockMatchCost_(minCostBlockMatch), dstFlow_(dstFlow), dstCost_(dstCost),
@@ -643,10 +619,6 @@ MVReplace::SpecConstants MVReplace::makeSpecConstants(const std::shared_ptr<Imag
         outputCost ? dstCost->stride() : 1,
     };
     return specConstants;
-}
-
-SpirvBinary MVReplace::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache) {
-    return pipelineCache->lookup(shaderName, {}, {});
 }
 
 void MVReplace::setInputMv(std::shared_ptr<Image> srcMV) {
@@ -688,7 +660,7 @@ BlockMatch::BlockMatch(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispa
                        SearchType searchType, int32_t maxSearchRange, std::shared_ptr<Image> srcSearch,
                        std::shared_ptr<Image> srcTemplate, std::shared_ptr<Image> dstFlow,
                        std::shared_ptr<Image> dstCost, const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache), descriptorConfigs_,
+    : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, sizeof(PushConstants),
                       {srcSearch->width(), srcSearch->height()}, debugName),
       srcSearch_(srcSearch), srcTemplate_(srcTemplate), dstFlow_(dstFlow), dstCost_(dstCost), searchType_(searchType),
@@ -719,10 +691,6 @@ BlockMatch::SpecConstants BlockMatch::makeSpecConstants(SearchType searchType, i
         hasCostOutput() && dstCost->isImageStore(),
     };
     return specConstants;
-}
-
-SpirvBinary BlockMatch::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache) {
-    return pipelineCache->lookup(shaderName, {}, {});
 }
 
 bool BlockMatch::hasFlowOutput() const {

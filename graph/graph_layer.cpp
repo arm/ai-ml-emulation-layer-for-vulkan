@@ -107,12 +107,16 @@ class DataGraphPipelineARM : public Loader {
     };
 
     explicit DataGraphPipelineARM(const std::shared_ptr<Device> &device,
-                                  const std::shared_ptr<PipelineCache> &_pipelineCache, Type _pipelineType)
-        : Loader(*device), graphPipeline{std::make_shared<GraphPipeline>(
-                               device->loader, device->physicalDevice->physicalDevice, device->device, _pipelineCache)},
-          opticalFlow{std::make_shared<OpticalFlow>(device->loader, device->physicalDevice->physicalDevice,
-                                                    device->device, _pipelineCache)},
-          pipelineType(_pipelineType) {}
+                                  const std::shared_ptr<PipelineCache> &_pipelineCache, Type pipelineType)
+        : Loader(*device) {
+        if (pipelineType == Type::GRAPH) {
+            graphPipeline = std::make_shared<GraphPipeline>(device->loader, device->physicalDevice->physicalDevice,
+                                                            device->device, _pipelineCache);
+        } else {
+            opticalFlow = std::make_shared<OpticalFlow>(device->loader, device->physicalDevice->physicalDevice,
+                                                        device->device, _pipelineCache);
+        }
+    }
 
     std::shared_ptr<GraphPipeline> graphPipeline;
     std::shared_ptr<OpticalFlow> opticalFlow;
@@ -125,11 +129,8 @@ class DataGraphPipelineARM : public Loader {
         }
     }
 
-    bool isGraph() const { return pipelineType == Type::GRAPH; }
-    bool isOpticalFlow() const { return pipelineType == Type::OPTICAL_FLOW; }
-
-  private:
-    Type pipelineType;
+    bool isGraph() const { return graphPipeline != nullptr; }
+    bool isOpticalFlow() const { return opticalFlow != nullptr; }
 };
 
 /*****************************************************************************
@@ -141,9 +142,12 @@ class DataGraphPipelineSessionARM : public Loader {
     explicit DataGraphPipelineSessionARM(const std::shared_ptr<Device> &device,
                                          const std::shared_ptr<DataGraphPipelineARM> &_pipeline,
                                          VkDataGraphPipelineSessionCreateFlagsARM _createFlags)
-        : Loader(*device), pipeline{_pipeline},
-          sessionRamDescriptorSets{pipeline->graphPipeline->makeSessionRamDescriptorSets()},
-          memoryPlanner{createMemoryPlanner()}, createFlags{_createFlags} {}
+        : Loader(*device), pipeline{_pipeline}, createFlags{_createFlags} {
+        if (pipeline->isGraph()) {
+            sessionRamDescriptorSets = pipeline->graphPipeline->makeSessionRamDescriptorSets();
+            memoryPlanner = createMemoryPlanner();
+        }
+    }
 
     std::shared_ptr<DataGraphPipelineARM> pipeline;
 
