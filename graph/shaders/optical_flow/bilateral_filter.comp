@@ -1,0 +1,85 @@
+/*
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#version 450
+precision highp float;
+precision mediump sampler2D;
+precision mediump image2D;
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+#extension GL_EXT_shader_16bit_storage : require
+#extension GL_EXT_shader_8bit_storage : require
+
+#define MACRO_BLOCK (5)
+#define BLOCK_R (MACRO_BLOCK / 2)
+
+// Local Work Size set as Specialization Constants
+layout (local_size_x_id = 0, local_size_y_id = 1, local_size_z = 1) in;
+
+layout(constant_id = 2) const int VECTORIZE_X = 1;  // unused
+layout(constant_id = 3) const int VECTORIZE_Y = 1;  // unused
+layout(constant_id = 4) const bool IMAGE_STORE = false;
+layout(constant_id = 5) const float OUTPUT_FLOW_SCALE = 1.f;
+layout(constant_id = 6) const int OUTPUT_SIZE_X = 480;
+layout(constant_id = 7) const int OUTPUT_SIZE_Y = 270;
+layout(constant_id = 8) const uint STRIDE_DST = 480;   // The number of elements in a row (x-axis) including padding
+
+layout (binding = 0) uniform mediump sampler2D imageSampler;
+layout (binding = 1) uniform mediump sampler2D flowImageSampler;
+
+layout(set=0, binding=2, rg16f) uniform writeonly image2D dst_flow_img;
+layout (set = 0, binding = 3, std430) buffer _dst_flow_buf{
+    f16vec2 dst_flow_buf[];
+};
+
+// The parameters below need to be adjusted in accordance with the reference
+// sigma_spatial=7.4, sigma_intensity=0.14
+const float16_t SIGMA_INTENSITY_DIV_SQRT = 5.05129933779HF;  // sqrt(SIGMA_INTENSITY_DIV)
+const float16_t CONSTANT_SPATIAL_KERNEL = -0.00913HF;
+
+float16_t triangular_func(float16_t x)
+{
+    return clamp(1.HF - abs(x), 0.HF, 1.HF);
+}
+
+f16vec2 calc(ivec2 pos)
+{
+    float16_t compare_pix = float16_t(texture(imageSampler, pos).x);
+
+    // 5x5 coeff generation and convolution
+    float16_t coeff_sum = 0.HF;
+    f16vec2 filter_sum = f16vec2(0.HF);
+    for (int ky = -2; ky <= 2; ++ky) {
+        for (int kx = -2; kx <=2; ++kx) {
+
+            const ivec2 k_pos = pos + ivec2(kx, ky);
+            float16_t compare_kernel = float16_t(texture(imageSampler, k_pos).x);
+            float16_t diff = compare_pix - compare_kernel;
+            diff *= SIGMA_INTENSITY_DIV_SQRT;
+            float16_t intensity_diff = diff * diff;
+
+            float16_t coeff = triangular_func(CONSTANT_SPATIAL_KERNEL - intensity_diff);
+            coeff_sum += coeff;
+            filter_sum += coeff * f16vec2(texture(flowImageSampler, k_pos).xy);
+        }
+    }
+
+    f16vec2 filtered = filter_sum / coeff_sum;
+    filtered *= f16vec2(OUTPUT_FLOW_SCALE);
+    return filtered;
+}
+
+void main()
+{
+    const ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pos, ivec2(OUTPUT_SIZE_X, OUTPUT_SIZE_Y)))) return;
+
+    f16vec2 flow = calc(pos);
+
+    if (IMAGE_STORE)
+        imageStore(dst_flow_img, pos, f16vec4(flow, 0, 0));
+    else
+        dst_flow_buf[STRIDE_DST * pos.y + pos.x] = flow;
+}

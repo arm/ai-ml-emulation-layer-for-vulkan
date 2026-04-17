@@ -295,6 +295,7 @@ std::shared_ptr<Device> createDevice() {
     std::vector<const char *> extensions = {
         VK_ARM_DATA_GRAPH_EXTENSION_NAME,
         VK_ARM_DATA_GRAPH_INSTRUCTION_SET_TOSA_EXTENSION_NAME,
+        VK_ARM_DATA_GRAPH_OPTICAL_FLOW_EXTENSION_NAME,
         VK_ARM_TENSORS_EXTENSION_NAME,
     };
 
@@ -2058,6 +2059,11 @@ TEST_F(MLEmulationLayerForVulkan, GetPhysicalDeviceQueueFamilyDataGraphEngineOpe
                    VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_SPIRV_EXTENDED_INSTRUCTION_SET_ARM;
         });
     ASSERT_NE(tosaProp, properties.end());
+    const auto opticalFlowProp =
+        std::find_if(properties.begin(), properties.end(), [](const VkQueueFamilyDataGraphPropertiesARM &p) {
+            return p.operation.operationType == VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_OPTICAL_FLOW_ARM;
+        });
+    ASSERT_NE(opticalFlowProp, properties.end());
 
     VkQueueFamilyDataGraphTOSAPropertiesARM tosaProperties = {};
     tosaProperties.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_TOSA_PROPERTIES_ARM;
@@ -2072,6 +2078,84 @@ TEST_F(MLEmulationLayerForVulkan, GetPhysicalDeviceQueueFamilyDataGraphEngineOpe
     ASSERT_EQ(tosaProperties.extensionCount, 0u);
     ASSERT_EQ(tosaProperties.pExtensions, nullptr);
     ASSERT_EQ(tosaProperties.level, VK_DATA_GRAPH_TOSA_LEVEL_8K_ARM);
+
+    // Query optical flow engine operation properties
+    VkQueueFamilyDataGraphOpticalFlowPropertiesARM ofProps{};
+    ofProps.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_OPTICAL_FLOW_PROPERTIES_ARM;
+
+    const auto ofResult =
+        vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+            *vkPhysicalDevice, queueFamilyIndex, &(*opticalFlowProp), reinterpret_cast<VkBaseOutStructure *>(&ofProps));
+
+    ASSERT_EQ(ofResult, VK_SUCCESS);
+    ASSERT_GT(ofProps.supportedOutputGridSizes, 0u);
+    ASSERT_GT(ofProps.supportedHintGridSizes, 0u);
+    ASSERT_GT(ofProps.maxWidth, 0u);
+    ASSERT_GT(ofProps.maxHeight, 0u);
+}
+
+TEST_F(MLEmulationLayerForVulkan, GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM) {
+    const auto device = createDevice();
+    const auto &physicalDevice = device->getPhysicalDevice();
+    const auto &vkPhysicalDevice = &(*physicalDevice);
+    const uint32_t queueFamilyIndex = physicalDevice->getComputeFamilyIndex();
+
+    // Get queue family data graph properties to find an optical flow operation
+    uint32_t count = 0;
+    vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
+        *vkPhysicalDevice, queueFamilyIndex, &count, nullptr);
+    ASSERT_GT(count, 0u);
+
+    std::vector<VkQueueFamilyDataGraphPropertiesARM> properties(count);
+    for (auto &p : properties) {
+        p = {};
+        p.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_PROPERTIES_ARM;
+    }
+    uint32_t retrieveCount = count;
+    vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
+        *vkPhysicalDevice, queueFamilyIndex, &retrieveCount, properties.data());
+
+    const auto opticalFlowProp =
+        std::find_if(properties.begin(), properties.end(), [](const VkQueueFamilyDataGraphPropertiesARM &p) {
+            return p.operation.operationType == VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_OPTICAL_FLOW_ARM;
+        });
+    ASSERT_NE(opticalFlowProp, properties.end());
+
+    VkDataGraphOpticalFlowImageFormatInfoARM formatInfo{};
+    formatInfo.sType = VK_STRUCTURE_TYPE_DATA_GRAPH_OPTICAL_FLOW_IMAGE_FORMAT_INFO_ARM;
+
+    // Phase 1: query input format count
+    formatInfo.usage = VK_DATA_GRAPH_OPTICAL_FLOW_IMAGE_USAGE_INPUT_BIT_ARM;
+    uint32_t inputFormatCount = 0;
+    VkResult result =
+        vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+            *vkPhysicalDevice, queueFamilyIndex, &(*opticalFlowProp), &formatInfo, &inputFormatCount, nullptr);
+    ASSERT_EQ(result, VK_SUCCESS);
+    ASSERT_GT(inputFormatCount, 0u);
+
+    // Phase 2: retrieve input formats
+    std::vector<VkDataGraphOpticalFlowImageFormatPropertiesARM> inputFormats(inputFormatCount);
+    for (auto &f : inputFormats) {
+        f = {};
+        f.sType = VK_STRUCTURE_TYPE_DATA_GRAPH_OPTICAL_FLOW_IMAGE_FORMAT_PROPERTIES_ARM;
+    }
+    uint32_t retrievedInputCount = inputFormatCount;
+    result = vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+        *vkPhysicalDevice, queueFamilyIndex, &(*opticalFlowProp), &formatInfo, &retrievedInputCount,
+        inputFormats.data());
+    ASSERT_EQ(result, VK_SUCCESS);
+    ASSERT_EQ(retrievedInputCount, inputFormatCount);
+    for (const auto &f : inputFormats) {
+        ASSERT_NE(f.format, VK_FORMAT_UNDEFINED);
+    }
+
+    // Query output (flow vector) formats
+    formatInfo.usage = VK_DATA_GRAPH_OPTICAL_FLOW_IMAGE_USAGE_OUTPUT_BIT_ARM;
+    uint32_t outputFormatCount = 0;
+    result = vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+        *vkPhysicalDevice, queueFamilyIndex, &(*opticalFlowProp), &formatInfo, &outputFormatCount, nullptr);
+    ASSERT_EQ(result, VK_SUCCESS);
+    ASSERT_GT(outputFormatCount, 0u);
 }
 #endif
 

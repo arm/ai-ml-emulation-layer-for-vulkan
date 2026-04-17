@@ -18,10 +18,13 @@ target_compile_options(VkLayer_Graph PRIVATE ${VMEL_COMPILE_OPTIONS})
 
 target_sources(VkLayer_Graph PRIVATE
     compute_graph_op.cpp
+    compute_optical_flow.cpp
     compute_pipeline_common.cpp
     graph_layer.cpp
     graph_log.cpp
+    image.cpp
     memory_planner.cpp
+    optical_flow.cpp
     pipeline_cache.cpp
     spirv_pass.cpp
     spirv_pass_tosaspv_v100.cpp

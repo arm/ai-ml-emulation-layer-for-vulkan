@@ -34,6 +34,7 @@ if(NOT APPLE)
     mlel_add_test(
         TARGET mlel_unit_tests
         SOURCES
+            optical_flow_tests.cpp
             vulkan.cpp
         DEFINITIONS
             SHADER_SOURCE_DIR=${SHADER_SOURCE_DIR}
