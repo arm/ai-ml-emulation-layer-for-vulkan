@@ -486,7 +486,7 @@ std::shared_ptr<vk::raii::DeviceMemory> GraphPipeline::bindGraphPipelineSessionM
     return deviceMemory;
 }
 
-void *GraphPipeline::mapGraphPipelineSessionMemory(std::shared_ptr<vk::raii::DeviceMemory> deviceMemory) const {
+void *GraphPipeline::mapGraphPipelineSessionMemory(const std::shared_ptr<vk::raii::DeviceMemory> &deviceMemory) const {
     if (deviceMemory == nullptr || !hostMemory) {
         return nullptr;
     }

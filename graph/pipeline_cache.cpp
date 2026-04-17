@@ -107,7 +107,7 @@ VkPipelineCache PipelineCache::getPipelineCache() const { return pipelineCache; 
 std::string PipelineCache::makeKey(std::string_view shaderName, const KeyList &keys) {
     return std::accumulate(
         keys.begin(), keys.end(), std::string(shaderName),
-        [](const std::string &acc, const std::string_view &key) { return acc + "_" + std::string(key); });
+        [](const std::string &acc, const std::string_view &key) { return acc + '_' + std::string(key); });
 }
 
 std::vector<uint32_t> PipelineCache::replaceCompileGlsl(std::string_view glslSource, const ReplaceList &replaceList) {

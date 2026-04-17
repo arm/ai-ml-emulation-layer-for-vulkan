@@ -45,15 +45,15 @@ class GraphPassTosaSpv100 final : public GraphPassBase {
     void handleDepthwiseConv2D(const Instruction *opExtInst, const std::string &debugName);
     void handleElementwiseBinary(
         const Instruction *opExtInst, const std::string &debugName,
-        std::function<void(GraphPipeline *, const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &,
-                           const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &,
-                           const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &, const std::string &)>
-            function);
+        const std::function<void(GraphPipeline *, const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &,
+                                 const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &,
+                                 const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &, const std::string &)>
+            &function);
     void handleElementwiseUnary(
         const Instruction *opExtInst, const std::string &debugName,
-        std::function<void(GraphPipeline *, const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &,
-                           const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &, const std::string &)>
-            function);
+        const std::function<void(GraphPipeline *, const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &,
+                                 const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &, const std::string &)>
+            &function);
     void handleFft2D(const Instruction *opExtInst, const std::string &debugName);
     void handleGather(const Instruction *opExtInst, const std::string &debugName);
     void handleMatmul(const Instruction *opExtInst, const std::string &debugName);
@@ -62,11 +62,11 @@ class GraphPassTosaSpv100 final : public GraphPassBase {
     void handleMinimum(const Instruction *opExtInst, const std::string &debugName);
     void handleMul(const Instruction *opExtInst, const std::string &debugName);
     void handleNegate(const Instruction *opExtInst, const std::string &debugName);
-    void handleReduce(const Instruction *opExtInst, const std::string &debugName,
-                      std::function<void(GraphPipeline *, const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &,
-                                         const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &, const uint32_t,
-                                         const std::string &)>
-                          function);
+    void handleReduce(
+        const Instruction *opExtInst, const std::string &debugName,
+        const std::function<void(GraphPipeline *, const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &,
+                                 const std::shared_ptr<mlsdk::el::compute::TensorDescriptor> &, const uint32_t,
+                                 const std::string &)> &function);
     void handleReduceMax(const Instruction *opExtInst, const std::string &debugName);
     void handleReduceMin(const Instruction *opExtInst, const std::string &debugName);
     void handlePad(const Instruction *opExtInst, const std::string &debugName);

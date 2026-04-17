@@ -120,8 +120,8 @@ class RGBToY : public ComputePipeline {
   public:
     RGBToY(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
            const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> srcRGBImage,
-           std::shared_ptr<Image> dstDownsampledImage, std::shared_ptr<Image> dstFullImage, bool outputDownsample,
-           bool outputFullRes, float downsampleScale, const std::string &debugName);
+           const std::shared_ptr<Image> &dstDownsampledImage, std::shared_ptr<Image> dstFullImage,
+           bool outputDownsample, bool outputFullRes, float downsampleScale, const std::string &debugName);
     ~RGBToY() override = default;
 
     struct SpecConstants {
@@ -143,10 +143,7 @@ class RGBToY : public ComputePipeline {
         uint32_t fullImageStride;
     };
 
-    SpecConstants makeSpecConstants(const std::shared_ptr<Image> &srcRGBImage,
-                                    const std::shared_ptr<Image> &dstDownsampledImage,
-                                    const std::shared_ptr<Image> &dstFullImage, bool outputDownsample,
-                                    bool outputFullRes, float downsampleScale) const;
+    SpecConstants makeSpecConstants(float downsampleScale) const;
     void setInput(std::shared_ptr<Image> src);
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
@@ -157,7 +154,6 @@ class RGBToY : public ComputePipeline {
     std::shared_ptr<Image> dstYFull_;
     bool outputDS_;
     bool outputFull_;
-    float scale_ = 1.f;
     SpecConstants specConstants_;
     VkSampler linearSampler_;
 
@@ -178,7 +174,7 @@ class Downsample : public ComputePipeline {
   public:
     Downsample(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
                const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> src,
-               std::shared_ptr<Image> dst, const std::string &debugName);
+               const std::shared_ptr<Image> &dst, const std::string &debugName);
     ~Downsample() override = default;
 
     struct SpecConstants {
@@ -194,8 +190,7 @@ class Downsample : public ComputePipeline {
         uint32_t outputImageStride;
     };
 
-    SpecConstants makeSpecConstants(const std::shared_ptr<Image> &srcImage,
-                                    const std::shared_ptr<Image> &dstImage) const;
+    SpecConstants makeSpecConstants() const;
 
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
@@ -221,8 +216,9 @@ class MVProcessAndWarp : public ComputePipeline {
   public:
     MVProcessAndWarp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader,
                      VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
-                     std::shared_ptr<Image> srcImage, std::shared_ptr<Image> _srcFlow, std::shared_ptr<Image> dstImage,
-                     std::shared_ptr<Image> _dstFlow, const std::string &debugName);
+                     std::shared_ptr<Image> srcImage, std::shared_ptr<Image> _srcFlow,
+                     const std::shared_ptr<Image> &dstImage, std::shared_ptr<Image> _dstFlow,
+                     const std::string &debugName);
     ~MVProcessAndWarp() override = default;
 
     struct SpecConstants {
@@ -241,8 +237,7 @@ class MVProcessAndWarp : public ComputePipeline {
         uint32_t outputFlowStride;
     };
 
-    SpecConstants makeSpecConstants(const std::shared_ptr<Image> &dstImage,
-                                    const std::shared_ptr<Image> &dstFlow) const;
+    SpecConstants makeSpecConstants() const;
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
@@ -272,7 +267,7 @@ class DenseWarp : public ComputePipeline {
   public:
     DenseWarp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
               const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> srcImage,
-              std::shared_ptr<Image> _srcFlow, std::shared_ptr<Image> dstImage, float inputFlowScale,
+              std::shared_ptr<Image> _srcFlow, const std::shared_ptr<Image> &dstImage, float inputFlowScale,
               const std::string &debugName);
     ~DenseWarp() override = default;
 
@@ -288,7 +283,7 @@ class DenseWarp : public ComputePipeline {
         uint32_t outputImageStride;
     };
 
-    SpecConstants makeSpecConstants(const std::shared_ptr<Image> &dstImage, float inputFlowScale) const;
+    SpecConstants makeSpecConstants(float inputFlowScale) const;
 
     void setInputFlow(std::shared_ptr<Image> _srcFlow);
 
@@ -319,7 +314,7 @@ class MedianFilter : public ComputePipeline {
   public:
     MedianFilter(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
                  const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> srcImage,
-                 std::shared_ptr<Image> dstImage, float outputFlowScale, const std::string &debugName);
+                 const std::shared_ptr<Image> &dstImage, float outputFlowScale, const std::string &debugName);
     ~MedianFilter() override = default;
 
     struct SpecConstants {
@@ -334,7 +329,7 @@ class MedianFilter : public ComputePipeline {
         uint32_t outputImageStride;
     };
 
-    SpecConstants makeSpecConstants(const std::shared_ptr<Image> &dstImage, float outputFlowScale) const;
+    SpecConstants makeSpecConstants(float outputFlowScale) const;
 
     void setOutput(std::shared_ptr<Image> dstImage);
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
@@ -361,7 +356,7 @@ class BilateralFilter : public ComputePipeline {
   public:
     BilateralFilter(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
                     const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> srcImage,
-                    std::shared_ptr<Image> srcFlow, std::shared_ptr<Image> dstFlow, float outputFlowScale,
+                    std::shared_ptr<Image> srcFlow, const std::shared_ptr<Image> &dstFlow, float outputFlowScale,
                     const std::string &debugName);
     ~BilateralFilter() override = default;
 
@@ -377,7 +372,7 @@ class BilateralFilter : public ComputePipeline {
         uint32_t outputImageStride;
     };
 
-    SpecConstants makeSpecConstants(const std::shared_ptr<Image> &dstFlow, float outputFlowScale) const;
+    SpecConstants makeSpecConstants(float outputFlowScale) const;
 
     void setOutput(std::shared_ptr<Image> _dstFlow);
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
@@ -407,7 +402,7 @@ class SubpixelME : public ComputePipeline {
     SubpixelME(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
                const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> srcImageSearch,
                std::shared_ptr<Image> srcImageTemplate, std::shared_ptr<Image> srcFlow,
-               std::shared_ptr<Image> prevLevelFlow, std::shared_ptr<Image> dstFlow, bool doAccumulate,
+               std::shared_ptr<Image> prevLevelFlow, const std::shared_ptr<Image> &dstFlow, bool doAccumulate,
                const std::string &debugName);
     ~SubpixelME() override = default;
 
@@ -426,8 +421,7 @@ class SubpixelME : public ComputePipeline {
         uint32_t outputFlowStride;
     };
 
-    SpecConstants makeSpecConstants(const std::shared_ptr<Image> &srcFlow, const std::shared_ptr<Image> &prevLevelFlow,
-                                    const std::shared_ptr<Image> &dstFlow, bool doAccumulate) const;
+    SpecConstants makeSpecConstants(bool doAccumulate) const;
 
     void setOutput(std::shared_ptr<Image> _dstFlow);
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
@@ -463,8 +457,8 @@ class MVReplace : public ComputePipeline {
     MVReplace(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
               const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> mvInput,
               std::shared_ptr<Image> flowBlockMatch, std::shared_ptr<Image> costAtInput,
-              std::shared_ptr<Image> minCostBlockMatch, std::shared_ptr<Image> dstFlow, std::shared_ptr<Image> dstCost,
-              bool outputCost, const std::string &debugName);
+              std::shared_ptr<Image> minCostBlockMatch, const std::shared_ptr<Image> &dstFlow,
+              std::shared_ptr<Image> dstCost, bool outputCost, const std::string &debugName);
     ~MVReplace() override = default;
 
     struct SpecConstants {
@@ -482,8 +476,7 @@ class MVReplace : public ComputePipeline {
         uint32_t outputCostStride;
     };
 
-    SpecConstants makeSpecConstants(const std::shared_ptr<Image> &costAtInput, const std::shared_ptr<Image> &dstFlow,
-                                    const std::shared_ptr<Image> &dstCost, bool outputCost) const;
+    SpecConstants makeSpecConstants() const;
 
     void setInputMv(std::shared_ptr<Image> srcMV);
     void setOutputFlow(std::shared_ptr<Image> dstFlow);
@@ -527,8 +520,8 @@ class BlockMatch : public ComputePipeline {
 
     BlockMatch(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
                const std::shared_ptr<PipelineCache> &pipelineCache, SearchType searchType, int32_t maxSearchRange,
-               std::shared_ptr<Image> srcSearch, std::shared_ptr<Image> srcTemplate, std::shared_ptr<Image> dstFlow,
-               std::shared_ptr<Image> dstCost, const std::string &debugName);
+               const std::shared_ptr<Image> &srcSearch, std::shared_ptr<Image> srcTemplate,
+               std::shared_ptr<Image> dstFlow, std::shared_ptr<Image> dstCost, const std::string &debugName);
     ~BlockMatch() override = default;
 
     struct SpecConstants {
@@ -549,8 +542,7 @@ class BlockMatch : public ComputePipeline {
         int32_t searchIndexLimit;
     };
 
-    SpecConstants makeSpecConstants(SearchType searchType, int32_t maxSearchRange,
-                                    const std::shared_ptr<Image> &dstFlow, const std::shared_ptr<Image> &dstCost) const;
+    SpecConstants makeSpecConstants() const;
     bool hasFlowOutput() const;
     bool hasCostOutput() const;
 

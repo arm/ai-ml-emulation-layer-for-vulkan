@@ -95,11 +95,11 @@ class OpticalFlow {
 
     void init(const Config &config);
 
-    void setInputSearch(std::shared_ptr<Image> input);
-    void setInputTemplate(std::shared_ptr<Image> input);
-    void setInputMV(std::shared_ptr<Image> input);
-    void setOutputFlow(std::shared_ptr<Image> output);
-    void setOutputCost(std::shared_ptr<Image> output);
+    void setInputSearch() const;
+    void setInputTemplate() const;
+    void setInputMV() const;
+    void setOutputFlow();
+    void setOutputCost();
 
     VkMemoryRequirements getTransientMemoryRequirements() const;
     VkMemoryRequirements getCacheMemoryRequirements() const;
