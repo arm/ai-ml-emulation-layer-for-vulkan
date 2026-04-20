@@ -1,0 +1,69 @@
+;
+; SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+; SPDX-License-Identifier: Apache-2.0
+;
+               OpCapability VulkanMemoryModel
+               OpCapability Shader
+               OpCapability Int8
+               OpCapability TensorsARM
+               OpCapability GraphARM
+               OpCapability Matrix
+               OpExtension "SPV_ARM_tensors"
+               OpExtension "SPV_ARM_graph"
+               OpExtension "SPV_KHR_vulkan_memory_model"
+       %tosa = OpExtInstImport "TOSA.001000.1"
+               OpMemoryModel Logical Vulkan
+               OpName %conv3d_arg_0 "conv3d_arg_0"
+               OpName %conv3d_res_0 "conv3d_res_0"
+               OpDecorate %conv3d_arg_0 Binding 0
+               OpDecorate %conv3d_arg_0 DescriptorSet 0
+               OpDecorate %conv3d_res_0 Binding 1
+               OpDecorate %conv3d_res_0 DescriptorSet 0
+      %uchar = OpTypeInt 8 0
+       %uint = OpTypeInt 32 0
+       %bool = OpTypeBool
+     %uint_0 = OpConstant %uint 0
+     %uint_1 = OpConstant %uint 1
+     %uint_2 = OpConstant %uint 2
+     %uint_3 = OpConstant %uint 3
+     %uint_4 = OpConstant %uint 4
+     %uint_5 = OpConstant %uint 5
+     %uint_6 = OpConstant %uint 6
+  %uint_8190 = OpConstant %uint 8190
+  %uint_8192 = OpConstant %uint 8192
+    %uchar_9 = OpConstant %uchar 9
+      %false = OpConstantFalse %bool
+%shape_rank_1 = OpTypeArray %uint %uint_1
+%shape_rank_3 = OpTypeArray %uint %uint_3
+%shape_rank_5 = OpTypeArray %uint %uint_5
+%input_shape = OpConstantComposite %shape_rank_5 %uint_1 %uint_3 %uint_2 %uint_2 %uint_4
+%input_tensor = OpTypeTensorARM %uchar %uint_5 %input_shape
+%ptr_input_tensor = OpTypePointer UniformConstant %input_tensor
+%conv3d_arg_0 = OpVariable %ptr_input_tensor UniformConstant
+%output_shape = OpConstantComposite %shape_rank_5 %uint_1 %uint_3 %uint_2 %uint_2 %uint_3
+%output_tensor = OpTypeTensorARM %uint %uint_5 %output_shape
+%ptr_output_tensor = OpTypePointer UniformConstant %output_tensor
+%conv3d_res_0 = OpVariable %ptr_output_tensor UniformConstant
+%graph_type = OpTypeGraphARM 1 %input_tensor %output_tensor
+%weights_shape = OpConstantComposite %shape_rank_5 %uint_3 %uint_2 %uint_2 %uint_8192 %uint_4
+%weights_tensor = OpTypeTensorARM %uchar %uint_5 %weights_shape
+%weights_const = OpGraphConstantARM %weights_tensor 0
+%scalar_shape = OpConstantComposite %shape_rank_1 %uint_1
+%bias_tensor = OpTypeTensorARM %uint %uint_1 %scalar_shape
+%null_bias = OpConstantNull %bias_tensor
+%zero_point_tensor = OpTypeTensorARM %uchar %uint_1 %scalar_shape
+%input_zero_point = OpConstantComposite %zero_point_tensor %uchar_9
+%weight_zero_point = OpConstantNull %zero_point_tensor
+%pad_shape = OpConstantComposite %shape_rank_1 %uint_6
+%pad_tensor = OpTypeTensorARM %uint %uint_1 %pad_shape
+%pad = OpConstantComposite %pad_tensor %uint_1 %uint_0 %uint_1 %uint_0 %uint_8190 %uint_8192
+%vec3_shape = OpConstantComposite %shape_rank_1 %uint_3
+%vec3_tensor = OpTypeTensorARM %uint %uint_1 %vec3_shape
+%stride = OpConstantComposite %vec3_tensor %uint_1 %uint_1 %uint_8192
+%dilation = OpConstantComposite %vec3_tensor %uint_1 %uint_1 %uint_1
+               OpGraphEntryPointARM %conv3d_graph "conv3d_large_stride" %conv3d_arg_0 %conv3d_res_0
+%conv3d_graph = OpGraphARM %graph_type
+%input = OpGraphInputARM %input_tensor %uint_0
+%output = OpExtInst %output_tensor %tosa CONV3D %pad %stride %dilation %uint_1 %false %input %weights_const %null_bias %input_zero_point %weight_zero_point
+               OpGraphSetOutputARM %output %uint_0
+               OpGraphEndARM

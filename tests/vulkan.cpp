@@ -20,6 +20,7 @@
 #include <spirv-tools/libspirv.hpp>
 #include <vulkan/vulkan.hpp>
 
+#include <cstdint>
 #include <cstring>
 #include <exception>
 #include <filesystem>
@@ -809,6 +810,91 @@ TEST_F(MLEmulationLayerForVulkan, Conv2D) {
     };
 
     ASSERT_TRUE(outputTensor->compare(reinterpret_cast<const int32_t *>(&ref[0][0][0][0]), sizeof(ref)))
+        << "Output mismatch";
+}
+
+TEST_F(MLEmulationLayerForVulkan, Conv3DLargeStridePadRegression) {
+    constexpr int64_t kBatch = 1;
+    constexpr int64_t kInputDepth = 3;
+    constexpr int64_t kInputHeight = 2;
+    constexpr int64_t kInputWidth = 2;
+    constexpr int64_t kInputChannels = 4;
+    constexpr int64_t kOutputChannels = 3;
+    constexpr int64_t kKernelDepth = 2;
+    constexpr int64_t kKernelHeight = 2;
+    constexpr int64_t kKernelWidth = 8192;
+    constexpr int64_t kOutputDepth = 3;
+    constexpr int64_t kOutputHeight = 2;
+    constexpr int64_t kOutputWidth = 2;
+
+    auto device = createDevice();
+
+    auto inputTensor = std::make_shared<Tensor>(
+        device, Shape{vk::Format::eR8Sint,
+                      std::vector<int64_t>{kBatch, kInputDepth, kInputHeight, kInputWidth, kInputChannels}});
+    auto outputTensor = std::make_shared<Tensor>(
+        device, Shape{vk::Format::eR32Sint,
+                      std::vector<int64_t>{kBatch, kOutputDepth, kOutputHeight, kOutputWidth, kOutputChannels}});
+
+    const GraphPipeline::DescriptorMap descriptorMap = {{
+        {0, {inputTensor}},
+        {1, {outputTensor}},
+    }};
+
+    const std::array<int8_t, 48> inputValues = {
+        -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128,
+        -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128,
+        -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128, -128,
+    };
+    const std::array<int32_t, 36> expectedValues = {
+        0,    -548, 137, 0, 0, 0, 548,   -685, -411, 0, 0, 0, -1233, 274,  685, 0, 0, 0,
+        -822, -411, 274, 0, 0, 0, -1233, 274,  685,  0, 0, 0, -822,  -411, 274, 0, 0, 0,
+    };
+    const std::array<int8_t, 96> relevantWeights = {
+        1, -1, 2,  -1, 1,  0,  -1, 0,  1, 2, 2, -1, 2, 2, 0, 1,  1,  -2, -1, -2, 0,  2,  -2, 0,
+        1, 1,  -2, 1,  0,  -2, 2,  -1, 1, 0, 0, 2,  2, 0, 0, -1, 0,  0,  -1, -1, -1, 0,  -1, -2,
+        1, 1,  -2, 2,  -1, 1,  1,  -2, 0, 0, 1, 2,  1, 2, 0, -2, 0,  2,  1,  -2, 1,  -1, -1, -1,
+        0, -2, 2,  -2, 0,  -1, 0,  -1, 0, 2, 0, -2, 2, 1, 1, 0,  -1, 0,  1,  -2, -2, 2,  1,  0,
+    };
+    std::vector<int8_t> weightValues(
+        static_cast<size_t>(kOutputChannels * kKernelDepth * kKernelHeight * kKernelWidth * kInputChannels), 0);
+    GraphConstants graphConstants;
+
+    ASSERT_EQ(inputValues.size(), inputTensor->size());
+    ASSERT_EQ(expectedValues.size(), outputTensor->size() / sizeof(expectedValues[0]));
+
+    std::memcpy(inputTensor->data(), inputValues.data(), inputValues.size() * sizeof(inputValues[0]));
+
+    const auto setWeight = [&](int64_t oc, int64_t kd, int64_t kh, int64_t kx, int64_t ic, int8_t value) {
+        const auto flatIndex = static_cast<size_t>(
+            ((((oc * kKernelDepth) + kd) * kKernelHeight + kh) * kKernelWidth + kx) * kInputChannels + ic);
+        weightValues[flatIndex] = value;
+    };
+
+    for (size_t oc = 0; oc < static_cast<size_t>(kOutputChannels); ++oc) {
+        for (size_t kd = 0; kd < static_cast<size_t>(kKernelDepth); ++kd) {
+            for (size_t kh = 0; kh < static_cast<size_t>(kKernelHeight); ++kh) {
+                const size_t blockBase =
+                    ((oc * static_cast<size_t>(kKernelDepth) + kd) * static_cast<size_t>(kKernelHeight) + kh) * 8;
+                for (size_t ic = 0; ic < static_cast<size_t>(kInputChannels); ++ic) {
+                    setWeight(static_cast<int64_t>(oc), static_cast<int64_t>(kd), static_cast<int64_t>(kh), 8190,
+                              static_cast<int64_t>(ic), relevantWeights[blockBase + ic]);
+                    setWeight(static_cast<int64_t>(oc), static_cast<int64_t>(kd), static_cast<int64_t>(kh), 8191,
+                              static_cast<int64_t>(ic), relevantWeights[blockBase + 4 + ic]);
+                }
+            }
+        }
+    }
+
+    graphConstants.makeGraphPipelineConstantTensor(
+        0, Shape{vk::Format::eR8Sint, {kOutputChannels, kKernelDepth, kKernelHeight, kKernelWidth, kInputChannels}},
+        weightValues);
+
+    const auto spirv = assembleSpirv(fileToString("conv3d_large_stride.spvasm"));
+    auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, graphConstants, spirv);
+    graphPipeline->dispatchSubmit();
+
+    ASSERT_TRUE(outputTensor->compare(expectedValues.data(), expectedValues.size() * sizeof(expectedValues[0])))
         << "Output mismatch";
 }
 

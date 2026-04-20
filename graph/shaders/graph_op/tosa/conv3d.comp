@@ -13,14 +13,6 @@
 
 DEFINE_CONV_ACC_CASTS(ACC_T, OUT_T, TYPE_IN, TYPE_OUT)
 
-#if TYPE_ACC == TYPE_INT64
-    #define VEC4 dvec4
-#elif TYPE_ACC == TYPE_INT32
-    #define VEC4 ivec4
-#else
-    #define VEC4 vec4
-#endif
-
 layout(local_size_x = %warpX%) in;
 
 layout(push_constant) uniform PushConstants {
@@ -48,44 +40,56 @@ void main() {
     uint ox = index[3];
     uint oc = index[4];
 
-    uint id = od * pushConstants.stride[0] - pushConstants.pad[0];
-    uint iy = oy * pushConstants.stride[1] - pushConstants.pad[2];
-    uint ix = ox * pushConstants.stride[2] - pushConstants.pad[4];
+    int id = int(od) * pushConstants.stride[0] - pushConstants.pad[0];
+    int iy = int(oy) * pushConstants.stride[1] - pushConstants.pad[2];
+    int ix = int(ox) * pushConstants.stride[2] - pushConstants.pad[4];
 
-    uint KD = tensorSizeARM(weightsData, 1);
-    uint KH = tensorSizeARM(weightsData, 2);
-    uint KW = tensorSizeARM(weightsData, 3);
-    uint IC = tensorSizeARM(weightsData, 4);
+    int KD = int(tensorSizeARM(weightsData, 1));
+    int KH = int(tensorSizeARM(weightsData, 2));
+    int KW = int(tensorSizeARM(weightsData, 3));
+    int IC = int(tensorSizeARM(weightsData, 4));
 
-    uint ID = tensorSizeARM(inputData, 1);
-    uint IH = tensorSizeARM(inputData, 2);
-    uint IW = tensorSizeARM(inputData, 3);
+    int ID = int(tensorSizeARM(inputData, 1));
+    int IH = int(tensorSizeARM(inputData, 2));
+    int IW = int(tensorSizeARM(inputData, 3));
 
-    for (uint kd = 0; kd < KD; kd++) {
-        for (uint ky = 0; ky < KH; ky++) {
-            for (uint kx = 0; kx < KW; kx++) {
-                uint d = id + kd * pushConstants.dilation[0];
-                uint y = iy + ky * pushConstants.dilation[1];
-                uint x = ix + kx * pushConstants.dilation[2];
+    int dStart = id;
+    int kdStart = 0;
+    if (dStart < 0) {
+        int delta = -dStart;
+        kdStart = (delta + pushConstants.dilation[0] - 1) / pushConstants.dilation[0];
+        dStart = id + kdStart * pushConstants.dilation[0];
+    }
 
-                if (d < ID && y < IH && x < IW) {
-                    for (uint ic = 0; ic < IC; ic += 4) {
-                        IN_T tempValue[4];
-                        tensorReadARM(inputData, uint[](n, d, y, x, ic), tempValue);
-                        VEC4 value = VEC4(to_acc(tempValue[0]), to_acc(tempValue[1]), to_acc(tempValue[2]), to_acc(tempValue[3]));
+    int yStart = iy;
+    int kyStart = 0;
+    if (yStart < 0) {
+        int delta = -yStart;
+        kyStart = (delta + pushConstants.dilation[1] - 1) / pushConstants.dilation[1];
+        yStart = iy + kyStart * pushConstants.dilation[1];
+    }
 
-                        WEIGHT_T tempWeight[4];
-                        tensorReadARM(weightsData, uint[](oc, kd, ky, kx, ic), tempWeight);
-                        VEC4 weight = VEC4(to_acc(tempWeight[0]), to_acc(tempWeight[1]), to_acc(tempWeight[2]), to_acc(tempWeight[3]));
+    int xStart = ix;
+    int kxStart = 0;
+    if (xStart < 0) {
+        int delta = -xStart;
+        kxStart = (delta + pushConstants.dilation[2] - 1) / pushConstants.dilation[2];
+        xStart = ix + kxStart * pushConstants.dilation[2];
+    }
 
-                        VEC4 outValue = VEC4(value[0], value[1], value[2], value[3]) - pushConstants.inputZeroPoint;
-                        VEC4 outWeight = VEC4(weight[0], weight[1], weight[2], weight[3]) - pushConstants.weightZeroPoint;
-                        VEC4 mul = outValue * outWeight;
+    for (int d = dStart, kd = kdStart; kd < KD && d < ID; ++kd, d += pushConstants.dilation[0]) {
+        for (int y = yStart, ky = kyStart; ky < KH && y < IH; ++ky, y += pushConstants.dilation[1]) {
+            for (int x = xStart, kx = kxStart; kx < KW && x < IW; ++kx, x += pushConstants.dilation[2]) {
+                for (int ic = 0; ic < IC; ++ic) {
+                    IN_T inputValue;
+                    tensorReadARM(inputData, uint[](n, uint(d), uint(y), uint(x), uint(ic)), inputValue);
 
-                        for (uint idx = 0; idx < 4 && ic + idx < IC; ++idx) {
-                            acc += ACC_T(mul[idx]);
-                        }
-                    }
+                    WEIGHT_T weightValue;
+                    tensorReadARM(weightsData, uint[](oc, uint(kd), uint(ky), uint(kx), uint(ic)), weightValue);
+
+                    ACC_T val = to_acc(inputValue) - ACC_T(pushConstants.inputZeroPoint);
+                    ACC_T wt = to_acc(weightValue) - ACC_T(pushConstants.weightZeroPoint);
+                    acc += val * wt;
                 }
             }
         }
