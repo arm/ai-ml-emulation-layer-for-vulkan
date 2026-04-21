@@ -143,8 +143,8 @@ class Image {
     bool isCached_ = false;
     std::string debugName_;
 
-    VkMemoryRequirements memoryRequirements_;
-    VkDeviceSize memoryOffset_;
+    VkMemoryRequirements memoryRequirements_{};
+    VkDeviceSize memoryOffset_{};
 
     // Internal resource handles
     VkImageView imageView_ = VK_NULL_HANDLE;
