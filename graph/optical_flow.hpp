@@ -186,8 +186,8 @@ class OpticalFlow {
     std::vector<VkExtent3D> pyramidDimensions_;
     float outputFlowScale_ = 0.0f;
 
-    VkMemoryRequirements cacheMemoryRequirements_;
-    VkMemoryRequirements transientMemoryRequirements_;
+    VkMemoryRequirements cacheMemoryRequirements_{};
+    VkMemoryRequirements transientMemoryRequirements_{};
 
     std::vector<std::shared_ptr<ComputePipeline>> downsampleSearchPipelines_;
     std::vector<std::shared_ptr<ComputePipeline>> downsampleTemplatePipelines_;

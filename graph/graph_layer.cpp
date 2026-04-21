@@ -594,6 +594,8 @@ class GraphLayer : public VulkanLayerImpl {
             graphLog(Severity::Info) << graphPipelineCreatedLog << std::endl;
 
             if (pipeline->isGraph()) {
+                // Given by type check above, this should never be nullptr
+                assert(dataGraphPipelineShaderModuleCreateInfo);
                 auto graphPipeline = pipeline->graphPipeline;
                 // Copy tensor resources to pipeline
                 for (uint32_t j = 0; j < createInfo.resourceInfoCount; j++) {
