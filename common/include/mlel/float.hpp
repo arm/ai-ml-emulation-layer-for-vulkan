@@ -18,11 +18,11 @@
  * uint helper classes
  *******************************************************************************/
 
-template <std::size_t SIZE> struct u_int_t {};
-template <> struct u_int_t<8> { using type = uint8_t; };
-template <> struct u_int_t<16> { using type = uint16_t; };
-template <> struct u_int_t<32> { using type = uint32_t; };
-template <> struct u_int_t<64> { using type = uint64_t; };
+template <std::size_t SIZE> struct UIntT {};
+template <> struct UIntT<8> { using type = uint8_t; };
+template <> struct UIntT<16> { using type = uint16_t; };
+template <> struct UIntT<32> { using type = uint32_t; };
+template <> struct UIntT<64> { using type = uint64_t; };
 
 /*******************************************************************************
  * FloatingPoint
@@ -82,7 +82,7 @@ using float64 = FloatingPoint<11, 52>;
  */
 template <std::size_t EXPONENT, std::size_t MANTISSA> class FloatingPoint {
   public:
-    using dtype = typename u_int_t<1 + EXPONENT + MANTISSA>::type;
+    using dtype = typename UIntT<1 + EXPONENT + MANTISSA>::type;
     template <std::size_t, std::size_t> friend class FloatingPoint;
 
     explicit FloatingPoint(const double v = 0) {
@@ -173,12 +173,12 @@ template <std::size_t EXPONENT, std::size_t MANTISSA> class FloatingPoint {
     static constexpr double lowest() { return -max(); }
     static constexpr double max() {
         // Select maximum exponent, 2^(max exponent)
-        double _max = 1 << EXPONENT_BIAS;
+        double max = 1 << EXPONENT_BIAS;
 
         // Multiply with largest possible mantissa
-        _max *= 1 + double(MANTISSA_DIVISOR - 1) / MANTISSA_DIVISOR;
+        max *= 1 + double(MANTISSA_DIVISOR - 1) / MANTISSA_DIVISOR;
 
-        return _max;
+        return max;
     }
 
     template <typename T> void operator+=(const T &other) { *this = double(*this) + other; }
@@ -190,7 +190,7 @@ template <std::size_t EXPONENT, std::size_t MANTISSA> class FloatingPoint {
     template <typename T> void operator/=(const T &other) { *this = double(*this) / other; }
 
   private:
-    struct f {
+    struct F {
         dtype _mantissa : MANTISSA;
         dtype _exponent : EXPONENT;
         dtype _sign : 1;
