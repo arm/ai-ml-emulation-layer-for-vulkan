@@ -26,7 +26,8 @@ inline bool hasTensor(const VkDescriptorPoolSize &obj) { return obj.type == VK_D
 
 inline std::vector<VkDescriptorSetLayoutBinding>
 substituteTensorBinding(uint32_t bindingCount, const VkDescriptorSetLayoutBinding *pBindings,
-                        const VkDescriptorSetLayoutBindingFlagsCreateInfo *bindingInfo) {
+                        const VkDescriptorSetLayoutBindingFlagsCreateInfo *bindingInfo,
+                        const bool supportsBufferUpdateAfterBind) {
     std::vector<VkDescriptorSetLayoutBinding> descriptorSetLayoutBindings{pBindings, pBindings + bindingCount};
 
     // Loop over bindings and replace tensors bindings with uniform buffer for tensor descriptor (plus a storage buffer
@@ -48,8 +49,8 @@ substituteTensorBinding(uint32_t bindingCount, const VkDescriptorSetLayoutBindin
             });
 #endif
 
-            // Remove uniform update after bind
-            if (bindingInfo) {
+            // Preserve UPDATE_AFTER_BIND only when rewritten buffer descriptors support it.
+            if (!supportsBufferUpdateAfterBind && bindingInfo && bindingInfo->pBindingFlags) {
                 const_cast<VkDescriptorBindingFlags *>(bindingInfo->pBindingFlags)[i] &=
                     static_cast<VkDescriptorBindingFlags>(~VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT);
             }

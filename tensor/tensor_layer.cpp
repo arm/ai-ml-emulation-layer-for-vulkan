@@ -38,6 +38,8 @@ class TensorDevice : public Device {
                  PFN_vkGetInstanceProcAddr _gipr, PFN_vkGetDeviceProcAddr _gdpr,
                  const VkAllocationCallbacks *_callbacks)
         : Device(_physicalDevice, _device, _gipr, _gdpr, _callbacks) {}
+
+    bool uniformBufferUpdateAfterBindEnabled = false;
 };
 
 /*******************************************************************************
@@ -493,12 +495,13 @@ class TensorLayer : public VulkanLayerImpl {
                                                            const VkAllocationCallbacks *pAllocator,
                                                            VkDescriptorSetLayout *pSetLayout) {
         auto handle = VulkanLayerImpl::getHandle(device);
+        const bool supportsBufferUpdateAfterBind = handle->uniformBufferUpdateAfterBindEnabled;
 
         const auto *bindingInfo = findType<VkDescriptorSetLayoutBindingFlagsCreateInfo>(
             pCreateInfo, VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO);
 
-        const auto bindings =
-            descriptor_binding::substituteTensorBinding(pCreateInfo->bindingCount, pCreateInfo->pBindings, bindingInfo);
+        const auto bindings = descriptor_binding::substituteTensorBinding(
+            pCreateInfo->bindingCount, pCreateInfo->pBindings, bindingInfo, supportsBufferUpdateAfterBind);
 
 #ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
         std::vector<VkDescriptorBindingFlags> bindingFlags;
@@ -867,6 +870,10 @@ class TensorLayer : public VulkanLayerImpl {
         findAndRemoveType<VkPhysicalDeviceTensorFeaturesARM>(&newCreateInfo,
                                                              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_FEATURES_ARM);
         auto result = VulkanLayerImpl::vkCreateDevice(physicalDevice, &newCreateInfo, allocator, device);
+        if (result == VK_SUCCESS) {
+            auto handle = VulkanLayerImpl::getHandle(*device);
+            handle->uniformBufferUpdateAfterBindEnabled = isUniformBufferUpdateAfterBindEnabled(createInfo);
+        }
 
         loadVkStructureList(const_cast<VkDeviceCreateInfo *>(createInfo), originCreateInfoChain);
         return result;
@@ -940,6 +947,23 @@ class TensorLayer : public VulkanLayerImpl {
     static inline std::unordered_map<std::size_t, std::vector<uint32_t>> spirvCache;
 
     static inline MemoryAliasing memoryAliasing;
+    static bool isUniformBufferUpdateAfterBindEnabled(const VkDeviceCreateInfo *createInfo) {
+        if (const auto *vulkan12Features = findType<VkPhysicalDeviceVulkan12Features>(
+                createInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES)) {
+            if (vulkan12Features->descriptorBindingUniformBufferUpdateAfterBind) {
+                return true;
+            }
+        }
+
+        if (const auto *descriptorIndexingFeatures = findType<VkPhysicalDeviceDescriptorIndexingFeatures>(
+                createInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES)) {
+            if (descriptorIndexingFeatures->descriptorBindingUniformBufferUpdateAfterBind) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 };
 } // namespace mlsdk::el::layer
 
