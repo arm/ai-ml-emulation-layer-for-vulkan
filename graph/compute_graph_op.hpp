@@ -34,8 +34,26 @@ enum NanPropagationMode {
 
 enum Direction { Input, Output };
 
-// Vector of descriptor sets, where binding is always assumed to be 0
-using DescriptorMap = std::vector<std::tuple<Direction, std::shared_ptr<TensorDescriptor>>>;
+struct DescriptorBindingId {
+    uint32_t set = UINT32_MAX;
+    uint32_t binding = 0;
+    uint32_t arrayIndex = 0;
+};
+
+struct DescriptorEntry {
+    DescriptorBindingId id{};
+    Direction direction = Input;
+    std::shared_ptr<TensorDescriptor> tensor{};
+
+    DescriptorEntry() = default;
+    DescriptorEntry(Direction _direction, std::shared_ptr<TensorDescriptor> _tensor)
+        : direction(_direction), tensor(std::move(_tensor)) {}
+    DescriptorEntry(uint32_t set, uint32_t binding, uint32_t arrayIndex, Direction _direction,
+                    std::shared_ptr<TensorDescriptor> _tensor)
+        : id{set, binding, arrayIndex}, direction(_direction), tensor(std::move(_tensor)) {}
+};
+
+using DescriptorMap = std::vector<DescriptorEntry>;
 
 using TensorDescriptorMap = std::map<std::shared_ptr<TensorDescriptor>, std::shared_ptr<Tensor>>;
 
@@ -43,32 +61,49 @@ using TensorDescriptorMap = std::map<std::shared_ptr<TensorDescriptor>, std::sha
  * ComputeDescriptorSet
  *******************************************************************************/
 
+struct DescriptorSetTensorBinding {
+    uint32_t binding = 0;
+    uint32_t arrayIndex = 0;
+    std::shared_ptr<TensorDescriptor> tensorDescriptor;
+    std::shared_ptr<Tensor> tensor;
+};
+
 class ComputeDescriptorSet {
   public:
     explicit ComputeDescriptorSet(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader,
                                   VkDevice _device, VkDescriptorPool _descriptorPool, VkDescriptorSet _descriptorSet,
-                                  const std::shared_ptr<Tensor> &_tensor);
+                                  const std::vector<DescriptorSetTensorBinding> &_tensorBindings);
     ~ComputeDescriptorSet();
 
     VkDescriptorSet getVkDescriptorSet() const;
-    std::shared_ptr<Tensor> getTensor() const;
-    VkTensorARM getVkTensorARM() const;
-    VkTensorViewARM getVkTensorViewARM() const;
+    std::vector<std::shared_ptr<Tensor>> getTensors() const;
+    VkTensorARM getVkTensorARM(uint32_t binding, uint32_t arrayIndex) const;
 
-    void updateDescriptorSet(VkTensorARM _tensor, VkTensorViewARM tensorView);
+    bool updateDescriptorSet(const std::shared_ptr<TensorDescriptor> &tensorDescriptor, VkTensorARM tensor,
+                             VkTensorViewARM tensorView);
     void updateDescriptorSet();
 
   private:
+    using TensorBindingKey = std::tuple<uint32_t, uint32_t>;
+
+    struct KeyCompare {
+        bool operator()(const TensorBindingKey &a, const TensorBindingKey &b) const;
+    };
+
+    void updateDescriptorSet(uint32_t binding, uint32_t arrayIndex);
+
     std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> loader;
     VkDevice device;
     VkDescriptorPool descriptorPool;
     VkDescriptorSet descriptorSet;
-    std::shared_ptr<Tensor> tensor;
-    VkTensorARM tensorARM;
-    VkTensorViewARM tensorViewARM;
+    std::map<TensorBindingKey, std::shared_ptr<Tensor>, KeyCompare> tensorMap;
+    std::map<TensorBindingKey, VkTensorARM, KeyCompare> tensorHandleMap;
+    std::map<TensorBindingKey, VkTensorViewARM, KeyCompare> tensorViewMap;
+    std::map<std::shared_ptr<TensorDescriptor>, std::vector<TensorBindingKey>> tensorDescriptorMap;
 };
 
-using ComputeDescriptorSetMap = std::map<std::tuple<VkPipelineLayout, uint32_t>, std::shared_ptr<ComputeDescriptorSet>>;
+using DescriptorSetInstanceKey = std::tuple<VkPipelineLayout, uint32_t>;
+using ComputeDescriptorSetMap = std::map<DescriptorSetInstanceKey, std::shared_ptr<ComputeDescriptorSet>>;
 
 /*******************************************************************************
  * ComputePipelineLayout
@@ -95,9 +130,9 @@ class ComputePipelineLayout {
     void cmdBindAndDispatch(VkCommandBuffer commandBuffer, const ComputeDescriptorSetMap &descriptorSetMap);
 
   private:
-    std::vector<VkDescriptorSetLayoutBinding> getDescriptorSetLayoutBinding() const;
+    std::vector<VkDescriptorSetLayoutBinding> getDescriptorSetLayoutBinding(uint32_t set) const;
     std::vector<VkDescriptorSetLayout> createDescriptorSetLayouts() const;
-    VkDescriptorPool createDescriptorPool() const;
+    VkDescriptorPool createDescriptorPool(uint32_t set) const;
     VkPipelineLayout createPipelineLayout() const;
     VkDescriptorSet createDescriptorSet(VkDescriptorPool descriptorPool, uint32_t set) const;
 
