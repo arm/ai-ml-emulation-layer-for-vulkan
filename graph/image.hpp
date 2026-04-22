@@ -126,11 +126,11 @@ class Image {
     std::tuple<VkPipelineStageFlags2, VkAccessFlags2, VkImageLayout> barrierProps(BarrierState state);
 
     std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> loader_;
-    VkPhysicalDevice physicalDevice_;
-    VkDevice device_;
+    VkPhysicalDevice physicalDevice_{};
+    VkDevice device_{};
 
     Usage usage_ = Usage::BufferStoreLoad;
-    VkExtent3D dim_;
+    VkExtent3D dim_{};
     BarrierState state_ = BarrierState::Undefined;
     VkDeviceSize sizeInBytes_ = 0;
     VkDeviceSize blockSize_ = 1;

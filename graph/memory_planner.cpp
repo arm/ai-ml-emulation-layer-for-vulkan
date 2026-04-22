@@ -149,9 +149,9 @@ std::map<std::shared_ptr<TensorDescriptor>, Tensors> BestFitMemoryPlanner::liveT
     const auto &topological = getTopologicalOrder();
     std::map<ComputePipelineBase *, std::set<std::shared_ptr<VirtualTensor>>> carryOnSet;
     std::map<ComputePipelineBase *, std::vector<std::shared_ptr<VirtualTensor>>> carryOn;
-    std::map<std::shared_ptr<TensorDescriptor>, Tensors> _safeToReuse;
+    std::map<std::shared_ptr<TensorDescriptor>, Tensors> safeTensors;
     for (const auto &tensor : tensors) {
-        _safeToReuse.emplace(tensor, Tensors());
+        safeTensors.emplace(tensor, Tensors());
     }
 
     const auto &input = graphPipeline->getInputs();
@@ -209,15 +209,15 @@ std::map<std::shared_ptr<TensorDescriptor>, Tensors> BestFitMemoryPlanner::liveT
                             continue;
                         }
 
-                        _safeToReuse[descendantTensor].push_back(tensor);
-                        _safeToReuse[tensor].push_back(descendantTensor);
+                        safeTensors[descendantTensor].push_back(tensor);
+                        safeTensors[tensor].push_back(descendantTensor);
                     }
                 }
             }
         }
     }
 
-    return _safeToReuse;
+    return safeTensors;
 }
 
 /*
@@ -275,10 +275,10 @@ Tensors BestFitMemoryPlanner::createInitialTensorOrder() const {
  * fitting match.
  */
 std::map<std::shared_ptr<TensorDescriptor>, Tensors> BestFitMemoryPlanner::createAllAlternatives() const {
-    auto _allAlternatives = std::map<std::shared_ptr<TensorDescriptor>, Tensors>();
+    auto all = std::map<std::shared_ptr<TensorDescriptor>, Tensors>();
 
     for (const auto &tensor : tensors) {
-        auto &alternatives = _allAlternatives[tensor];
+        auto &alternatives = all[tensor];
         const auto tensorSize = tensor->getMemoryRequirementsSize();
 
         for (auto const &safeTensor : safeToReuse.at(tensor)) {
@@ -294,7 +294,7 @@ std::map<std::shared_ptr<TensorDescriptor>, Tensors> BestFitMemoryPlanner::creat
         });
     }
 
-    return _allAlternatives;
+    return all;
 }
 
 /*

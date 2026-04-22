@@ -942,12 +942,9 @@ TEST_F(MLEmulationLayerForVulkan, NOPOutputs) {
     auto device = createDevice();
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 8, 8, 3}});
-    auto outputTensor_0 =
-        std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 2, 2, 2}});
-    auto outputTensor_1 =
-        std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 8, 8, 3}});
-    auto outputTensor_2 =
-        std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 8, 8, 3}});
+    auto outputTensor0 = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 2, 2, 2}});
+    auto outputTensor1 = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 8, 8, 3}});
+    auto outputTensor2 = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 8, 8, 3}});
 
     const GraphPipeline::DescriptorMap descriptorMap = {
         {
@@ -957,16 +954,16 @@ TEST_F(MLEmulationLayerForVulkan, NOPOutputs) {
                 {inputTensor}, // tensor
             },
             {
-                1,                // binding
-                {outputTensor_0}, // tensor
+                1,               // binding
+                {outputTensor0}, // tensor
             },
             {
-                2,                // binding
-                {outputTensor_1}, // tensor
+                2,               // binding
+                {outputTensor1}, // tensor
             },
             {
-                3,                // binding
-                {outputTensor_2}, // tensor
+                3,               // binding
+                {outputTensor2}, // tensor
             },
         },
     };
@@ -1005,24 +1002,24 @@ TEST_F(MLEmulationLayerForVulkan, NOPOutputs) {
     inputTensor->print();
 
     std::cout << "OUTPUT_0 from Slice" << std::endl;
-    outputTensor_0->print();
+    outputTensor0->print();
 
     std::cout << "OUTPUT_1 from Input" << std::endl;
-    outputTensor_1->print();
+    outputTensor1->print();
 
     std::cout << "CONST TENSOR" << std::endl;
     graphConstants[0].print();
 
     std::cout << "OUTPUT_2 from Const Tensor" << std::endl;
-    outputTensor_2->print();
+    outputTensor2->print();
 
-    ASSERT_TRUE(outputTensor_0->compare(reinterpret_cast<const int8_t *>(&ref[0][0][0][0]), sizeof(ref)))
+    ASSERT_TRUE(outputTensor0->compare(reinterpret_cast<const int8_t *>(&ref[0][0][0][0]), sizeof(ref)))
         << "Output mismatch in OUTPUT_0";
 
-    ASSERT_TRUE(outputTensor_1->compare(reinterpret_cast<const int8_t *>(inputTensor->data()), inputTensor->size()))
+    ASSERT_TRUE(outputTensor1->compare(reinterpret_cast<const int8_t *>(inputTensor->data()), inputTensor->size()))
         << "Output mismatch in OUTPUT_1";
     ASSERT_TRUE(
-        outputTensor_2->compare(reinterpret_cast<const int8_t *>(graphConstants[0].data()), graphConstants[0].size()))
+        outputTensor2->compare(reinterpret_cast<const int8_t *>(graphConstants[0].data()), graphConstants[0].size()))
         << "Output mismatch in OUTPUT_2";
 }
 
@@ -1281,14 +1278,14 @@ TEST_F(MLEmulationLayerForVulkan, SIN) {
     std::cout << std::endl;
 
     float64 reference = 0.00011173184588586903;
-    float64 error_bound = 7.715463482888105e-08;
-    float64 ref_min = reference - error_bound;
-    float64 ref_max = reference + error_bound;
+    float64 errorBound = 7.715463482888105e-08;
+    float64 refMin = reference - errorBound;
+    float64 refMax = reference + errorBound;
 
     float64 output = *(reinterpret_cast<float32 *>(outputTensor->data()));
 
-    ASSERT_GE(output, ref_min);
-    ASSERT_LE(output, ref_max);
+    ASSERT_GE(output, refMin);
+    ASSERT_LE(output, refMax);
 }
 
 #ifndef EXPERIMENTAL_MOLTEN_VK_SUPPORT

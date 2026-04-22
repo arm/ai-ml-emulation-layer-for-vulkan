@@ -81,9 +81,9 @@ substituteTensorWriteDescriptorSet(const Device &dev, uint32_t descriptorWriteCo
                 write.pImageInfo->imageView, // imageView
                 VK_IMAGE_LAYOUT_GENERAL,     // imageLayout
             });
-            auto write_copy = write;
-            write_copy.pImageInfo = &imageInfos.back();
-            writes.emplace_back(write_copy);
+            auto writeCopy = write;
+            writeCopy.pImageInfo = &imageInfos.back();
+            writes.emplace_back(writeCopy);
             continue;
         }
 
