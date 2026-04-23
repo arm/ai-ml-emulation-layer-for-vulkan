@@ -980,16 +980,18 @@ MLEL_EXPORT PFN_vkVoidFunction VKAPI_CALL vk_layerGetPhysicalDeviceProcAddr(VkIn
 
 MLEL_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *pNegotiateLayerInterface) {
-
     if (!pNegotiateLayerInterface || pNegotiateLayerInterface->sType != LAYER_NEGOTIATE_INTERFACE_STRUCT) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    if (pNegotiateLayerInterface->loaderLayerInterfaceVersion >= 2) {
-        pNegotiateLayerInterface->pfnGetInstanceProcAddr = TensorLayer::vkGetInstanceProcAddr;
-        pNegotiateLayerInterface->pfnGetDeviceProcAddr = TensorLayer::vkGetDeviceProcAddr;
-        pNegotiateLayerInterface->pfnGetPhysicalDeviceProcAddr = TensorLayer::vk_layerGetPhysicalDeviceProcAddr;
+    if (pNegotiateLayerInterface->loaderLayerInterfaceVersion < 2) {
+        return VK_ERROR_INITIALIZATION_FAILED;
     }
+
+    pNegotiateLayerInterface->loaderLayerInterfaceVersion = 2;
+    pNegotiateLayerInterface->pfnGetInstanceProcAddr = TensorLayer::vkGetInstanceProcAddr;
+    pNegotiateLayerInterface->pfnGetDeviceProcAddr = TensorLayer::vkGetDeviceProcAddr;
+    pNegotiateLayerInterface->pfnGetPhysicalDeviceProcAddr = TensorLayer::vk_layerGetPhysicalDeviceProcAddr;
 
     return VK_SUCCESS;
 }
