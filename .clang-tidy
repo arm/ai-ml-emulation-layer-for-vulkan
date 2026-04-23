@@ -4,6 +4,7 @@
 #
 Checks: >
     -*,
+    bugprone-unsafe-functions,
     bugprone-use-after-move,
     cppcoreguidelines-pro-type-cstyle-cast,
     cppcoreguidelines-virtual-class-destructor,
@@ -68,6 +69,21 @@ WarningsAsErrors: '*'
 HeaderFilterRegex: '.*'
 FormatStyle: file
 CheckOptions:
+  - key: bugprone-unsafe-functions.ReportDefaultFunctions
+    value: 'true'
+  - key: bugprone-unsafe-functions.ReportMoreUnsafeFunctions
+    value: 'true'
+  - key: bugprone-unsafe-functions.CustomFunctions
+    value: >
+      ^alloca$,malloc or new,is considered unsafe;
+      ^readdir$,,>is considered unsafe; use a safer wrapper or explicit directory iteration API;
+      ^_tscanf$,,>is considered unsafe; use fgets-based parsing instead;
+      ^_stscanf$,,>is considered unsafe; use fgets-based parsing instead;
+      ^StrCpy$,strcpy_s,is considered unsafe;
+      ^lstrcpy$,strcpy_s,is considered unsafe;
+      ^StrCpyN$,strncpy_s,is considered unsafe;
+      ^StrNCpy$,strncpy_s,is considered unsafe;
+      ^lstrcpyn$,strncpy_s,is considered unsafe
   - key: readability-identifier-naming.ClassCase
     value: CamelCase
   - key: readability-identifier-naming.LocalVariableCase

@@ -278,6 +278,7 @@ class Builder:
 
                 clang_tidy_cmd = [
                     "run-clang-tidy",
+                    "-quiet",
                     f"-j{self.threads}",
                     f"-p{self.build_dir}",
                 ] + source_dirs
