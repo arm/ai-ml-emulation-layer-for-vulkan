@@ -1176,7 +1176,9 @@ SpirvBinary DepthwiseConv2D::createSpirv(const std::shared_ptr<PipelineCache> &_
                                   {
                                       {"%warpX%", std::to_string(warp1D)},
                                       {"%in_t%", inType->glslType()},
+                                      {"%in_t_type%", inType->toInt()},
                                       {"%out_t%", outType->glslType()},
+                                      {"%out_t_type%", outType->toInt()},
                                       {"%weight_t%", weightType->glslType()},
                                       {"%acc_t_type%", accTypeType->toInt()},
                                       {"%acc_t%", accTypeType->glslType()},
@@ -1859,6 +1861,7 @@ SpirvBinary Resize::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                   {
                                       {"%warpX%", std::to_string(warp1D)},
                                       {"%in_t%", inType->glslType()},
+                                      {"%in_t_type%", inType->toInt()},
                                       {"%out_t%", outType->glslType()},
                                       {"%out_t_type%", outType->toInt()},
                                       {"%out_t_comp%", compTypeString(outType)},
@@ -2262,7 +2265,9 @@ SpirvBinary TransposeConv2D::createSpirv(const std::shared_ptr<PipelineCache> &_
                                   {
                                       {"%warpX%", std::to_string(warp1D)},
                                       {"%in_t%", inType->glslType()},
+                                      {"%in_t_type%", inType->toInt()},
                                       {"%out_t%", outType->glslType()},
+                                      {"%out_t_type%", outType->toInt()},
                                       {"%weight_t%", weightType->glslType()},
                                       {"%acc_t%", accTypeType->glslType()},
                                   });
