@@ -7,8 +7,26 @@ ML Emulation Layer is required.
 
 The ML Emulation Layer for Vulkan® provides an implementation of the ML APIs
 enabling ML workloads to be executed on any Vulkan® Compute capable device. The
-ML Emulation Layer for Vulkan® is split into separate graph, VK_ARM_data_graph, and tensor,
-VK_ARM_tensors, layers that are inserted by the Vulkan® Loader.
+ML Emulation Layer for Vulkan® is split into separate graph and tensor layers
+that are inserted by the Vulkan® Loader.
+
+The graph layer exposes:
+
+- `VK_ARM_data_graph`
+- `VK_ARM_data_graph_instruction_set_tosa`
+- `VK_ARM_data_graph_optical_flow`
+
+The tensor layer exposes:
+
+- `VK_ARM_tensors`
+
+The corresponding SPIR-V™ extensions and extended instruction sets currently
+used by the ML Emulation Layer for Vulkan® are:
+
+- `SPV_ARM_graph`
+- `SPV_ARM_tensors`
+- `TOSA.001000.1`
+- `Arm.MotionEngine.100`
 
 ## Cloning the repository
 
