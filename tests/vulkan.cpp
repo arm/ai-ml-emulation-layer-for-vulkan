@@ -813,6 +813,59 @@ TEST_F(MLEmulationLayerForVulkan, Conv2D) {
         << "Output mismatch";
 }
 
+TEST_F(MLEmulationLayerForVulkan, Conv2DAccumulatorInt64) {
+    auto device = createDevice();
+
+    auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR16Sint, {1, 2, 2, 4}});
+    auto weightTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, {4, 1, 1, 4}});
+    auto biasTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR64Sint, {4}});
+    auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR64Sint, {1, 2, 2, 4}});
+
+    const std::array<int16_t, 16> inputValues = {
+        1,  2,  3,  4,  //
+        5,  6,  7,  8,  //
+        9,  10, 11, 12, //
+        13, 14, 15, 16,
+    };
+    const std::array<int8_t, 16> weightValues = {
+        1,  2,  3, 4, //
+        -1, 0,  1, 2, //
+        2,  -3, 4, -5, -2, -1, 0, 1,
+    };
+    const std::array<int64_t, 4> biasValues = {10, -20, 30, -40};
+    const std::array<int64_t, 16> expectedValues = {
+        40,  -10, 18, -40, //
+        80,  -2,  10, -48, //
+        120, 6,   2,  -56, //
+        160, 14,  -6, -64,
+    };
+
+    ASSERT_EQ(inputTensor->size(), inputValues.size() * sizeof(inputValues[0]));
+    ASSERT_EQ(weightTensor->size(), weightValues.size() * sizeof(weightValues[0]));
+    ASSERT_EQ(biasTensor->size(), biasValues.size() * sizeof(biasValues[0]));
+    ASSERT_EQ(outputTensor->size(), expectedValues.size() * sizeof(expectedValues[0]));
+
+    std::memcpy(inputTensor->data(), inputValues.data(), inputTensor->size());
+    std::memcpy(weightTensor->data(), weightValues.data(), weightTensor->size());
+    std::memcpy(biasTensor->data(), biasValues.data(), biasTensor->size());
+
+    const GraphPipeline::DescriptorMap descriptorMap = {{
+        {0, {inputTensor}},
+        {1, {weightTensor}},
+        {2, {biasTensor}},
+        {3, {outputTensor}},
+    }};
+
+    GraphConstants graphConstants;
+
+    const auto spirv = assembleSpirv(fileToString("conv2_acc_int64.spvasm"));
+    auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, graphConstants, spirv);
+    graphPipeline->dispatchSubmit();
+
+    ASSERT_TRUE(outputTensor->compare(expectedValues.data(), expectedValues.size() * sizeof(expectedValues[0])))
+        << "Output mismatch";
+}
+
 TEST_F(MLEmulationLayerForVulkan, Conv3DLargeStridePadRegression) {
     constexpr int64_t kBatch = 1;
     constexpr int64_t kInputDepth = 3;

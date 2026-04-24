@@ -13,14 +13,6 @@
 
 DEFINE_CONV_ACC_CASTS(ACC_T, OUT_T, TYPE_IN, TYPE_OUT)
 
-#if TYPE_ACC == TYPE_INT64
-    #define VEC4 dvec4
-#elif TYPE_ACC == TYPE_INT32
-    #define VEC4 ivec4
-#else
-    #define VEC4 vec4
-#endif
-
 layout(local_size_x = %warpX%) in;
 
 layout(push_constant) uniform PushConstants {
