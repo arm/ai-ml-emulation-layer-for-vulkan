@@ -2108,16 +2108,25 @@ TEST_F(MLEmulationLayerForVulkan, GetQueueFamilyDataGraphPropertiesARM_TwoCallPa
     ASSERT_EQ(retrieveCount, count);
 }
 
-// Function isn't resolved in MoltenVK, and this test relies on it to find the TOSA properties
-#ifndef EXPERIMENTAL_MOLTEN_VK_SUPPORT
 TEST_F(MLEmulationLayerForVulkan, GetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM) {
     const auto device = createDevice();
     const auto &physicalDevice = device->getPhysicalDevice();
     const auto &vkPhysicalDevice = &(*physicalDevice);
+    const auto *dispatcher = vkPhysicalDevice.getDispatcher();
+
+    // Check whether the physical-device extension function is actually resolved
+    if (dispatcher->vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM == nullptr) {
+        // Linux loaders can still route unknown physical-device entry points through
+        // vk_layerGetPhysicalDeviceProcAddr. Darwin loaders may not enable that fallback,
+        // so these tests skip when the runtime cannot hand back a callable pointer.
+        GTEST_SKIP() << "vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM "
+                     << "not resolved by loader on this runtime";
+    }
+
     const uint32_t queueFamilyIndex = physicalDevice->getComputeFamilyIndex();
 
     uint32_t count = 0;
-    const VkResult firstResult = vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
+    const VkResult firstResult = dispatcher->vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
         *vkPhysicalDevice, queueFamilyIndex, &count, nullptr);
     ASSERT_EQ(firstResult, VK_SUCCESS);
     ASSERT_GT(count, 0u);
@@ -2129,9 +2138,8 @@ TEST_F(MLEmulationLayerForVulkan, GetPhysicalDeviceQueueFamilyDataGraphEngineOpe
     }
 
     uint32_t retrieveCount = count;
-    const VkResult secondResult =
-        vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
-            *vkPhysicalDevice, queueFamilyIndex, &retrieveCount, properties.data());
+    const VkResult secondResult = dispatcher->vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
+        *vkPhysicalDevice, queueFamilyIndex, &retrieveCount, properties.data());
     ASSERT_EQ(secondResult, VK_SUCCESS);
     ASSERT_GT(retrieveCount, 0u);
 
@@ -2151,9 +2159,8 @@ TEST_F(MLEmulationLayerForVulkan, GetPhysicalDeviceQueueFamilyDataGraphEngineOpe
     VkQueueFamilyDataGraphTOSAPropertiesARM tosaProperties = {};
     tosaProperties.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_TOSA_PROPERTIES_ARM;
 
-    const auto tosaResult =
-        vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
-            *vkPhysicalDevice, queueFamilyIndex, &(*tosaProp), reinterpret_cast<VkBaseOutStructure *>(&tosaProperties));
+    const auto tosaResult = dispatcher->vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+        *vkPhysicalDevice, queueFamilyIndex, &(*tosaProp), reinterpret_cast<VkBaseOutStructure *>(&tosaProperties));
     ASSERT_EQ(tosaResult, VK_SUCCESS);
     ASSERT_EQ(tosaProperties.profileCount, 1u);
     ASSERT_NE(tosaProperties.pProfiles, nullptr);
@@ -2166,9 +2173,8 @@ TEST_F(MLEmulationLayerForVulkan, GetPhysicalDeviceQueueFamilyDataGraphEngineOpe
     VkQueueFamilyDataGraphOpticalFlowPropertiesARM ofProps{};
     ofProps.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_OPTICAL_FLOW_PROPERTIES_ARM;
 
-    const auto ofResult =
-        vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
-            *vkPhysicalDevice, queueFamilyIndex, &(*opticalFlowProp), reinterpret_cast<VkBaseOutStructure *>(&ofProps));
+    const auto ofResult = dispatcher->vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM(
+        *vkPhysicalDevice, queueFamilyIndex, &(*opticalFlowProp), reinterpret_cast<VkBaseOutStructure *>(&ofProps));
 
     ASSERT_EQ(ofResult, VK_SUCCESS);
     ASSERT_GT(ofProps.supportedOutputGridSizes, 0u);
@@ -2181,12 +2187,23 @@ TEST_F(MLEmulationLayerForVulkan, GetPhysicalDeviceQueueFamilyDataGraphOpticalFl
     const auto device = createDevice();
     const auto &physicalDevice = device->getPhysicalDevice();
     const auto &vkPhysicalDevice = &(*physicalDevice);
+    const auto *dispatcher = vkPhysicalDevice.getDispatcher();
+
+    // Check whether the physical-device extension function is actually resolved
+    if (dispatcher->vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM == nullptr) {
+        // Linux loaders can still route unknown physical-device entry points through
+        // vk_layerGetPhysicalDeviceProcAddr. Darwin loaders may not enable that fallback,
+        // so these tests skip when the runtime cannot hand back a callable pointer.
+        GTEST_SKIP() << "vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM "
+                     << "not resolved by loader on this runtime";
+    }
+
     const uint32_t queueFamilyIndex = physicalDevice->getComputeFamilyIndex();
 
     // Get queue family data graph properties to find an optical flow operation
     uint32_t count = 0;
-    vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
-        *vkPhysicalDevice, queueFamilyIndex, &count, nullptr);
+    dispatcher->vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(*vkPhysicalDevice, queueFamilyIndex, &count,
+                                                                     nullptr);
     ASSERT_GT(count, 0u);
 
     std::vector<VkQueueFamilyDataGraphPropertiesARM> properties(count);
@@ -2195,8 +2212,8 @@ TEST_F(MLEmulationLayerForVulkan, GetPhysicalDeviceQueueFamilyDataGraphOpticalFl
         p.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_PROPERTIES_ARM;
     }
     uint32_t retrieveCount = count;
-    vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
-        *vkPhysicalDevice, queueFamilyIndex, &retrieveCount, properties.data());
+    dispatcher->vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(*vkPhysicalDevice, queueFamilyIndex,
+                                                                     &retrieveCount, properties.data());
 
     const auto opticalFlowProp =
         std::find_if(properties.begin(), properties.end(), [](const VkQueueFamilyDataGraphPropertiesARM &p) {
@@ -2210,9 +2227,8 @@ TEST_F(MLEmulationLayerForVulkan, GetPhysicalDeviceQueueFamilyDataGraphOpticalFl
     // Phase 1: query input format count
     formatInfo.usage = VK_DATA_GRAPH_OPTICAL_FLOW_IMAGE_USAGE_INPUT_BIT_ARM;
     uint32_t inputFormatCount = 0;
-    VkResult result =
-        vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
-            *vkPhysicalDevice, queueFamilyIndex, &(*opticalFlowProp), &formatInfo, &inputFormatCount, nullptr);
+    VkResult result = dispatcher->vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+        *vkPhysicalDevice, queueFamilyIndex, &(*opticalFlowProp), &formatInfo, &inputFormatCount, nullptr);
     ASSERT_EQ(result, VK_SUCCESS);
     ASSERT_GT(inputFormatCount, 0u);
 
@@ -2223,7 +2239,7 @@ TEST_F(MLEmulationLayerForVulkan, GetPhysicalDeviceQueueFamilyDataGraphOpticalFl
         f.sType = VK_STRUCTURE_TYPE_DATA_GRAPH_OPTICAL_FLOW_IMAGE_FORMAT_PROPERTIES_ARM;
     }
     uint32_t retrievedInputCount = inputFormatCount;
-    result = vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+    result = dispatcher->vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
         *vkPhysicalDevice, queueFamilyIndex, &(*opticalFlowProp), &formatInfo, &retrievedInputCount,
         inputFormats.data());
     ASSERT_EQ(result, VK_SUCCESS);
@@ -2235,12 +2251,11 @@ TEST_F(MLEmulationLayerForVulkan, GetPhysicalDeviceQueueFamilyDataGraphOpticalFl
     // Query output (flow vector) formats
     formatInfo.usage = VK_DATA_GRAPH_OPTICAL_FLOW_IMAGE_USAGE_OUTPUT_BIT_ARM;
     uint32_t outputFormatCount = 0;
-    result = vkPhysicalDevice.getDispatcher()->vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
+    result = dispatcher->vkGetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM(
         *vkPhysicalDevice, queueFamilyIndex, &(*opticalFlowProp), &formatInfo, &outputFormatCount, nullptr);
     ASSERT_EQ(result, VK_SUCCESS);
     ASSERT_GT(outputFormatCount, 0u);
 }
-#endif
 
 TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelineSessionBindPointRequirementsARM_TwoCallPattern) {
     auto device = createDevice();
