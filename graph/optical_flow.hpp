@@ -107,7 +107,9 @@ class OpticalFlow {
     void bindSessionCacheMemory(VkDeviceMemory memory, VkDeviceSize offset);
     void updateDescriptorSets(const OpticalFlowDescriptorMap &descriptorMap);
     void cmdBindAndDispatch(VkCommandBuffer cmdBuf, VkDataGraphOpticalFlowExecuteFlagsARM flags,
-                            uint32_t meanFlowL1NormHint);
+                            uint32_t meanFlowL1NormHint,
+                            const ComputePipelineDispatchDecorator &dispatchDecorator = {});
+    uint32_t getMaxDispatchPipelineCount() const;
 
     std::shared_ptr<Image> makeImage(Image::Usage usage, VkExtent3D dim, VkFormat format, VkImageTiling tiling,
                                      const std::string &debugName = "", bool isCached = false);

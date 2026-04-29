@@ -431,7 +431,8 @@ void OpticalFlow::updateDescriptorSets(const OpticalFlowDescriptorMap &descripto
 }
 
 void OpticalFlow::cmdBindAndDispatch(VkCommandBuffer cmdBuf, VkDataGraphOpticalFlowExecuteFlagsARM flags,
-                                     uint32_t meanFlowL1NormHint) {
+                                     uint32_t meanFlowL1NormHint,
+                                     const ComputePipelineDispatchDecorator &dispatchDecorator) {
     if (!validateConfiguration()) {
         throw std::runtime_error("Invalid configuration");
     }
@@ -462,23 +463,38 @@ void OpticalFlow::cmdBindAndDispatch(VkCommandBuffer cmdBuf, VkDataGraphOpticalF
         }
     }
 
+    uint32_t pipelineIndex = 0;
+    const auto dispatchPipeline = [&](const std::shared_ptr<ComputePipeline> &pipeline) {
+        if (dispatchDecorator) {
+            dispatchDecorator(cmdBuf, *pipeline, pipelineIndex);
+        } else {
+            pipeline->bindAndDispatch(cmdBuf);
+        }
+        ++pipelineIndex;
+    };
+
     if (!(effectiveFlags & (VK_DATA_GRAPH_OPTICAL_FLOW_EXECUTE_REFERENCE_UNCHANGED_BIT_ARM |
                             VK_DATA_GRAPH_OPTICAL_FLOW_EXECUTE_REFERENCE_IS_PREVIOUS_INPUT_BIT_ARM))) {
         for (const auto &pipeline : downsampleSearchPipelines_) {
-            pipeline->bindAndDispatch(cmdBuf);
+            dispatchPipeline(pipeline);
         }
     }
 
     if (!(effectiveFlags & (VK_DATA_GRAPH_OPTICAL_FLOW_EXECUTE_INPUT_UNCHANGED_BIT_ARM |
                             VK_DATA_GRAPH_OPTICAL_FLOW_EXECUTE_INPUT_IS_PREVIOUS_REFERENCE_BIT_ARM))) {
         for (const auto &pipeline : downsampleTemplatePipelines_) {
-            pipeline->bindAndDispatch(cmdBuf);
+            dispatchPipeline(pipeline);
         }
     }
 
     for (const auto &pipeline : motionEstimationPipelines_) {
-        pipeline->bindAndDispatch(cmdBuf);
+        dispatchPipeline(pipeline);
     }
+}
+
+uint32_t OpticalFlow::getMaxDispatchPipelineCount() const {
+    return static_cast<uint32_t>(downsampleTemplatePipelines_.size() + downsampleSearchPipelines_.size() +
+                                 motionEstimationPipelines_.size());
 }
 
 void OpticalFlow::swapImagePyramids() {

@@ -48,6 +48,8 @@ ComputePipeline::~ComputePipeline() {
     }
 };
 
+const std::string &ComputePipeline::getDebugName() const { return debugName_; }
+
 void ComputePipeline::makePipeline() {
     // Shader module
     const VkShaderModule shaderModule = common::createShaderModule(loader_, device_, spirv_, pAllocator_);

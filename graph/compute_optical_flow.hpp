@@ -18,6 +18,8 @@
 
 #include <vulkan/vulkan.hpp>
 
+#include <functional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -72,6 +74,7 @@ class ComputePipeline {
     void setOutputStorage(VkCommandBuffer cmdBuf, uint32_t binding, const std::shared_ptr<Image> &image);
 
     virtual void bindAndDispatch(VkCommandBuffer cmdBuf) = 0;
+    const std::string &getDebugName() const;
 
   protected:
     VkSampler createSampler(VkFilter filter, VkSamplerAddressMode addressMode, bool unnormalizedCoordinates);
@@ -106,6 +109,8 @@ class ComputePipeline {
 
     std::string debugName_;
 };
+
+using ComputePipelineDispatchDecorator = std::function<void(VkCommandBuffer, ComputePipeline &, uint32_t)>;
 
 template <typename T> void ComputePipeline::setPushConstants(VkCommandBuffer cmdBuf, const T &constants) {
     assert(pushConstantsSize_ == sizeof(T));
