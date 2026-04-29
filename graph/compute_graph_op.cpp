@@ -15,6 +15,7 @@
 #include <cmath>
 #include <numeric>
 #include <regex>
+#include <string_view>
 
 using namespace mlsdk::el::log;
 using namespace mlsdk::el::utils;
@@ -51,7 +52,7 @@ VkFormat accTypeVkFormat(uint32_t accType) {
     }
 }
 
-std::string accTypeString(uint32_t accType) {
+std::string_view accTypeString(uint32_t accType) {
     switch (accType) {
     case 1:
         return "int32_t";
@@ -64,19 +65,6 @@ std::string accTypeString(uint32_t accType) {
     default:
         throw std::runtime_error("Unsupported AVG_POOL2D acc type " + std::to_string(accType));
     }
-}
-
-std::string compTypeString(const std::shared_ptr<FormatBase> &type) {
-    if (type->toInt() == "0x6642") {
-        return "float";
-    }
-    if (type->toInt() == "0x664D") {
-        return "float16_t";
-    }
-    if (type->toInt() == "0x664E") {
-        return "float16_t";
-    }
-    return type->glslType();
 }
 
 } // namespace
@@ -540,6 +528,7 @@ ComputePipeline::ComputePipeline(const std::shared_ptr<VULKAN_HPP_NAMESPACE::det
     : ComputePipelineBase(createPipelineLayout(_loader, _device, std::move(descriptorMap), pushConstant)),
       loader{_loader}, device{_device}, pipelineCache{_pipelineCache},
       shaderModule{createShaderModule(_spirv)}, pipeline{createComputePipeline(_constants)} {
+    assert(std::to_string(warpID) == warpIdSv);
     connectPipelines();
     setDebugUtilsObjectName(loader, device, VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(pipeline), debugName);
 }
@@ -632,18 +621,18 @@ DescriptorMap Argmax::createDescriptorMap(const std::shared_ptr<TensorDescriptor
 
 SpirvBinary Argmax::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                 const std::shared_ptr<TensorDescriptor> &input) const {
-    auto inType = makeFormat(input->getFormat());
+    const auto *inType = getFormatInfo(input->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inType->glslType(),
+                                      inType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_t_type%", inType->toInt()},
-                                      {"%in_t_lowest%", inType->lowest()},
-                                      {"%in_t%", inType->glslType()},
-                                      {"%in_t_comp%", compTypeString(inType)},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_t_type%", inType->typeId},
+                                      {"%in_t_lowest%", inType->lowest},
+                                      {"%in_t%", inType->glslType},
+                                      {"%in_t_comp%", inType->compType},
                                   });
 }
 
@@ -683,15 +672,15 @@ DescriptorMap ArithmeticRightShift::createDescriptorMap(const std::shared_ptr<Te
 
 SpirvBinary ArithmeticRightShift::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                               const std::shared_ptr<TensorDescriptor> &output) const {
-    auto inOutType = makeFormat(output->getFormat());
+    const auto *inOutType = getFormatInfo(output->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inOutType->glslType(),
+                                      inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_out_t%", inOutType->glslType()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_out_t%", inOutType->glslType},
                                   });
 }
 
@@ -748,22 +737,22 @@ DescriptorMap AvgPool2D::createDescriptorMap(const std::shared_ptr<TensorDescrip
 
 SpirvBinary AvgPool2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                    const std::shared_ptr<TensorDescriptor> &output, const uint32_t accType) const {
-    auto inOutType = makeFormat(output->getFormat());
+    const auto *inOutType = getFormatInfo(output->getFormat());
 
-    const auto &accTypeStr = accTypeString(accType);
+    const auto accTypeStr = accTypeString(accType);
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inOutType->glslType(),
+                                      inOutType->glslType,
                                       accTypeStr,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
+                                      {"%warpX%", warpIdSv},
                                       {"%acc_t%", accTypeStr},
-                                      {"%in_out_t_lowest%", inOutType->lowest()},
-                                      {"%in_out_t_max%", inOutType->max()},
-                                      {"%in_out_t%", inOutType->glslType()},
-                                      {"%in_out_t_type%", inOutType->toInt()},
-                                      {"%in_out_t_comp%", compTypeString(inOutType)},
+                                      {"%in_out_t_lowest%", inOutType->lowest},
+                                      {"%in_out_t_max%", inOutType->max},
+                                      {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_type%", inOutType->typeId},
+                                      {"%in_out_t_comp%", inOutType->compType},
                                   });
 }
 
@@ -791,24 +780,24 @@ DescriptorMap Cast::createDescriptorMap(const std::shared_ptr<TensorDescriptor> 
 SpirvBinary Cast::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                               const std::shared_ptr<TensorDescriptor> &input,
                               const std::shared_ptr<TensorDescriptor> &output) const {
-    auto inType = makeFormat(input->getFormat());
-    auto outType = makeFormat(output->getFormat());
+    const auto *inType = getFormatInfo(input->getFormat());
+    const auto *outType = getFormatInfo(output->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inType->glslType(),
-                                      outType->glslType(),
+                                      inType->glslType,
+                                      outType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_t_type%", inType->toInt()},
-                                      {"%out_t_type%", outType->toInt()},
-                                      {"%in_t_lowest%", inType->lowest()},
-                                      {"%in_t_max%", inType->max()},
-                                      {"%out_t_lowest%", outType->lowest()},
-                                      {"%out_t_max%", outType->max()},
-                                      {"%in_t%", inType->glslType()},
-                                      {"%out_t%", outType->glslType()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_t_type%", inType->typeId},
+                                      {"%out_t_type%", outType->typeId},
+                                      {"%in_t_lowest%", inType->lowest},
+                                      {"%in_t_max%", inType->max},
+                                      {"%out_t_lowest%", outType->lowest},
+                                      {"%out_t_max%", outType->max},
+                                      {"%in_t%", inType->glslType},
+                                      {"%out_t%", outType->glslType},
                                   });
 }
 
@@ -846,17 +835,17 @@ DescriptorMap Clamp::createDescriptorMap(const std::shared_ptr<TensorDescriptor>
 
 SpirvBinary Clamp::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                const std::shared_ptr<TensorDescriptor> &output) const {
-    auto inOutType = makeFormat(output->getFormat());
+    const auto *inOutType = getFormatInfo(output->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inOutType->glslType(),
+                                      inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_out_t%", inOutType->glslType()},
-                                      {"%in_out_t_type%", inOutType->toInt()},
-                                      {"%in_out_t_comp%", compTypeString(inOutType)},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_type%", inOutType->typeId},
+                                      {"%in_out_t_comp%", inOutType->compType},
                                   });
 }
 
@@ -903,15 +892,15 @@ void Concat::cmdDispatch(VkCommandBuffer commandBuffer) {
 
 SpirvBinary Concat::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                 const std::shared_ptr<TensorDescriptor> &output) const {
-    auto inOutType = makeFormat(output->getFormat());
+    const auto *inOutType = getFormatInfo(output->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inOutType->glslType(),
+                                      inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_out_t%", inOutType->glslType()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_out_t%", inOutType->glslType},
                                   });
 }
 
@@ -974,29 +963,29 @@ SpirvBinary Conv2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                 const std::shared_ptr<TensorDescriptor> &input,
                                 const std::shared_ptr<TensorDescriptor> &output,
                                 const std::shared_ptr<TensorDescriptor> &weights, const uint32_t accType) const {
-    auto inType = makeFormat(input->getFormat());
-    auto outType = makeFormat(output->getFormat());
-    auto weightType = makeFormat(weights->getFormat());
-    auto accTypeType = makeFormat(accTypeVkFormat(accType));
+    const auto *inType = getFormatInfo(input->getFormat());
+    const auto *outType = getFormatInfo(output->getFormat());
+    const auto *weightType = getFormatInfo(weights->getFormat());
+    const auto *accTypeType = getFormatInfo(accTypeVkFormat(accType));
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inType->glslType(),
-                                      weightType->glslType(),
-                                      outType->glslType(),
-                                      accTypeType->glslType(),
+                                      inType->glslType,
+                                      weightType->glslType,
+                                      outType->glslType,
+                                      accTypeType->glslType,
                                   },
                                   {
                                       {"%warpX%", std::to_string(warpX)},
                                       {"%warpY%", std::to_string(warpY)},
                                       {"%warpZ%", std::to_string(warpZ)},
-                                      {"%in_t%", inType->glslType()},
-                                      {"%in_t_type%", inType->toInt()},
-                                      {"%out_t%", outType->glslType()},
-                                      {"%out_t_type%", outType->toInt()},
-                                      {"%weight_t%", weightType->glslType()},
-                                      {"%acc_t_type%", accTypeType->toInt()},
-                                      {"%acc_t%", accTypeType->glslType()},
+                                      {"%in_t%", inType->glslType},
+                                      {"%in_t_type%", inType->typeId},
+                                      {"%out_t%", outType->glslType},
+                                      {"%out_t_type%", outType->typeId},
+                                      {"%weight_t%", weightType->glslType},
+                                      {"%acc_t_type%", accTypeType->typeId},
+                                      {"%acc_t%", accTypeType->glslType},
                                   });
 }
 
@@ -1072,27 +1061,27 @@ SpirvBinary Conv3D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                 const std::shared_ptr<TensorDescriptor> &input,
                                 const std::shared_ptr<TensorDescriptor> &output,
                                 const std::shared_ptr<TensorDescriptor> &weights, const uint32_t accType) const {
-    auto inType = makeFormat(input->getFormat());
-    auto outType = makeFormat(output->getFormat());
-    auto weightType = makeFormat(weights->getFormat());
-    auto accTypeType = makeFormat(accTypeVkFormat(accType));
+    const auto *inType = getFormatInfo(input->getFormat());
+    const auto *outType = getFormatInfo(output->getFormat());
+    const auto *weightType = getFormatInfo(weights->getFormat());
+    const auto *accTypeType = getFormatInfo(accTypeVkFormat(accType));
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inType->glslType(),
-                                      weightType->glslType(),
-                                      outType->glslType(),
-                                      accTypeType->glslType(),
+                                      inType->glslType,
+                                      weightType->glslType,
+                                      outType->glslType,
+                                      accTypeType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_t%", inType->glslType()},
-                                      {"%in_t_type%", inType->toInt()},
-                                      {"%out_t%", outType->glslType()},
-                                      {"%out_t_type%", outType->toInt()},
-                                      {"%weight_t%", weightType->glslType()},
-                                      {"%acc_t_type%", accTypeType->toInt()},
-                                      {"%acc_t%", accTypeType->glslType()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_t%", inType->glslType},
+                                      {"%in_t_type%", inType->typeId},
+                                      {"%out_t%", outType->glslType},
+                                      {"%out_t_type%", outType->typeId},
+                                      {"%weight_t%", weightType->glslType},
+                                      {"%acc_t_type%", accTypeType->typeId},
+                                      {"%acc_t%", accTypeType->glslType},
                                   });
 }
 
@@ -1161,27 +1150,27 @@ SpirvBinary DepthwiseConv2D::createSpirv(const std::shared_ptr<PipelineCache> &_
                                          const std::shared_ptr<TensorDescriptor> &output,
                                          const std::shared_ptr<TensorDescriptor> &weights,
                                          const uint32_t accType) const {
-    auto inType = makeFormat(input->getFormat());
-    auto outType = makeFormat(output->getFormat());
-    auto weightType = makeFormat(weights->getFormat());
-    auto accTypeType = makeFormat(accTypeVkFormat(accType));
+    const auto *inType = getFormatInfo(input->getFormat());
+    const auto *outType = getFormatInfo(output->getFormat());
+    const auto *weightType = getFormatInfo(weights->getFormat());
+    const auto *accTypeType = getFormatInfo(accTypeVkFormat(accType));
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inType->glslType(),
-                                      weightType->glslType(),
-                                      outType->glslType(),
-                                      accTypeType->glslType(),
+                                      inType->glslType,
+                                      weightType->glslType,
+                                      outType->glslType,
+                                      accTypeType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_t%", inType->glslType()},
-                                      {"%in_t_type%", inType->toInt()},
-                                      {"%out_t%", outType->glslType()},
-                                      {"%out_t_type%", outType->toInt()},
-                                      {"%weight_t%", weightType->glslType()},
-                                      {"%acc_t_type%", accTypeType->toInt()},
-                                      {"%acc_t%", accTypeType->glslType()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_t%", inType->glslType},
+                                      {"%in_t_type%", inType->typeId},
+                                      {"%out_t%", outType->glslType},
+                                      {"%out_t_type%", outType->typeId},
+                                      {"%weight_t%", weightType->glslType},
+                                      {"%acc_t_type%", accTypeType->typeId},
+                                      {"%acc_t%", accTypeType->glslType},
                                   });
 }
 
@@ -1193,7 +1182,7 @@ ElementwiseBinary::ElementwiseBinary(
     const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, VkDevice _device,
     const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input1,
     const std::shared_ptr<TensorDescriptor> &_input2, const std::shared_ptr<TensorDescriptor> &_output,
-    const uint32_t _nanMode, const std::string &debugName, const std::string &_operation)
+    const uint32_t _nanMode, const std::string &debugName, const std::string_view &_operation)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input1, _input2, _output),
                       {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
                       createSpirv(_pipelineCache, _input1, _output, debugName, _operation), debugName,
@@ -1220,24 +1209,24 @@ DescriptorMap ElementwiseBinary::createDescriptorMap(const std::shared_ptr<Tenso
 SpirvBinary ElementwiseBinary::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                            const std::shared_ptr<TensorDescriptor> &input,
                                            const std::shared_ptr<TensorDescriptor> &output, const std::string &name,
-                                           const std::string &operation) const {
-    auto inType = makeFormat(input->getFormat());
-    auto outType = makeFormat(output->getFormat());
+                                           const std::string_view &operation) const {
+    const auto *inType = getFormatInfo(input->getFormat());
+    const auto *outType = getFormatInfo(output->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
                                       name,
-                                      inType->glslType(),
-                                      outType->glslType(),
+                                      inType->glslType,
+                                      outType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
+                                      {"%warpX%", warpIdSv},
                                       {"%operation%", operation},
-                                      {"%in_t%", inType->glslType()},
-                                      {"%out_t%", outType->glslType()},
-                                      {"%in_t_type%", inType->toInt()},
-                                      {"%out_t_type%", outType->toInt()},
-                                      {"%in_t_comp%", compTypeString(inType)},
+                                      {"%in_t%", inType->glslType},
+                                      {"%out_t%", outType->glslType},
+                                      {"%in_t_type%", inType->typeId},
+                                      {"%out_t_type%", outType->typeId},
+                                      {"%in_t_comp%", inType->compType},
                                   });
 }
 
@@ -1249,7 +1238,7 @@ ElementwiseUnary::ElementwiseUnary(const std::shared_ptr<VULKAN_HPP_NAMESPACE::d
                                    VkDevice _device, const std::shared_ptr<PipelineCache> &_pipelineCache,
                                    const std::shared_ptr<TensorDescriptor> &_input1,
                                    const std::shared_ptr<TensorDescriptor> &_output, const std::string &debugName,
-                                   const std::string &_operation)
+                                   const std::string_view &_operation)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input1, _output), {}, _pipelineCache,
                       createSpirv(_pipelineCache, _output, debugName, _operation), debugName, {_output->getRank()}) {}
 
@@ -1266,20 +1255,20 @@ DescriptorMap ElementwiseUnary::createDescriptorMap(const std::shared_ptr<Tensor
 
 SpirvBinary ElementwiseUnary::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                           const std::shared_ptr<TensorDescriptor> &output, const std::string &name,
-                                          const std::string &operation) const {
-    auto inOutType = makeFormat(output->getFormat());
+                                          const std::string_view &operation) const {
+    const auto *inOutType = getFormatInfo(output->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
                                       name,
-                                      inOutType->glslType(),
+                                      inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
+                                      {"%warpX%", warpIdSv},
                                       {"%operation%", operation},
-                                      {"%in_out_t%", inOutType->glslType()},
-                                      {"%in_out_t_type%", inOutType->toInt()},
-                                      {"%in_out_t_comp%", compTypeString(inOutType)},
+                                      {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_type%", inOutType->typeId},
+                                      {"%in_out_t_comp%", inOutType->compType},
                                   });
 }
 
@@ -1321,7 +1310,7 @@ DescriptorMap Fft2D::createDescriptorMap(const std::shared_ptr<TensorDescriptor>
 SpirvBinary Fft2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache) const {
     return _pipelineCache->lookup(shaderName, {},
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
+                                      {"%warpX%", warpIdSv},
                                   });
 }
 
@@ -1352,18 +1341,18 @@ DescriptorMap Gather::createDescriptorMap(const std::shared_ptr<TensorDescriptor
 SpirvBinary Gather::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                 const std::shared_ptr<TensorDescriptor> &indices,
                                 const std::shared_ptr<TensorDescriptor> &output) const {
-    auto inOutType = makeFormat(output->getFormat());
-    auto indicesType = makeFormat(indices->getFormat());
+    const auto *inOutType = getFormatInfo(output->getFormat());
+    const auto *indicesType = getFormatInfo(indices->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inOutType->glslType(),
-                                      indicesType->glslType(),
+                                      inOutType->glslType,
+                                      indicesType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%index_t%", indicesType->glslType()},
-                                      {"%in_out_t%", inOutType->glslType()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%index_t%", indicesType->glslType},
+                                      {"%in_out_t%", inOutType->glslType},
                                   });
 }
 
@@ -1405,20 +1394,20 @@ DescriptorMap Matmul::createDescriptorMap(const std::shared_ptr<TensorDescriptor
 SpirvBinary Matmul::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                 const std::shared_ptr<TensorDescriptor> &input1,
                                 const std::shared_ptr<TensorDescriptor> &output) const {
-    auto inType = makeFormat(input1->getFormat());
-    auto outType = makeFormat(output->getFormat());
+    const auto *inType = getFormatInfo(input1->getFormat());
+    const auto *outType = getFormatInfo(output->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inType->glslType(),
-                                      outType->glslType(),
+                                      inType->glslType,
+                                      outType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_t%", inType->glslType()},
-                                      {"%in_t_type%", inType->toInt()},
-                                      {"%out_t%", outType->glslType()},
-                                      {"%out_t_type%", outType->toInt()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_t%", inType->glslType},
+                                      {"%in_t_type%", inType->typeId},
+                                      {"%out_t%", outType->glslType},
+                                      {"%out_t_type%", outType->typeId},
                                   });
 }
 
@@ -1472,19 +1461,19 @@ DescriptorMap MaxPool2D::createDescriptorMap(const std::shared_ptr<TensorDescrip
 
 SpirvBinary MaxPool2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                    const std::shared_ptr<TensorDescriptor> &output, const uint32_t _nanMode) const {
-    auto inOutType = makeFormat(output->getFormat());
+    const auto *inOutType = getFormatInfo(output->getFormat());
 
-    const std::string init = (_nanMode == NanPropagationMode::Ignore ? "NAN" : inOutType->lowest());
+    const std::string_view init = (_nanMode == NanPropagationMode::Ignore ? "NAN" : inOutType->lowest);
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inOutType->glslType(),
+                                      inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_out_t%", inOutType->glslType()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_out_t%", inOutType->glslType},
                                       {"%in_out_t_lowest%", init},
-                                      {"%in_out_t_type%", inOutType->toInt()},
-                                      {"%in_out_t_comp%", compTypeString(inOutType)},
+                                      {"%in_out_t_type%", inOutType->typeId},
+                                      {"%in_out_t_comp%", inOutType->compType},
                                   });
 }
 
@@ -1526,20 +1515,20 @@ DescriptorMap Mul::createDescriptorMap(const std::shared_ptr<TensorDescriptor> &
 SpirvBinary Mul::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                              const std::shared_ptr<TensorDescriptor> &input1,
                              const std::shared_ptr<TensorDescriptor> &output) const {
-    auto inType = makeFormat(input1->getFormat());
-    auto outType = makeFormat(output->getFormat());
+    const auto *inType = getFormatInfo(input1->getFormat());
+    const auto *outType = getFormatInfo(output->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inType->glslType(),
-                                      outType->glslType(),
+                                      inType->glslType,
+                                      outType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_t_type%", inType->toInt()},
-                                      {"%out_t_type%", outType->toInt()},
-                                      {"%in_t%", inType->glslType()},
-                                      {"%out_t%", outType->glslType()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_t_type%", inType->typeId},
+                                      {"%out_t_type%", outType->typeId},
+                                      {"%in_t%", inType->glslType},
+                                      {"%out_t%", outType->glslType},
                                   });
 }
 
@@ -1577,21 +1566,21 @@ DescriptorMap Negate::createDescriptorMap(const std::shared_ptr<TensorDescriptor
 
 SpirvBinary Negate::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                 const std::shared_ptr<TensorDescriptor> &output) const {
-    auto inOutType = makeFormat(output->getFormat());
+    const auto *inOutType = getFormatInfo(output->getFormat());
 
-    std::string accType = inOutType->isInteger() ? "int32_t" : "float";
+    const std::string_view accType = inOutType->isInteger ? "int32_t" : "float";
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inOutType->glslType(),
+                                      inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_out_t%", inOutType->glslType()},
-                                      {"%in_out_t_type%", inOutType->toInt()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_type%", inOutType->typeId},
                                       {"%acc_t%", accType},
-                                      {"%in_out_t_lowest%", inOutType->lowest()},
-                                      {"%in_out_t_max%", inOutType->max()},
+                                      {"%in_out_t_lowest%", inOutType->lowest},
+                                      {"%in_out_t_max%", inOutType->max},
                                   });
 }
 
@@ -1632,16 +1621,16 @@ DescriptorMap Pad::createDescriptorMap(const std::shared_ptr<TensorDescriptor> &
 
 SpirvBinary Pad::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                              const std::shared_ptr<TensorDescriptor> &output) const {
-    auto inOutType = makeFormat(output->getFormat());
+    const auto *inOutType = getFormatInfo(output->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inOutType->glslType(),
+                                      inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_out_t%", inOutType->glslType()},
-                                      {"%in_out_t_type%", inOutType->toInt()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_type%", inOutType->typeId},
                                   });
 }
 
@@ -1652,11 +1641,11 @@ SpirvBinary Pad::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCach
 Reduce::Reduce(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, VkDevice _device,
                const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
                const std::shared_ptr<TensorDescriptor> &_output, const uint32_t _axis, const uint32_t _nanMode,
-               const std::string &debugName, const std::string &_init, const std::string &_operation)
+               const std::string &debugName, const std::string &_init, const std::string_view &_operation)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output), {&pushConstant, sizeof(pushConstant)},
                       _pipelineCache, createSpirv(_pipelineCache, _input, debugName, _init, _operation), debugName,
                       {_output->getRank()}),
-      pushConstant{createPushConstant(_axis, _nanMode, makeFormat(_input->getFormat())->isInteger())} {}
+      pushConstant{createPushConstant(_axis, _nanMode, getFormatInfo(_input->getFormat())->isInteger)} {}
 
 Reduce::PushConstant Reduce::createPushConstant(const uint32_t axis, const uint32_t nanMode,
                                                 const bool isInteger) const {
@@ -1681,21 +1670,21 @@ DescriptorMap Reduce::createDescriptorMap(const std::shared_ptr<TensorDescriptor
 
 SpirvBinary Reduce::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                 const std::shared_ptr<TensorDescriptor> &output, const std::string &name,
-                                const std::string &init, const std::string &operation) const {
-    auto inOutType = makeFormat(output->getFormat());
+                                const std::string &init, const std::string_view &operation) const {
+    const auto *inOutType = getFormatInfo(output->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
                                       name,
-                                      inOutType->glslType(),
+                                      inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
+                                      {"%warpX%", warpIdSv},
                                       {"%init%", init},
                                       {"%operation%", operation},
-                                      {"%in_out_t%", inOutType->glslType()},
-                                      {"%in_out_t_type%", inOutType->toInt()},
-                                      {"%in_out_t_comp%", compTypeString(inOutType)},
+                                      {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_type%", inOutType->typeId},
+                                      {"%in_out_t_comp%", inOutType->compType},
                                   });
 }
 
@@ -1745,23 +1734,23 @@ SpirvBinary Rescale::createSpirv(const std::shared_ptr<PipelineCache> &_pipeline
                                  const std::shared_ptr<TensorDescriptor> &output,
                                  const std::shared_ptr<TensorDescriptor> &multiplier, const bool inputUnsigned,
                                  const bool outputUnsigned) const {
-    auto inType = makeFormat(input->getFormat(), inputUnsigned);
-    auto outType = makeFormat(output->getFormat(), outputUnsigned);
-    auto mulType = makeFormat(multiplier->getFormat());
+    const auto *inType = getFormatInfo(input->getFormat(), inputUnsigned);
+    const auto *outType = getFormatInfo(output->getFormat(), outputUnsigned);
+    const auto *mulType = getFormatInfo(multiplier->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inType->glslType(),
-                                      outType->glslType(),
-                                      mulType->glslType(),
+                                      inType->glslType,
+                                      outType->glslType,
+                                      mulType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_t%", inType->glslType()},
-                                      {"%out_t%", outType->glslType()},
-                                      {"%mul_t%", mulType->glslType()},
-                                      {"%out_t_lowest%", outType->lowest()},
-                                      {"%out_t_max%", outType->max()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_t%", inType->glslType},
+                                      {"%out_t%", outType->glslType},
+                                      {"%mul_t%", mulType->glslType},
+                                      {"%out_t_lowest%", outType->lowest},
+                                      {"%out_t_max%", outType->max},
                                   });
 }
 
@@ -1788,15 +1777,15 @@ DescriptorMap Reshape::createDescriptorMap(const std::shared_ptr<TensorDescripto
 
 SpirvBinary Reshape::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                  const std::shared_ptr<TensorDescriptor> &output) const {
-    auto inOutType = makeFormat(output->getFormat());
+    const auto *inOutType = getFormatInfo(output->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inOutType->glslType(),
+                                      inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_out_t%", inOutType->glslType()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_out_t%", inOutType->glslType},
                                   });
 }
 
@@ -1850,21 +1839,21 @@ DescriptorMap Resize::createDescriptorMap(const std::shared_ptr<TensorDescriptor
 SpirvBinary Resize::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                 const std::shared_ptr<TensorDescriptor> &input,
                                 const std::shared_ptr<TensorDescriptor> &output) const {
-    auto inType = makeFormat(input->getFormat());
-    auto outType = makeFormat(output->getFormat());
+    const auto *inType = getFormatInfo(input->getFormat());
+    const auto *outType = getFormatInfo(output->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inType->glslType(),
-                                      outType->glslType(),
+                                      inType->glslType,
+                                      outType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_t%", inType->glslType()},
-                                      {"%in_t_type%", inType->toInt()},
-                                      {"%out_t%", outType->glslType()},
-                                      {"%out_t_type%", outType->toInt()},
-                                      {"%out_t_comp%", compTypeString(outType)},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_t%", inType->glslType},
+                                      {"%in_t_type%", inType->typeId},
+                                      {"%out_t%", outType->glslType},
+                                      {"%out_t_type%", outType->typeId},
+                                      {"%out_t_comp%", outType->compType},
                                   });
 }
 
@@ -1899,15 +1888,15 @@ DescriptorMap Reverse::createDescriptorMap(const std::shared_ptr<TensorDescripto
 
 SpirvBinary Reverse::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                  const std::shared_ptr<TensorDescriptor> &output) const {
-    auto inOutType = makeFormat(output->getFormat());
+    const auto *inOutType = getFormatInfo(output->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inOutType->glslType(),
+                                      inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_out_t%", inOutType->glslType()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_out_t%", inOutType->glslType},
                                   });
 }
 
@@ -1938,7 +1927,7 @@ DescriptorMap Rfft2D::createDescriptorMap(const std::shared_ptr<TensorDescriptor
 SpirvBinary Rfft2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache) const {
     return _pipelineCache->lookup(shaderName, {},
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
+                                      {"%warpX%", warpIdSv},
                                   });
 }
 
@@ -1971,18 +1960,18 @@ DescriptorMap Scatter::createDescriptorMap(const std::shared_ptr<TensorDescripto
 SpirvBinary Scatter::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                  const std::shared_ptr<TensorDescriptor> &indices,
                                  const std::shared_ptr<TensorDescriptor> &output) const {
-    auto inOutType = makeFormat(output->getFormat());
-    auto indicesType = makeFormat(indices->getFormat());
+    const auto *inOutType = getFormatInfo(output->getFormat());
+    const auto *indicesType = getFormatInfo(indices->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inOutType->glslType(),
-                                      indicesType->glslType(),
+                                      inOutType->glslType,
+                                      indicesType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%index_t%", indicesType->glslType()},
-                                      {"%in_out_t%", inOutType->glslType()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%index_t%", indicesType->glslType},
+                                      {"%in_out_t%", inOutType->glslType},
                                   });
 }
 
@@ -2014,15 +2003,15 @@ DescriptorMap Select::createDescriptorMap(const std::shared_ptr<TensorDescriptor
 
 SpirvBinary Select::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                 const std::shared_ptr<TensorDescriptor> &output) const {
-    auto inOutType = makeFormat(output->getFormat());
+    const auto *inOutType = getFormatInfo(output->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inOutType->glslType(),
+                                      inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_out_t%", inOutType->glslType()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_out_t%", inOutType->glslType},
                                   });
 }
 
@@ -2058,15 +2047,15 @@ DescriptorMap Slice::createDescriptorMap(const std::shared_ptr<TensorDescriptor>
 
 SpirvBinary Slice::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                const std::shared_ptr<TensorDescriptor> &input) const {
-    auto inOutType = makeFormat(input->getFormat());
+    const auto *inOutType = getFormatInfo(input->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inOutType->glslType(),
+                                      inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_out_t%", inOutType->glslType()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_out_t%", inOutType->glslType},
                                   });
 }
 
@@ -2097,18 +2086,18 @@ DescriptorMap Table::createDescriptorMap(const std::shared_ptr<TensorDescriptor>
 SpirvBinary Table::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                const std::shared_ptr<TensorDescriptor> &input,
                                const std::shared_ptr<TensorDescriptor> &output) const {
-    auto inType = makeFormat(input->getFormat());
-    auto outType = makeFormat(output->getFormat());
+    const auto *inType = getFormatInfo(input->getFormat());
+    const auto *outType = getFormatInfo(output->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inType->glslType(),
-                                      outType->glslType(),
+                                      inType->glslType,
+                                      outType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_t%", inType->glslType()},
-                                      {"%out_t%", outType->glslType()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_t%", inType->glslType},
+                                      {"%out_t%", outType->glslType},
                                   });
 }
 
@@ -2135,15 +2124,15 @@ DescriptorMap Tile::createDescriptorMap(const std::shared_ptr<TensorDescriptor> 
 
 SpirvBinary Tile::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                               const std::shared_ptr<TensorDescriptor> &output) const {
-    auto inOutType = makeFormat(output->getFormat());
+    const auto *inOutType = getFormatInfo(output->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inOutType->glslType(),
+                                      inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_out_t%", inOutType->glslType()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_out_t%", inOutType->glslType},
                                   });
 }
 
@@ -2179,15 +2168,15 @@ DescriptorMap Transpose::createDescriptorMap(const std::shared_ptr<TensorDescrip
 
 SpirvBinary Transpose::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                    const std::shared_ptr<TensorDescriptor> &output) const {
-    auto inOutType = makeFormat(output->getFormat());
+    const auto *inOutType = getFormatInfo(output->getFormat());
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inOutType->glslType(),
+                                      inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_out_t%", inOutType->glslType()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_out_t%", inOutType->glslType},
                                   });
 }
 
@@ -2250,26 +2239,26 @@ SpirvBinary TransposeConv2D::createSpirv(const std::shared_ptr<PipelineCache> &_
                                          const std::shared_ptr<TensorDescriptor> &output,
                                          const std::shared_ptr<TensorDescriptor> &weights,
                                          const uint32_t accType) const {
-    auto inType = makeFormat(input->getFormat());
-    auto outType = makeFormat(output->getFormat());
-    auto weightType = makeFormat(weights->getFormat());
-    auto accTypeType = makeFormat(accTypeVkFormat(accType));
+    const auto *inType = getFormatInfo(input->getFormat());
+    const auto *outType = getFormatInfo(output->getFormat());
+    const auto *weightType = getFormatInfo(weights->getFormat());
+    const auto *accTypeType = getFormatInfo(accTypeVkFormat(accType));
 
     return _pipelineCache->lookup(shaderName,
                                   {
-                                      inType->glslType(),
-                                      weightType->glslType(),
-                                      outType->glslType(),
-                                      accTypeType->glslType(),
+                                      inType->glslType,
+                                      weightType->glslType,
+                                      outType->glslType,
+                                      accTypeType->glslType,
                                   },
                                   {
-                                      {"%warpX%", std::to_string(warp1D)},
-                                      {"%in_t%", inType->glslType()},
-                                      {"%in_t_type%", inType->toInt()},
-                                      {"%out_t%", outType->glslType()},
-                                      {"%out_t_type%", outType->toInt()},
-                                      {"%weight_t%", weightType->glslType()},
-                                      {"%acc_t%", accTypeType->glslType()},
+                                      {"%warpX%", warpIdSv},
+                                      {"%in_t%", inType->glslType},
+                                      {"%in_t_type%", inType->typeId},
+                                      {"%out_t%", outType->glslType},
+                                      {"%out_t_type%", outType->typeId},
+                                      {"%weight_t%", weightType->glslType},
+                                      {"%acc_t%", accTypeType->glslType},
                                   });
 }
 
@@ -2803,18 +2792,18 @@ void GraphPipeline::makeReduceAny(const std::shared_ptr<TensorDescriptor> &input
 void GraphPipeline::makeReduceMax(const std::shared_ptr<TensorDescriptor> &input,
                                   const std::shared_ptr<TensorDescriptor> &output, const uint32_t axis,
                                   const uint32_t nanMode, const std::string &debugName) {
-    auto inOutType = makeFormat(output->getFormat());
+    const auto *inOutType = getFormatInfo(output->getFormat());
     const std::string init =
-        "(pushConstants.nanMode == NAN_MODE_IGNORE) ? IN_OUT_T(NAN) : IN_OUT_T(" + inOutType->lowest() + ')';
+        "(pushConstants.nanMode == NAN_MODE_IGNORE) ? IN_OUT_T(NAN) : IN_OUT_T(" + std::string(inOutType->lowest) + ')';
     makePipeline<Reduce>(input, output, axis, nanMode, debugName, init, "max(result, value)");
 }
 
 void GraphPipeline::makeReduceMin(const std::shared_ptr<TensorDescriptor> &input,
                                   const std::shared_ptr<TensorDescriptor> &output, const uint32_t axis,
                                   const uint32_t nanMode, const std::string &debugName) {
-    auto inOutType = makeFormat(output->getFormat());
+    const auto *inOutType = getFormatInfo(output->getFormat());
     const std::string init =
-        "(pushConstants.nanMode == NAN_MODE_IGNORE) ? IN_OUT_T(NAN) : IN_OUT_T(" + inOutType->max() + ')';
+        "(pushConstants.nanMode == NAN_MODE_IGNORE) ? IN_OUT_T(NAN) : IN_OUT_T(" + std::string(inOutType->max) + ')';
     makePipeline<Reduce>(input, output, axis, nanMode, debugName, init, "min(result, value)");
 }
 

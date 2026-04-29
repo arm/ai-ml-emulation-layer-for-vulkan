@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2024-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -11,6 +11,7 @@
  *******************************************************************************/
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -30,21 +31,19 @@ inline uint32_t divideRoundUp(const uint32_t value, const uint32_t divide) { ret
 
 std::vector<uint32_t> glslToSpirv(const std::string &glsl);
 
-class FormatBase {
-  public:
-    virtual ~FormatBase() {}
-
-    virtual bool isInteger() const = 0;
-    virtual bool isSigned() const = 0;
-    virtual std::string lowest() const = 0;
-    virtual std::string max() const = 0;
-    virtual std::string glslType() const = 0;
-    virtual std::string toInt() const = 0;
+struct FormatInfo {
+    bool isInteger;
+    bool isSigned;
+    std::string_view lowest;
+    std::string_view max;
+    std::string_view glslType;
+    std::string_view typeId;
+    std::string_view compType;
 };
 
-std::shared_ptr<FormatBase> makeFormat(VkFormat format);
+const FormatInfo *getFormatInfo(VkFormat format);
 
-std::shared_ptr<FormatBase> makeFormat(VkFormat format, bool isUnsigned);
+const FormatInfo *getFormatInfo(VkFormat format, bool isUnsigned);
 
 template <typename T> class Span {
   private:

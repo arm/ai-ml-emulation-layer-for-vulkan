@@ -229,7 +229,7 @@ TensorCopyPipeline::PushConstant TensorCopyPipeline::createPushConstant(const Te
 }
 
 VkShaderModule TensorCopyPipeline::createShaderModule(const TensorARM &srcTensor) const {
-    const auto srcType = makeFormat((srcTensor.getTensorInfo().format))->glslType();
+    const auto srcType = std::string(getFormatInfo(srcTensor.getTensorInfo().format)->glslType);
     const std::lock_guard lock(cacheMutex);
     auto &spirv = spirvCache[srcType];
     if (spirv.empty()) {

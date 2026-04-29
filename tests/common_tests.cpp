@@ -204,4 +204,93 @@ TEST(MLEmulationLayerFloat, Formats) {
     ASSERT_FALSE(std::isnormal(float(f16)));
 }
 
+struct ExpectedFormatInfo {
+    VkFormat format;
+    bool isInteger;
+    bool isSigned;
+    std::string lowest;
+    std::string max;
+    std::string_view glslType;
+    uint64_t typeId;
+    std::string_view compType;
+};
+
+template <typename T> constexpr int legacyCharType() {
+    if constexpr (std::numeric_limits<T>::is_integer) {
+        if constexpr (std::numeric_limits<T>::digits == 1) {
+            return 'b';
+        } else if constexpr (std::numeric_limits<T>::is_signed) {
+            return 'i';
+        } else {
+            return 'u';
+        }
+    } else {
+        return 'f';
+    }
+}
+
+template <typename T>
+ExpectedFormatInfo legacyFormat(VkFormat format, std::string_view glslType, std::string_view literalSuffix = "",
+                                std::string_view compType = "") {
+    constexpr auto typeId = uint64_t(legacyCharType<T>()) << 8 | ('0' + sizeof(T));
+    return {
+        format,
+        std::numeric_limits<T>::is_integer,
+        std::numeric_limits<T>::is_signed,
+        std::to_string(std::numeric_limits<T>::lowest()) + std::string(literalSuffix),
+        std::to_string(std::numeric_limits<T>::max()) + std::string(literalSuffix),
+        glslType,
+        typeId,
+        compType.empty() ? glslType : compType,
+    };
+}
+
+uint64_t parseTypeId(std::string_view typeId) { return std::stoull(std::string(typeId), nullptr, 0); }
+
+void expectFormatInfo(const ExpectedFormatInfo &expected) {
+    const auto *actual = getFormatInfo(expected.format);
+
+    ASSERT_NE(actual, nullptr);
+    EXPECT_EQ(actual->isInteger, expected.isInteger);
+    EXPECT_EQ(actual->isSigned, expected.isSigned);
+    EXPECT_EQ(actual->lowest, expected.lowest);
+    EXPECT_EQ(actual->max, expected.max);
+    EXPECT_EQ(actual->glslType, expected.glslType);
+    EXPECT_EQ(parseTypeId(actual->typeId), expected.typeId);
+    EXPECT_EQ(actual->compType, expected.compType);
+}
+
+TEST(MLEmulationLayerUtils, MakeFormatSupportedFormatsMatchLegacyFormatImplementation) {
+    const std::vector<ExpectedFormatInfo> expectedFormats = {
+        legacyFormat<int8_t>(VK_FORMAT_R8_SINT, "int8_t"),
+        legacyFormat<uint8_t>(VK_FORMAT_R8_UINT, "uint8_t", "u"),
+        legacyFormat<uint8_t>(VK_FORMAT_S8_UINT, "uint8_t", "u"),
+        legacyFormat<bool>(VK_FORMAT_R8_BOOL_ARM, "bool"),
+        legacyFormat<int16_t>(VK_FORMAT_R16_SINT, "int16_t"),
+        legacyFormat<uint16_t>(VK_FORMAT_R16_UINT, "uint16_t", "u"),
+        legacyFormat<float16>(VK_FORMAT_R16_SFLOAT, "float16_t"),
+        {VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM, false, true, "-3.3895313892515355e+38", "3.3895313892515355e+38",
+         "bfloat16_t", 0x6642, "float"},
+        {VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM, false, true, "-57344", "57344", "float8_e5m2_t", 0x664D,
+         "float16_t"},
+        {VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM, false, true, "-448", "448", "float8_e4m3_t", 0x664E,
+         "float16_t"},
+        legacyFormat<int32_t>(VK_FORMAT_R32_SINT, "int"),
+        legacyFormat<uint32_t>(VK_FORMAT_R32_UINT, "uint32_t", "u"),
+        legacyFormat<float>(VK_FORMAT_R32_SFLOAT, "float"),
+        legacyFormat<int64_t>(VK_FORMAT_R64_SINT, "int64_t", "ll"),
+        legacyFormat<uint64_t>(VK_FORMAT_R64_UINT, "uint64_t", "ull"),
+        legacyFormat<double>(VK_FORMAT_R64_SFLOAT, "double", "ll"),
+    };
+
+    for (const auto &expected : expectedFormats) {
+        SCOPED_TRACE(std::to_string(expected.format));
+        expectFormatInfo(expected);
+    }
+}
+
+TEST(MLEmulationLayerUtils, MakeFormatThrowsForUnsupportedFormat) {
+    EXPECT_THROW(static_cast<void>(getFormatInfo(VK_FORMAT_UNDEFINED)), std::runtime_error);
+}
+
 } // namespace

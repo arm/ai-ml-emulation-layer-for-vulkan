@@ -206,6 +206,7 @@ class ComputePipeline : public ComputePipelineBase {
     VkPipeline pipeline;
 
     static const uint32_t warp1D = 64;
+    static constexpr std::string_view warpIdSv = "64";
     static const uint32_t MAX_CONST_LEN = 32;
 };
 
@@ -531,7 +532,7 @@ class ElementwiseBinary : public ComputePipeline {
                       const std::shared_ptr<TensorDescriptor> &_input1,
                       const std::shared_ptr<TensorDescriptor> &_input2,
                       const std::shared_ptr<TensorDescriptor> &_output, uint32_t _nanMode, const std::string &debugName,
-                      const std::string &_operation);
+                      const std::string_view &_operation);
 
   private:
     struct PushConstant {
@@ -547,7 +548,7 @@ class ElementwiseBinary : public ComputePipeline {
     SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
                             const std::shared_ptr<TensorDescriptor> &input,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName,
-                            const std::string &operation) const;
+                            const std::string_view &operation) const;
 
     PushConstant pushConstant;
     static constexpr std::string_view shaderName = "elementwise_binary";
@@ -562,7 +563,7 @@ class ElementwiseUnary : public ComputePipeline {
     ElementwiseUnary(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader,
                      VkDevice _device, const std::shared_ptr<PipelineCache> &_pipelineCache,
                      const std::shared_ptr<TensorDescriptor> &_input1, const std::shared_ptr<TensorDescriptor> &_output,
-                     const std::string &debugName, const std::string &_operation);
+                     const std::string &debugName, const std::string_view &_operation);
 
   private:
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input1,
@@ -570,7 +571,7 @@ class ElementwiseUnary : public ComputePipeline {
 
     SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName,
-                            const std::string &operation) const;
+                            const std::string_view &operation) const;
 
     static constexpr std::string_view shaderName = "elementwise_unary";
 };
@@ -794,7 +795,7 @@ class Reduce : public ComputePipeline {
     Reduce(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, VkDevice _device,
            const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
            const std::shared_ptr<TensorDescriptor> &_output, uint32_t _axis, uint32_t _nanMode,
-           const std::string &debugName, const std::string &_init, const std::string &_operation);
+           const std::string &debugName, const std::string &_init, const std::string_view &_operation);
 
   private:
     struct PushConstant {
@@ -809,7 +810,7 @@ class Reduce : public ComputePipeline {
 
     SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &name,
-                            const std::string &init, const std::string &operation) const;
+                            const std::string &init, const std::string_view &operation) const;
 
     PushConstant pushConstant;
 

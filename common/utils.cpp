@@ -9,12 +9,10 @@
  *******************************************************************************/
 
 #include "mlel/utils.hpp"
-#include "mlel/float.hpp"
 #include "mlel/log.hpp"
 #include <functional>
 #include <glslang/Include/glslang_c_interface.h>
 #include <glslang/Public/resource_limits_c.h>
-#include <limits>
 
 using namespace mlsdk::el::log;
 
@@ -96,133 +94,113 @@ std::vector<uint32_t> glslToSpirv(const std::string &glsl) {
     return spirv;
 }
 
-template <typename T> class Format : public FormatBase {
-  public:
-    explicit Format(const std::string &_glslType, const std::string &_literalSuffix = "")
-        : _glslType{_glslType}, charType{getCharType()}, literalSuffix{_literalSuffix} {}
+namespace {
+// Type tags are local shader constants defined in graph/shaders/graph_op/common.comp.
+// They are encoded as two ASCII bytes: kind ('b', 'i', 'u', 'f') followed by byte size or reduced-float subtype.
+constexpr FormatInfo int8Format{true, true, "-128", "127", "int8_t", "0x6931", "int8_t"};
+constexpr FormatInfo uint8Format{true, false, "0u", "255u", "uint8_t", "0x7531", "uint8_t"};
+constexpr FormatInfo boolFormat{true, false, "0", "1", "bool", "0x6231", "bool"};
+constexpr FormatInfo int16Format{true, true, "-32768", "32767", "int16_t", "0x6932", "int16_t"};
+constexpr FormatInfo uint16Format{true, false, "0u", "65535u", "uint16_t", "0x7532", "uint16_t"};
+constexpr FormatInfo float16Format{false, true, "-65504.000000", "65504.000000", "float16_t", "0x6632", "float16_t"};
+constexpr FormatInfo bfloat16Format{false,    true,   "-3.3895313892515355e+38", "3.3895313892515355e+38", "bfloat16_t",
+                                    "0x6642", "float"};
+constexpr FormatInfo float8e5m2Format{false, true, "-57344", "57344", "float8_e5m2_t", "0x664D", "float16_t"};
+constexpr FormatInfo float8e4m3Format{false, true, "-448", "448", "float8_e4m3_t", "0x664E", "float16_t"};
+constexpr FormatInfo int32Format{true, true, "-2147483648", "2147483647", "int", "0x6934", "int"};
+constexpr FormatInfo uint32Format{true, false, "0u", "4294967295u", "uint32_t", "0x7534", "uint32_t"};
+constexpr FormatInfo float32Format{false,
+                                   true,
+                                   "-340282346638528859811704183484516925440.000000",
+                                   "340282346638528859811704183484516925440.000000",
+                                   "float",
+                                   "0x6634",
+                                   "float"};
+constexpr FormatInfo int64Format{true,     true,     "-9223372036854775808ll", "9223372036854775807ll", "int64_t",
+                                 "0x6938", "int64_t"};
+constexpr FormatInfo uint64Format{true, false, "0ull", "18446744073709551615ull", "uint64_t", "0x7538", "uint64_t"};
+constexpr FormatInfo doubleFormat{false,
+                                  true,
+                                  "-179769313486231570814527423731704356798070567525844996598917476803"
+                                  "157260780028538760589558632766878171540458953514382464234321326889"
+                                  "464182768467546703537516986049910576551282076245490090389328944075"
+                                  "868508455133942304583236903222948165808559332123348274797826204144"
+                                  "723168738177180919299881250404026184124858368.000000ll",
+                                  "179769313486231570814527423731704356798070567525844996598917476803"
+                                  "157260780028538760589558632766878171540458953514382464234321326889"
+                                  "464182768467546703537516986049910576551282076245490090389328944075"
+                                  "868508455133942304583236903222948165808559332123348274797826204144"
+                                  "723168738177180919299881250404026184124858368.000000ll",
+                                  "double",
+                                  "0x6638",
+                                  "double"};
+} // namespace
 
-    bool isInteger() const override { return std::numeric_limits<T>::is_integer; }
-    bool isSigned() const override { return std::numeric_limits<T>::is_signed; }
-    std::string lowest() const override { return std::to_string(std::numeric_limits<T>::lowest()) + literalSuffix; }
-    std::string max() const override { return std::to_string(std::numeric_limits<T>::max()) + literalSuffix; }
-    std::string glslType() const override { return _glslType; }
-    std::string toInt() const override { return std::to_string(uint64_t(charType) << 8 | ('0' + sizeof(T))); }
-
-  private:
-    const std::string _glslType;
-    const int charType;
-    const std::string literalSuffix;
-
-    static constexpr int getCharType() {
-        if constexpr (std::numeric_limits<T>::is_integer) {
-            if constexpr (std::numeric_limits<T>::digits == 1) {
-                return 'b';
-            } else if constexpr (std::numeric_limits<T>::is_signed) {
-                return 'i';
-            } else {
-                return 'u';
-            }
-        } else {
-            return 'f';
-        }
-    }
-};
-
-class BFloat16Format final : public FormatBase {
-  public:
-    bool isInteger() const override { return false; } // semantic float
-    bool isSigned() const override { return true; }
-    std::string lowest() const override { return "-3.3895313892515355e+38"; }
-    std::string max() const override { return "3.3895313892515355e+38"; }
-    std::string glslType() const override { return "bfloat16_t"; } // BF16 payload storage
-    std::string toInt() const override { return "0x6642"; }        // "fB"
-};
-
-class Float8E5M2Format final : public FormatBase {
-  public:
-    bool isInteger() const override { return false; } // semantic float
-    bool isSigned() const override { return true; }
-    std::string lowest() const override { return "-57344"; }          // IEEE-like f8e5m2 finite minimum
-    std::string max() const override { return "57344"; }              // IEEE-like f8e5m2 finite maximum
-    std::string glslType() const override { return "float8_e5m2_t"; } // FP8 payload storage
-    std::string toInt() const override { return "0x664D"; }           // "fM"
-};
-
-class Float8E4M3Format final : public FormatBase {
-  public:
-    bool isInteger() const override { return false; } // semantic float
-    bool isSigned() const override { return true; }
-    std::string lowest() const override { return "-448"; }            // IEEE-like f8e4m3 finite minimum
-    std::string max() const override { return "448"; }                // IEEE-like f8e4m3 finite maximum
-    std::string glslType() const override { return "float8_e4m3_t"; } // FP8 payload storage
-    std::string toInt() const override { return "0x664E"; }           // "fN"
-};
-
-std::shared_ptr<FormatBase> makeFormat(const VkFormat format) {
+const FormatInfo *getFormatInfo(const VkFormat format) {
     switch (format) {
     case VK_FORMAT_R8_SINT:
-        return std::make_shared<Format<int8_t>>("int8_t");
+        return &int8Format;
     case VK_FORMAT_R8_UINT:
     case VK_FORMAT_S8_UINT:
-        return std::make_shared<Format<uint8_t>>("uint8_t", "u");
+        return &uint8Format;
     case VK_FORMAT_R8_BOOL_ARM:
-        return std::make_shared<Format<bool>>("bool");
+        return &boolFormat;
     case VK_FORMAT_R16_SINT:
-        return std::make_shared<Format<int16_t>>("int16_t");
+        return &int16Format;
     case VK_FORMAT_R16_UINT:
-        return std::make_shared<Format<uint16_t>>("uint16_t", "u");
+        return &uint16Format;
     case VK_FORMAT_R16_SFLOAT:
-        return std::make_shared<Format<float16>>("float16_t");
+        return &float16Format;
     case VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM:
-        return std::make_shared<BFloat16Format>();
+        return &bfloat16Format;
     case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM:
-        return std::make_shared<Float8E5M2Format>();
+        return &float8e5m2Format;
     case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM:
-        return std::make_shared<Float8E4M3Format>();
+        return &float8e4m3Format;
     case VK_FORMAT_R32_SINT:
-        return std::make_shared<Format<int32_t>>("int");
+        return &int32Format;
     case VK_FORMAT_R32_UINT:
-        return std::make_shared<Format<uint32_t>>("uint32_t", "u");
+        return &uint32Format;
     case VK_FORMAT_R32_SFLOAT:
-        return std::make_shared<Format<float>>("float");
+        return &float32Format;
     case VK_FORMAT_R64_SINT:
-        return std::make_shared<Format<int64_t>>("int64_t", "ll");
+        return &int64Format;
     case VK_FORMAT_R64_UINT:
-        return std::make_shared<Format<uint64_t>>("uint64_t", "ull");
+        return &uint64Format;
     case VK_FORMAT_R64_SFLOAT:
-        return std::make_shared<Format<double>>("double", "ll");
+        return &doubleFormat;
     default:
         throw std::runtime_error("Unsupported tensor buffer format: " + std::to_string(format));
     }
 }
 
-std::shared_ptr<FormatBase> makeFormat(const VkFormat format, const bool isUnsigned) {
+const FormatInfo *getFormatInfo(const VkFormat format, const bool isUnsigned) {
     if (isUnsigned) {
         switch (format) {
         case VK_FORMAT_R8_SINT:
-            return makeFormat(VK_FORMAT_R8_UINT);
+            return getFormatInfo(VK_FORMAT_R8_UINT);
         case VK_FORMAT_R16_SINT:
-            return makeFormat(VK_FORMAT_R16_UINT);
+            return getFormatInfo(VK_FORMAT_R16_UINT);
         case VK_FORMAT_R32_SINT:
-            return makeFormat(VK_FORMAT_R32_UINT);
+            return getFormatInfo(VK_FORMAT_R32_UINT);
         case VK_FORMAT_R64_SINT:
-            return makeFormat(VK_FORMAT_R64_UINT);
+            return getFormatInfo(VK_FORMAT_R64_UINT);
         default:
-            return makeFormat(format);
+            return getFormatInfo(format);
         }
     } else {
         switch (format) {
         case VK_FORMAT_R8_UINT:
         case VK_FORMAT_S8_UINT:
-            return makeFormat(VK_FORMAT_R8_SINT);
+            return getFormatInfo(VK_FORMAT_R8_SINT);
         case VK_FORMAT_R16_UINT:
-            return makeFormat(VK_FORMAT_R16_SINT);
+            return getFormatInfo(VK_FORMAT_R16_SINT);
         case VK_FORMAT_R32_UINT:
-            return makeFormat(VK_FORMAT_R32_SINT);
+            return getFormatInfo(VK_FORMAT_R32_SINT);
         case VK_FORMAT_R64_UINT:
-            return makeFormat(VK_FORMAT_R64_SINT);
+            return getFormatInfo(VK_FORMAT_R64_SINT);
         default:
-            return makeFormat(format);
+            return getFormatInfo(format);
         }
     }
 }
