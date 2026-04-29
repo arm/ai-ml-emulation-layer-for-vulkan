@@ -60,7 +60,7 @@ class GraphPassBase : public Pass {
                                                                     uint32_t arrayIndex = 0);
     std::shared_ptr<mlsdk::el::compute::TensorDescriptor> getTensor(const Operand &operand, uint32_t arrayIndex = 0);
     std::shared_ptr<mlsdk::el::compute::TensorDescriptor> makeTensor(const analysis::TensorARM *tensor) const;
-    std::shared_ptr<mlsdk::el::compute::TensorDescriptor> getOrMakeCompositeTensor(uint32_t id) const;
+    std::shared_ptr<mlsdk::el::compute::TensorDescriptor> getOrMakeCompositeTensor(uint32_t id);
     std::shared_ptr<mlsdk::el::compute::TensorDescriptor> makeCompositeTensor(uint32_t id) const;
     VkFormat getVkFormat(const analysis::Type *type) const;
     bool getBoolConstant(const Operand &operand);
