@@ -27,6 +27,12 @@
 - Fixed shader/runtime issues, including Reduce and Pad ops.
 - Fixed `vkSetDebugUtilsObjectNameEXT` dispatch to use the device loader.
 
+### Bug Fixes
+
+- Fixed `vkCreateDevice` extension filtering.
+- Fixed Pad/Reduce shader issues and tensor out-of-bounds reads.
+- Fixed `vkSetDebugUtilsObjectNameEXT` to dispatch through the device loader.
+
 ## Version 0.8.0 – *API Coverage & Platform Expansion*
 
 ### New API
@@ -53,6 +59,14 @@
 
 - Added Darwin targets for AArch64 to the pip packaging matrix.
 - Refreshed SBOM data and adopted usage of `REUSE.toml`.
+
+### Bug Fixes
+
+- Fixed build-script packaging issues, including `setup.py` relative paths, bad
+  package names, and SDK-root `--install` failures.
+- Fixed `vkNegotiateLoaderLayerInterfaceVersion` handling in the Vulkan loader
+  integration.
+- Fixed `VkMemoryAllocateFlagsInfo` handling.
 
 ### Supported Platforms
 
