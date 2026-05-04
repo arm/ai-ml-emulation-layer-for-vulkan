@@ -2378,10 +2378,10 @@ std::shared_ptr<TensorDescriptor> GraphPipeline::getConstTensor(const uint32_t i
     return constTensorMap.at(id)->getTensorDescriptor();
 }
 
-std::shared_ptr<TensorDescriptor> GraphPipeline::makeConstCompositeTensor(const VkFormat format,
-                                                                          const std::vector<int64_t> &dimensions,
-                                                                          const void *data) {
-    auto tensorDescriptor = std::make_shared<TensorDescriptor>(loader, physicalDevice, device, format, dimensions);
+std::shared_ptr<TensorDescriptor>
+GraphPipeline::makeConstCompositeTensor(const VkFormat format, std::vector<int64_t> dimensions, const void *data) {
+    auto tensorDescriptor =
+        std::make_shared<TensorDescriptor>(loader, physicalDevice, device, format, std::move(dimensions));
     auto tensor = TensorDescriptor::makeTensor(tensorDescriptor);
     auto *const deviceMemory = tensorDescriptor->createInitializeDeviceMemory(data);
 
@@ -2422,10 +2422,10 @@ std::shared_ptr<TensorDescriptor> GraphPipeline::getTensor(const uint32_t set, c
     return tensorMap.at(set).at(binding).at(arrayIndex);
 }
 
-std::shared_ptr<TensorDescriptor> GraphPipeline::makeTensor(const VkFormat format,
-                                                            const std::vector<int64_t> &dimensions,
-                                                            const std::vector<int64_t> &strides) {
-    auto tensor = std::make_shared<TensorDescriptor>(loader, physicalDevice, device, format, dimensions, strides);
+std::shared_ptr<TensorDescriptor> GraphPipeline::makeTensor(const VkFormat format, std::vector<int64_t> dimensions,
+                                                            std::vector<int64_t> strides) {
+    auto tensor = std::make_shared<TensorDescriptor>(loader, physicalDevice, device, format, std::move(dimensions),
+                                                     std::move(strides));
 
     auto [iterator, inserted] = tensorSet.insert(tensor);
 

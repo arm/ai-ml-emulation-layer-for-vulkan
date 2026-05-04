@@ -62,7 +62,10 @@ class GraphPassBase : public Pass {
     std::shared_ptr<mlsdk::el::compute::TensorDescriptor> makeCompositeTensor(uint32_t id) const;
     VkFormat getVkFormat(const analysis::Type *type) const;
     bool getBoolConstant(const Operand &operand);
-    std::string extractDebugInfoFromSPV(const Instruction *opExtInst, const std::string &defaultname);
+
+    // Temp implementation until debug info is truly available
+    std::string extractDebugInfoFromSPV(const Instruction *, const std::string &defaultname) { return defaultname; }
+
     template <typename T = uint32_t> std::vector<T> getConstVector(const Operand &operand) const {
         return getConstVector<T>(operand.AsId());
     }
@@ -70,7 +73,9 @@ class GraphPassBase : public Pass {
     template <typename T = uint32_t>
     void getFlattenedCompositeConstant(const spvtools::opt::analysis::CompositeConstant *composite,
                                        std::vector<T> &kernel) const {
-        for (const auto *component : composite->GetComponents()) {
+        const auto &components = composite->GetComponents();
+        kernel.reserve(kernel.size() + components.size());
+        for (const auto *component : components) {
             if (const auto *innerComposite = component->AsCompositeConstant()) {
                 getFlattenedCompositeConstant(innerComposite, kernel);
             } else {
@@ -80,7 +85,7 @@ class GraphPassBase : public Pass {
     }
 
     template <typename T = uint32_t> std::vector<T> getConstVector(const uint32_t id) const {
-        const auto &constant = context()->get_constant_mgr()->FindDeclaredConstant(id);
+        const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(id);
         std::vector<T> kernel;
 
         if (const auto *composite = constant->AsCompositeConstant()) {
@@ -98,7 +103,7 @@ class GraphPassBase : public Pass {
             if (const auto *tensor = constant->type()->AsTensorARM()) {
                 // TensorARM: zero-initialize a composite tensor with the total element count
                 const auto elemCount = getElementCount(tensor->shape_id());
-                kernel.resize(elemCount);
+                kernel.resize(elemCount, 0);
             } else {
                 assert(false);
             }
@@ -114,74 +119,81 @@ class GraphPassBase : public Pass {
     }
 
     template <typename T = int64_t> T getConstScalar(const analysis::Constant *constant) const {
-        const auto *intConstant = constant->AsIntConstant();
-        if (intConstant) {
-            const auto *type = intConstant->type()->AsInteger();
+        if constexpr (std::is_integral_v<T>) {
+            const auto *intConstant = constant->AsIntConstant();
+            if (intConstant) {
+                const auto *type = intConstant->type()->AsInteger();
 
-            if (type->IsSigned()) {
-                return static_cast<T>(constant->GetSignExtendedValue());
+                if (type->IsSigned()) {
+                    return static_cast<T>(constant->GetSignExtendedValue());
+                }
+
+                switch (type->width()) {
+                case 8:
+                    return T(int8_t(constant->GetZeroExtendedValue()));
+                case 16:
+                    return T(int16_t(constant->GetZeroExtendedValue()));
+                case 32:
+                    return T(int32_t(constant->GetZeroExtendedValue()));
+                case 64:
+                    return T(int64_t(constant->GetZeroExtendedValue()));
+                default:
+                    throw std::runtime_error(std::string("Unsupported integer constant width: ") +
+                                             std::to_string(type->width()));
+                }
             }
+        } else if constexpr (std::is_floating_point_v<T>) {
+            const auto *floatConstant = constant->AsFloatConstant();
+            if (floatConstant) {
+                const auto *type = floatConstant->type()->AsFloat();
 
-            switch (type->width()) {
-            case 8:
-                return T(int8_t(constant->GetZeroExtendedValue()));
-            case 16:
-                return T(int16_t(constant->GetZeroExtendedValue()));
-            case 32:
-                return T(int32_t(constant->GetZeroExtendedValue()));
-            case 64:
-                return T(int64_t(constant->GetZeroExtendedValue()));
-            default:
-                throw std::runtime_error(std::string("Unsupported integer constant width: ") +
-                                         std::to_string(type->width()));
-            }
-        }
-
-        const auto *floatConstant = constant->AsFloatConstant();
-        if (floatConstant) {
-            const auto *type = floatConstant->type()->AsFloat();
-
-            switch (type->width()) {
-            case 8: {
-                if (type->encoding() == spv::FPEncoding::Float8E5M2EXT) {
-                    const auto value = uint8_t(floatConstant->words()[0]);
-                    const auto &fp = reinterpret_cast<const float8_e5m2 &>(value);
+                switch (type->width()) {
+                case 8: {
+                    if (type->encoding() == spv::FPEncoding::Float8E5M2EXT) {
+                        const auto value = uint8_t(floatConstant->words()[0]);
+                        const auto &fp = reinterpret_cast<const float8_e5m2 &>(value);
+                        return T(fp);
+                    }
+                    if (type->encoding() == spv::FPEncoding::Float8E4M3EXT) {
+                        const auto value = uint8_t(floatConstant->words()[0]);
+                        const auto &fp = reinterpret_cast<const float8_e4m3 &>(value);
+                        return T(fp);
+                    }
+                    throw std::runtime_error(std::string("Unsupported 8-bit float encoding: ") +
+                                             std::to_string(static_cast<uint32_t>(type->encoding())));
+                }
+                case 16: {
+                    const auto value = uint16_t(floatConstant->words()[0]);
+                    const auto &fp = reinterpret_cast<const float16 &>(value);
                     return T(fp);
                 }
-                if (type->encoding() == spv::FPEncoding::Float8E4M3EXT) {
-                    const auto value = uint8_t(floatConstant->words()[0]);
-                    const auto &fp = reinterpret_cast<const float8_e4m3 &>(value);
-                    return T(fp);
+                case 32:
+                    return T(floatConstant->GetFloatValue());
+                case 64:
+                    return T(floatConstant->GetDoubleValue());
+                default:
+                    throw std::runtime_error(std::string("Unsupported constant float width: ") +
+                                             std::to_string(type->width()));
                 }
-                throw std::runtime_error(std::string("Unsupported 8-bit float encoding: ") +
-                                         std::to_string(static_cast<uint32_t>(type->encoding())));
             }
-            case 16: {
-                const auto value = uint16_t(floatConstant->words()[0]);
-                const auto &fp = reinterpret_cast<const float16 &>(value);
-                return T(fp);
-            }
-            case 32:
-                return T(floatConstant->GetFloatValue());
-            case 64:
-                return T(floatConstant->GetDoubleValue());
-            default:
-                throw std::runtime_error(std::string("Unsupported constant float width: ") +
-                                         std::to_string(type->width()));
+        } else if constexpr (std::is_same_v<T, bool>) {
+            const auto *boolConstant = constant->AsBoolConstant();
+            if (boolConstant) {
+                return boolConstant->value();
             }
         }
-
-        const auto *boolConstant = constant->AsBoolConstant();
-        if (boolConstant) {
-            return T(boolConstant->value() ? 1 : 0);
-        }
-
         throw std::runtime_error(std::string("Unsupported constant type: ") + std::to_string(constant->type()->kind()));
     }
+
+    static bool isBFloat16(const spvtools::opt::analysis::Float *f);
+    static bool isFloat8E5M2(const spvtools::opt::analysis::Float *f);
+    static bool isFloat8E4M3(const spvtools::opt::analysis::Float *f);
 
     GraphPipeline &graphPipeline;
 
   private:
+    // Local cache from SPIR-V result id to the tensor descriptors used while lowering a graph.
+    // Slot 1 is for multi-result logical values (for example FFT-style ops), not descriptor array elements.
     std::map<uint32_t, std::array<std::shared_ptr<mlsdk::el::compute::TensorDescriptor>, 2>> tensorMap;
 
     size_t getElementCount(uint32_t id) const;

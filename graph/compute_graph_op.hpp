@@ -1203,7 +1203,7 @@ class GraphPipeline {
     // Constant tensors owned by the pipeline
     void makeConstTensor(uint32_t id, const VkTensorDescriptionARM &tensorDescription, const void *data);
     std::shared_ptr<TensorDescriptor> getConstTensor(uint32_t id) const;
-    std::shared_ptr<TensorDescriptor> makeConstCompositeTensor(VkFormat format, const std::vector<int64_t> &dimensions,
+    std::shared_ptr<TensorDescriptor> makeConstCompositeTensor(VkFormat format, std::vector<int64_t> dimensions,
                                                                const void *data);
 
     // External tensors owned by the application
@@ -1212,8 +1212,8 @@ class GraphPipeline {
     std::shared_ptr<TensorDescriptor> getTensor(uint32_t set, uint32_t binding, uint32_t arrayIndex = 0) const;
 
     // Tensors allocated in session ram
-    std::shared_ptr<TensorDescriptor> makeTensor(VkFormat format, const std::vector<int64_t> &dimensions = {},
-                                                 const std::vector<int64_t> &strides = {});
+    std::shared_ptr<TensorDescriptor> makeTensor(VkFormat format, std::vector<int64_t> dimensions = {},
+                                                 std::vector<int64_t> strides = {});
 
     const std::vector<std::shared_ptr<TensorDescriptor>> &getTensors() const;
 

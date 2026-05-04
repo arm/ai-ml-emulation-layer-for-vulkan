@@ -39,13 +39,13 @@ void GraphPassTosaSpv100::handleGraph(const Graph *graph) {
         }
 
         const auto &resultId = opExtInst->GetInOperand(0);
-        const auto &importInstr = get_def_use_mgr()->GetDef(resultId.AsId());
+        const auto *importInstr = get_def_use_mgr()->GetDef(resultId.AsId());
         const auto &importName = importInstr->GetInOperand(0).AsString();
 
         if (importName == tosaSpv100) {
-            handleTosaInst(&*opExtInst);
+            handleTosaInst(opExtInst.get());
         } else if (importName == motionEngine100) {
-            handleMotionEngineInst(&*opExtInst);
+            handleMotionEngineInst(opExtInst.get());
         } else {
             throw std::runtime_error(std::string("Unsupported extension ") + importName);
         }
@@ -428,26 +428,26 @@ void GraphPassTosaSpv100::handleClamp(const Instruction *opExtInst, const std::s
     // OpExtInst <result id> <OpExtInstImport id> CLAMP minVal maxVal nanMode input
     assert(opExtInst->NumInOperands() == 6);
 
-    auto getClampBound = [&](const Operand &operand) -> double {
+    auto getClampBound = [&](const Operand &operand) {
         const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(operand.AsId());
         const auto *floatConstant = constant->AsFloatConstant();
         if (floatConstant != nullptr) {
             const auto *type = floatConstant->type()->AsFloat();
-            if (type != nullptr && type->width() == 16 && type->encoding() == spv::FPEncoding::BFloat16KHR) {
+            if (GraphPassBase::isBFloat16(type)) {
                 const uint32_t bits = uint32_t(uint16_t(floatConstant->words()[0])) << 16;
                 float value = 0.0F;
                 std::memcpy(&value, &bits, sizeof(value));
-                return double(value);
+                return real_t(value);
             }
         }
 
-        return getConstScalar<double>(constant);
+        return getConstScalar<real_t>(constant);
     };
 
     const auto &resultId = opExtInst->result_id();
     const auto minVal = getClampBound(opExtInst->GetInOperand(2));
     const auto maxVal = getClampBound(opExtInst->GetInOperand(3));
-    const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(4));
+    const auto nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(4));
     const auto &inputId = opExtInst->GetInOperand(5);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", minVal=" << minVal
@@ -748,8 +748,7 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
         const auto *floatConstant = scalar->AsFloatConstant();
         const auto *floatType = floatConstant == nullptr ? nullptr : floatConstant->type()->AsFloat();
         if (output->getFormat() == VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM) {
-            if (floatType == nullptr || floatType->width() != 16 ||
-                floatType->encoding() != spv::FPEncoding::BFloat16KHR) {
+            if (!GraphPassBase::isBFloat16(floatType)) {
                 throw std::runtime_error("Unsupported BF16 PAD constant encoding");
             }
 
@@ -759,8 +758,7 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
             std::memcpy(&fp32Value, &fp32Bits, sizeof(fp32Bits));
             padConst = real_t(fp32Value);
         } else if (output->getFormat() == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM) {
-            if (floatType == nullptr || floatType->width() != 8 ||
-                floatType->encoding() != spv::FPEncoding::Float8E5M2EXT) {
+            if (!GraphPassBase::isFloat8E5M2(floatType)) {
                 throw std::runtime_error("Unsupported FLOAT8E5M2 PAD constant encoding");
             }
 
@@ -768,16 +766,13 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
             const auto &fp = reinterpret_cast<const float8_e5m2 &>(f8);
             padConst = real_t(fp);
         } else if (output->getFormat() == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM) {
-            if (floatType == nullptr || floatType->width() != 8 ||
-                floatType->encoding() != spv::FPEncoding::Float8E4M3EXT) {
+            if (!GraphPassBase::isFloat8E4M3(floatType)) {
                 throw std::runtime_error("Unsupported FLOAT8E4M3 PAD constant encoding");
             }
 
             const auto f8 = uint8_t(floatConstant->words()[0]);
             const auto &fp = reinterpret_cast<const float8_e4m3 &>(f8);
             padConst = real_t(fp);
-        } else {
-            throw std::runtime_error("Unsupported ouput format for PAD operation");
         }
     } else if (output->getFormat() == VK_FORMAT_R32_SINT) {
         const auto &padConstVector = getConstVector<int32_t>(opExtInst->GetInOperand(4));
