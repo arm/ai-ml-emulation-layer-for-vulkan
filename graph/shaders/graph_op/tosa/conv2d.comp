@@ -14,7 +14,7 @@
 DEFINE_CONV_ACC_CASTS(ACC_T, OUT_T, TYPE_IN, TYPE_OUT)
 
 #if TYPE_ACC == TYPE_INT64
-    #define VEC4 dvec4
+    #define VEC4 i64vec4
 #elif TYPE_ACC == TYPE_INT32
     #define VEC4 ivec4
 #else

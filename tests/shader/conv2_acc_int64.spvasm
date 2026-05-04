@@ -1,0 +1,75 @@
+;
+; SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+; SPDX-License-Identifier: Apache-2.0
+;
+               OpCapability VulkanMemoryModel
+               OpCapability Shader
+               OpCapability Int8
+               OpCapability Int16
+               OpCapability Int64
+               OpCapability TensorsARM
+               OpCapability GraphARM
+               OpExtension "SPV_ARM_tensors"
+               OpExtension "SPV_ARM_graph"
+       %tosa = OpExtInstImport "TOSA.001000.1"
+               OpMemoryModel Logical Vulkan
+               OpName %conv2d_arg_0 "conv2d_arg_0"
+               OpName %conv2d_arg_1 "conv2d_arg_1"
+               OpName %conv2d_arg_2 "conv2d_arg_2"
+               OpName %conv2d_res_0 "conv2d_res_0"
+               OpDecorate %conv2d_arg_0 Binding 0
+               OpDecorate %conv2d_arg_0 DescriptorSet 0
+               OpDecorate %conv2d_arg_1 Binding 1
+               OpDecorate %conv2d_arg_1 DescriptorSet 0
+               OpDecorate %conv2d_arg_2 Binding 2
+               OpDecorate %conv2d_arg_2 DescriptorSet 0
+               OpDecorate %conv2d_res_0 Binding 3
+               OpDecorate %conv2d_res_0 DescriptorSet 0
+      %uchar = OpTypeInt 8 0
+     %ushort = OpTypeInt 16 0
+      %ulong = OpTypeInt 64 0
+       %uint = OpTypeInt 32 0
+       %bool = OpTypeBool
+     %uint_0 = OpConstant %uint 0
+     %uint_1 = OpConstant %uint 1
+     %uint_2 = OpConstant %uint 2
+     %uint_4 = OpConstant %uint 4
+      %false = OpConstantFalse %bool
+%shape_rank_1 = OpTypeArray %uint %uint_1
+%shape_rank_4 = OpTypeArray %uint %uint_4
+%input_shape = OpConstantComposite %shape_rank_4 %uint_1 %uint_2 %uint_2 %uint_4
+%input_tensor = OpTypeTensorARM %ushort %uint_4 %input_shape
+%ptr_input_tensor = OpTypePointer UniformConstant %input_tensor
+%conv2d_arg_0 = OpVariable %ptr_input_tensor UniformConstant
+%weight_shape = OpConstantComposite %shape_rank_4 %uint_4 %uint_1 %uint_1 %uint_4
+%weight_tensor = OpTypeTensorARM %uchar %uint_4 %weight_shape
+%ptr_weight_tensor = OpTypePointer UniformConstant %weight_tensor
+%conv2d_arg_1 = OpVariable %ptr_weight_tensor UniformConstant
+%bias_shape = OpConstantComposite %shape_rank_1 %uint_4
+%scalar_shape = OpConstantComposite %shape_rank_1 %uint_1
+%bias_tensor = OpTypeTensorARM %ulong %uint_1 %bias_shape
+%ptr_bias_tensor = OpTypePointer UniformConstant %bias_tensor
+%conv2d_arg_2 = OpVariable %ptr_bias_tensor UniformConstant
+%output_shape = OpConstantComposite %shape_rank_4 %uint_1 %uint_2 %uint_2 %uint_4
+%output_tensor = OpTypeTensorARM %ulong %uint_4 %output_shape
+%ptr_output_tensor = OpTypePointer UniformConstant %output_tensor
+%conv2d_res_0 = OpVariable %ptr_output_tensor UniformConstant
+%graph_type = OpTypeGraphARM 3 %input_tensor %weight_tensor %bias_tensor %output_tensor
+%pad_tensor = OpTypeTensorARM %uint %uint_1 %bias_shape
+%pad = OpConstantNull %pad_tensor
+%vec2_shape = OpConstantComposite %shape_rank_1 %uint_2
+%vec2_tensor = OpTypeTensorARM %uint %uint_1 %vec2_shape
+%stride = OpConstantComposite %vec2_tensor %uint_1 %uint_1
+%dilation = OpConstantComposite %vec2_tensor %uint_1 %uint_1
+%input_zero_point_tensor = OpTypeTensorARM %ushort %uint_1 %scalar_shape
+%input_zero_point = OpConstantNull %input_zero_point_tensor
+%weight_zero_point_tensor = OpTypeTensorARM %uchar %uint_1 %scalar_shape
+%weight_zero_point = OpConstantNull %weight_zero_point_tensor
+               OpGraphEntryPointARM %conv2d_graph "conv2d_int64" %conv2d_arg_0 %conv2d_arg_1 %conv2d_arg_2 %conv2d_res_0
+%conv2d_graph = OpGraphARM %graph_type
+%input = OpGraphInputARM %input_tensor %uint_0
+%weight = OpGraphInputARM %weight_tensor %uint_1
+%bias = OpGraphInputARM %bias_tensor %uint_2
+%output = OpExtInst %output_tensor %tosa CONV2D %pad %stride %dilation %uint_4 %false %input %weight %bias %input_zero_point %weight_zero_point
+               OpGraphSetOutputARM %output %uint_0
+               OpGraphEndARM
