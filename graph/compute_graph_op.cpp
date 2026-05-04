@@ -215,7 +215,7 @@ VkPipelineLayout ComputePipelineLayout::getVkPipelineLayout() const { return pip
 
 const DescriptorMap &ComputePipelineLayout::getDescriptorMap() const { return descriptorMap; }
 
-std::shared_ptr<TensorDescriptor> ComputePipelineLayout::getTensor(const uint32_t set) {
+const std::shared_ptr<TensorDescriptor> &ComputePipelineLayout::getTensorForSet(const uint32_t set) const {
     for (const auto &descriptor : descriptorMap) {
         if (descriptor.id.set == set && descriptor.direction == Output) {
             return descriptor.tensor;
@@ -504,7 +504,9 @@ ComputePipelineBase::~ComputePipelineBase() = default;
 
 void ComputePipelineBase::cmdBindAndDispatch(VkCommandBuffer, const ComputeDescriptorSetMap &) {}
 
-std::shared_ptr<ComputePipelineLayout> ComputePipelineBase::getComputePipelineLayout() const { return pipelineLayout; }
+const std::shared_ptr<ComputePipelineLayout> &ComputePipelineBase::getComputePipelineLayout() const {
+    return pipelineLayout;
+}
 
 const std::vector<std::shared_ptr<VirtualTensor>> &ComputePipelineBase::getParents() const { return parents; }
 
@@ -556,7 +558,7 @@ void ComputePipeline::cmdBindAndDispatch(VkCommandBuffer commandBuffer,
 
 void ComputePipeline::cmdDispatch(VkCommandBuffer commandBuffer) {
     // Get first output tensor
-    const auto &tensor = pipelineLayout->getTensor(0);
+    const auto &tensor = pipelineLayout->getTensorForSet(0);
     const auto &size = uint32_t(tensor->getShapeSize());
 
     const auto groupCountX = static_cast<uint32_t>(std::ceil(std::sqrt(double(divideRoundUp(size, warp1D)))));
@@ -890,7 +892,7 @@ DescriptorMap Concat::createDescriptorMap(const std::shared_ptr<TensorDescriptor
 }
 
 void Concat::cmdDispatch(VkCommandBuffer commandBuffer) {
-    const auto &tensor = pipelineLayout->getTensor(1);
+    const auto &tensor = pipelineLayout->getTensorForSet(1);
     const auto &size = uint32_t(tensor->getShapeSize());
 
     const auto groupCountX = static_cast<uint32_t>(std::ceil(std::sqrt(double(divideRoundUp(size, warp1D)))));
@@ -1000,7 +1002,7 @@ SpirvBinary Conv2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
 
 void Conv2D::cmdDispatch(VkCommandBuffer commandBuffer) {
     // Get first output tensor
-    const auto &tensor = pipelineLayout->getTensor(0);
+    const auto &tensor = pipelineLayout->getTensorForSet(0);
     const auto &dimensions = tensor->getDimensions();
     loader->vkCmdDispatch(commandBuffer, divideRoundUp(static_cast<uint32_t>(dimensions[0] * dimensions[2]), warpX),
                           divideRoundUp(static_cast<uint32_t>(dimensions[1]), warpY),
@@ -2346,7 +2348,7 @@ SpecConstants BlockMatch::createSpecConstants(const std::vector<uint32_t> &kerne
 }
 
 void BlockMatch::cmdDispatch(VkCommandBuffer commandBuffer) {
-    const auto &tensor = pipelineLayout->getTensor(0);
+    const auto &tensor = pipelineLayout->getTensorForSet(0);
     const auto &dimensions = tensor->getDimensions();
     loader->vkCmdDispatch(commandBuffer, divideRoundUp(static_cast<uint32_t>(dimensions[3]), warpX),
                           divideRoundUp(static_cast<uint32_t>(dimensions[2]), warpY), 1);
@@ -2407,13 +2409,7 @@ ComputeDescriptorSetMap GraphPipeline::makeConstantsDescriptorSets() const {
         filter[tensor->getTensorDescriptor()] = tensor;
     }
 
-    ComputeDescriptorSetMap mapping;
-    for (const auto &pipeline : pipelines) {
-        const auto &pipelineLayout = pipeline->getComputePipelineLayout();
-        pipelineLayout->makeDescriptorSets(mapping, filter);
-    }
-
-    return mapping;
+    return getComputeDescriptorSetMap(filter);
 }
 
 void GraphPipeline::makeDescriptorSetBinding(const uint32_t set, const uint32_t binding, const uint32_t arrayIndex,
@@ -2454,13 +2450,7 @@ ComputeDescriptorSetMap GraphPipeline::makeSessionRamDescriptorSets() const {
         filter[tensorDescriptor] = TensorDescriptor::makeTensor(tensorDescriptor);
     }
 
-    ComputeDescriptorSetMap mapping;
-    for (const auto &pipeline : pipelines) {
-        const auto &pipelineLayout = pipeline->getComputePipelineLayout();
-        pipelineLayout->makeDescriptorSets(mapping, filter);
-    }
-
-    return mapping;
+    return getComputeDescriptorSetMap(filter);
 }
 
 ComputeDescriptorSetMap GraphPipeline::makeExternalDescriptorSets(const uint32_t set) const {
@@ -2469,13 +2459,15 @@ ComputeDescriptorSetMap GraphPipeline::makeExternalDescriptorSets(const uint32_t
         return {};
     }
 
-    const auto &filter = filterIt->second;
+    return getComputeDescriptorSetMap(filterIt->second);
+}
+
+ComputeDescriptorSetMap GraphPipeline::getComputeDescriptorSetMap(const TensorDescriptorMap &filter) const {
     ComputeDescriptorSetMap mapping;
     for (const auto &pipeline : pipelines) {
         const auto &pipelineLayout = pipeline->getComputePipelineLayout();
         pipelineLayout->makeDescriptorSets(mapping, filter);
     }
-
     return mapping;
 }
 

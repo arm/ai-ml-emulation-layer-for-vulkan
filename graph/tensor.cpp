@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2024-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -40,7 +40,7 @@ Tensor::~Tensor() {
     }
 }
 
-std::shared_ptr<TensorDescriptor> Tensor::getTensorDescriptor() const { return tensorDescriptor; }
+const std::shared_ptr<TensorDescriptor> &Tensor::getTensorDescriptor() const { return tensorDescriptor; }
 
 VkTensorARM Tensor::getVkTensorARM() const { return tensorARM; }
 
@@ -350,7 +350,7 @@ bool VirtualTensor::getVisited() const { return visited; }
 
 void VirtualTensor::setVisited(const bool _visited) { visited = _visited; }
 
-std::shared_ptr<TensorDescriptor> VirtualTensor::getTensor() const { return tensor; }
+const std::shared_ptr<TensorDescriptor> &VirtualTensor::getTensor() const { return tensor; }
 
 ComputePipelineBase *VirtualTensor::getParentPipeline() const { return parent; }
 

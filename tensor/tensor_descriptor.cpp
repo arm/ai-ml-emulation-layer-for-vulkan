@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -55,7 +55,7 @@ VkResult TensorDescriptor::create(const Device &dev, const VkTensorViewCreateInf
 
 VkBuffer TensorDescriptor::getTensorDescriptorBuffer(const Device &dev, VkTensorARM tensorHandle) {
     auto *tensor = reinterpret_cast<TensorARM *>(tensorHandle);
-    const auto info = tensor->getTensorInfo();
+    const auto &info = tensor->getTensorInfo();
 
     DescriptorBuffer *descriptor;
     VkResult result =
