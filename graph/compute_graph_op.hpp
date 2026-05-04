@@ -124,7 +124,7 @@ class ComputePipelineLayout {
 
     VkPipelineLayout getVkPipelineLayout() const;
     const DescriptorMap &getDescriptorMap() const;
-    std::shared_ptr<TensorDescriptor> getTensor(uint32_t set);
+    const std::shared_ptr<TensorDescriptor> &getTensorForSet(uint32_t set) const;
 
     void makeDescriptorSets(ComputeDescriptorSetMap &mapping, const TensorDescriptorMap &filter) const;
     void cmdBindAndDispatch(VkCommandBuffer commandBuffer, const ComputeDescriptorSetMap &descriptorSetMap);
@@ -161,7 +161,7 @@ class ComputePipelineBase {
 
     virtual void cmdBindAndDispatch(VkCommandBuffer commandBuffer, const ComputeDescriptorSetMap &descriptorSetMap);
 
-    std::shared_ptr<ComputePipelineLayout> getComputePipelineLayout() const;
+    const std::shared_ptr<ComputePipelineLayout> &getComputePipelineLayout() const;
 
     const std::vector<std::shared_ptr<VirtualTensor>> &getParents() const;
     void pushParent(const std::shared_ptr<VirtualTensor> &tensor);
@@ -1497,6 +1497,8 @@ class GraphPipeline {
         auto pipeline = std::make_shared<PipelineT>(loader, device, pipelineCache, std::forward<Args>(args)...);
         pipelines.emplace_back(std::move(pipeline));
     }
+
+    ComputeDescriptorSetMap getComputeDescriptorSetMap(const TensorDescriptorMap &filter) const;
 
     std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> loader;
     VkPhysicalDevice physicalDevice;

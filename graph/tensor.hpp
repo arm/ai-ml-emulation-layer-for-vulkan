@@ -35,7 +35,7 @@ class Tensor {
 
     ~Tensor();
 
-    std::shared_ptr<TensorDescriptor> getTensorDescriptor() const;
+    const std::shared_ptr<TensorDescriptor> &getTensorDescriptor() const;
     VkTensorARM getVkTensorARM() const;
     VkTensorViewARM getVkTensorViewARM() const;
 
@@ -127,7 +127,7 @@ class VirtualTensor {
     bool getVisited() const;
     void setVisited(bool _visited);
 
-    std::shared_ptr<TensorDescriptor> getTensor() const;
+    const std::shared_ptr<TensorDescriptor> &getTensor() const;
     ComputePipelineBase *getParentPipeline() const;
     ComputePipelineBase *getDescendantPipeline() const;
 

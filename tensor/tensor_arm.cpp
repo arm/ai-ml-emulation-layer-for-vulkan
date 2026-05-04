@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -340,7 +340,7 @@ VkPipelineLayout TensorCopyPipeline::createPipelineLayout() const {
 }
 
 VkPipeline TensorCopyPipeline::createPipeline(const TensorARM &srcTensor) const {
-    uint32_t rank = uint32_t(srcTensor.getTensorInfo().dimensions.size());
+    const auto rank = static_cast<uint32_t>(srcTensor.getTensorInfo().dimensions.size());
     const VkSpecializationMapEntry entry = {
         0,               // constantID
         0,               // offset

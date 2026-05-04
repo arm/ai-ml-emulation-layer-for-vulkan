@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -43,7 +43,7 @@ class TensorARM {
     TensorARM &operator=(const TensorARM &) = delete;
 
     VkBuffer getTensorBuffer() const { return m_tensorBuffer; };
-    TensorInfo getTensorInfo() const { return m_info; };
+    const TensorInfo &getTensorInfo() const { return m_info; };
 
     VkResult create(const Device &dev, const VkTensorCreateInfoARM &createInfo, const VkAllocationCallbacks *allocator);
     void destroy(const Device &dev, const VkAllocationCallbacks *pAllocator);
