@@ -10,12 +10,13 @@
 
 #include "mlel/vulkan_layer.hpp"
 
-#include "tensor_log.hpp"
-
 #include "descriptor_binding.hpp"
 #include "tensor_arm.hpp"
+#include "tensor_log.hpp"
 #include "tensor_processor.hpp"
 #include "tensor_view.hpp"
+#include "version.hpp"
+
 #include <limits>
 #include <memory>
 #include <variant>
@@ -987,6 +988,8 @@ vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *pNegotiateLaye
     if (pNegotiateLayerInterface->loaderLayerInterfaceVersion < 2) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
+
+    tensorLog(Severity::Info) << mlsdk::el::details::version << std::endl;
 
     pNegotiateLayerInterface->loaderLayerInterfaceVersion = 2;
     pNegotiateLayerInterface->pfnGetInstanceProcAddr = TensorLayer::vkGetInstanceProcAddr;

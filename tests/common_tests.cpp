@@ -50,8 +50,8 @@ TEST(MLEmulationLayerLog, Vectors) {
     const std::vector<std::string> strVector{"Hello", "World", "!"};
     const std::vector<int> intVector{1, 2, 3, 4, 5};
 
-    testLog(Severity::Error) << strVector << "\n";
-    testLog(Severity::Error) << intVector << "\n";
+    testLog(Severity::Error) << strVector << '\n';
+    testLog(Severity::Error) << intVector << '\n';
 }
 
 TEST(MLEmulationLayerLog, LineNumbers) {

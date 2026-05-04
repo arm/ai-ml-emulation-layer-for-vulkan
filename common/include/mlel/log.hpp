@@ -10,13 +10,11 @@
  * Includes
  *******************************************************************************/
 
-#include <algorithm>
-#include <array>
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
-#include <map>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace mlsdk::el::log {
@@ -64,17 +62,7 @@ class Log {
     bool enabled(Severity _severity) const;
 
   private:
-    static Severity getLogLevel(const std::string &environmentVariable, Severity defaultLogLevel);
-    std::string severityToString() const;
-
-    static inline const std::map<std::string, Severity> stringToSeverityMap = {
-        {std::string("error"), Severity::Error},
-        {std::string("warning"), Severity::Warning},
-        {std::string("info"), Severity::Info},
-        {std::string("debug"), Severity::Debug}};
-
-    static inline const std::array<std::string, 4> severityStringsArr = {std::string("Error"), std::string("Warning"),
-                                                                         std::string("Info"), std::string("Debug")};
+    std::string_view severityToString() const;
 
     Severity logLevel;
     std::string loggerName;
@@ -92,7 +80,7 @@ template <typename T> auto getValue(T value) {
 };
 
 template <typename T> Log &operator<<(Log &os, const std::vector<T> &v) {
-    os << std::dec << "[";
+    os << std::dec << '[';
     auto it = v.begin();
     if (it != v.end()) {
         os << getValue(*it);
@@ -102,7 +90,7 @@ template <typename T> Log &operator<<(Log &os, const std::vector<T> &v) {
         os << ", " << getValue(*it);
         ++it;
     }
-    os << "]";
+    os << ']';
     return os;
 }
 

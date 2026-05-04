@@ -77,7 +77,7 @@ void GraphPassBase::handleGraphConstants() {
             if (tensorMap.find(resultId) == tensorMap.end()) {
                 auto &tensors = tensorMap[resultId];
                 tensors[0] = graphPipeline.getConstTensor(constantId);
-                graphLog(Severity::Info) << "%" << resultId << ": constId=" << constantId << ", tensor=" << tensors[0]
+                graphLog(Severity::Info) << '%' << resultId << ": constId=" << constantId << ", tensor=" << tensors[0]
                                          << ", " << *tensors[0] << std::endl;
             }
             break;

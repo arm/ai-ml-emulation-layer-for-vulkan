@@ -146,7 +146,7 @@ void Tensor::print() const {
             std::cout << std::endl << std::setw(8) << i << ": ";
         }
 
-        std::cout << std::setw(2) << static_cast<unsigned>(p[i]) << " ";
+        std::cout << std::setw(2) << static_cast<unsigned>(p[i]) << ' ';
     }
 
     std::cout << std::endl;
