@@ -528,7 +528,7 @@ ComputePipeline::ComputePipeline(const std::shared_ptr<VULKAN_HPP_NAMESPACE::det
     : ComputePipelineBase(createPipelineLayout(_loader, _device, std::move(descriptorMap), pushConstant)),
       loader{_loader}, device{_device}, pipelineCache{_pipelineCache},
       shaderModule{createShaderModule(_spirv)}, pipeline{createComputePipeline(_constants)} {
-    assert(std::to_string(warpID) == warpIdSv);
+    assert(std::to_string(warp1D) == warp1DSv);
     connectPipelines();
     setDebugUtilsObjectName(loader, device, VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(pipeline), debugName);
 }
@@ -628,7 +628,7 @@ SpirvBinary Argmax::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                       inType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_t_type%", inType->typeId},
                                       {"%in_t_lowest%", inType->lowest},
                                       {"%in_t%", inType->glslType},
@@ -679,7 +679,7 @@ SpirvBinary ArithmeticRightShift::createSpirv(const std::shared_ptr<PipelineCach
                                       inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
                                   });
 }
@@ -746,7 +746,7 @@ SpirvBinary AvgPool2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipeli
                                       accTypeStr,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%acc_t%", accTypeStr},
                                       {"%in_out_t_lowest%", inOutType->lowest},
                                       {"%in_out_t_max%", inOutType->max},
@@ -789,7 +789,7 @@ SpirvBinary Cast::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCac
                                       outType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_t_type%", inType->typeId},
                                       {"%out_t_type%", outType->typeId},
                                       {"%in_t_lowest%", inType->lowest},
@@ -842,7 +842,7 @@ SpirvBinary Clamp::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCa
                                       inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
                                       {"%in_out_t_type%", inOutType->typeId},
                                       {"%in_out_t_comp%", inOutType->compType},
@@ -899,7 +899,7 @@ SpirvBinary Concat::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                       inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
                                   });
 }
@@ -1074,7 +1074,7 @@ SpirvBinary Conv3D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                       accTypeType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_t%", inType->glslType},
                                       {"%in_t_type%", inType->typeId},
                                       {"%out_t%", outType->glslType},
@@ -1163,7 +1163,7 @@ SpirvBinary DepthwiseConv2D::createSpirv(const std::shared_ptr<PipelineCache> &_
                                       accTypeType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_t%", inType->glslType},
                                       {"%in_t_type%", inType->typeId},
                                       {"%out_t%", outType->glslType},
@@ -1220,7 +1220,7 @@ SpirvBinary ElementwiseBinary::createSpirv(const std::shared_ptr<PipelineCache> 
                                       outType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%operation%", operation},
                                       {"%in_t%", inType->glslType},
                                       {"%out_t%", outType->glslType},
@@ -1264,7 +1264,7 @@ SpirvBinary ElementwiseUnary::createSpirv(const std::shared_ptr<PipelineCache> &
                                       inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%operation%", operation},
                                       {"%in_out_t%", inOutType->glslType},
                                       {"%in_out_t_type%", inOutType->typeId},
@@ -1310,7 +1310,7 @@ DescriptorMap Fft2D::createDescriptorMap(const std::shared_ptr<TensorDescriptor>
 SpirvBinary Fft2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache) const {
     return _pipelineCache->lookup(shaderName, {},
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                   });
 }
 
@@ -1350,7 +1350,7 @@ SpirvBinary Gather::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                       indicesType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%index_t%", indicesType->glslType},
                                       {"%in_out_t%", inOutType->glslType},
                                   });
@@ -1403,7 +1403,7 @@ SpirvBinary Matmul::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                       outType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_t%", inType->glslType},
                                       {"%in_t_type%", inType->typeId},
                                       {"%out_t%", outType->glslType},
@@ -1469,7 +1469,7 @@ SpirvBinary MaxPool2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipeli
                                       inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
                                       {"%in_out_t_lowest%", init},
                                       {"%in_out_t_type%", inOutType->typeId},
@@ -1524,7 +1524,7 @@ SpirvBinary Mul::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCach
                                       outType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_t_type%", inType->typeId},
                                       {"%out_t_type%", outType->typeId},
                                       {"%in_t%", inType->glslType},
@@ -1575,7 +1575,7 @@ SpirvBinary Negate::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                       inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
                                       {"%in_out_t_type%", inOutType->typeId},
                                       {"%acc_t%", accType},
@@ -1628,7 +1628,7 @@ SpirvBinary Pad::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCach
                                       inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
                                       {"%in_out_t_type%", inOutType->typeId},
                                   });
@@ -1679,7 +1679,7 @@ SpirvBinary Reduce::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                       inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%init%", init},
                                       {"%operation%", operation},
                                       {"%in_out_t%", inOutType->glslType},
@@ -1745,7 +1745,7 @@ SpirvBinary Rescale::createSpirv(const std::shared_ptr<PipelineCache> &_pipeline
                                       mulType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_t%", inType->glslType},
                                       {"%out_t%", outType->glslType},
                                       {"%mul_t%", mulType->glslType},
@@ -1784,7 +1784,7 @@ SpirvBinary Reshape::createSpirv(const std::shared_ptr<PipelineCache> &_pipeline
                                       inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
                                   });
 }
@@ -1848,7 +1848,7 @@ SpirvBinary Resize::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                       outType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_t%", inType->glslType},
                                       {"%in_t_type%", inType->typeId},
                                       {"%out_t%", outType->glslType},
@@ -1895,7 +1895,7 @@ SpirvBinary Reverse::createSpirv(const std::shared_ptr<PipelineCache> &_pipeline
                                       inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
                                   });
 }
@@ -1927,7 +1927,7 @@ DescriptorMap Rfft2D::createDescriptorMap(const std::shared_ptr<TensorDescriptor
 SpirvBinary Rfft2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache) const {
     return _pipelineCache->lookup(shaderName, {},
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                   });
 }
 
@@ -1969,7 +1969,7 @@ SpirvBinary Scatter::createSpirv(const std::shared_ptr<PipelineCache> &_pipeline
                                       indicesType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%index_t%", indicesType->glslType},
                                       {"%in_out_t%", inOutType->glslType},
                                   });
@@ -2010,7 +2010,7 @@ SpirvBinary Select::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                       inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
                                   });
 }
@@ -2054,7 +2054,7 @@ SpirvBinary Slice::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCa
                                       inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
                                   });
 }
@@ -2095,7 +2095,7 @@ SpirvBinary Table::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCa
                                       outType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_t%", inType->glslType},
                                       {"%out_t%", outType->glslType},
                                   });
@@ -2131,7 +2131,7 @@ SpirvBinary Tile::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCac
                                       inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
                                   });
 }
@@ -2175,7 +2175,7 @@ SpirvBinary Transpose::createSpirv(const std::shared_ptr<PipelineCache> &_pipeli
                                       inOutType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
                                   });
 }
@@ -2252,7 +2252,7 @@ SpirvBinary TransposeConv2D::createSpirv(const std::shared_ptr<PipelineCache> &_
                                       accTypeType->glslType,
                                   },
                                   {
-                                      {"%warpX%", warpIdSv},
+                                      {"%warpX%", warp1DSv},
                                       {"%in_t%", inType->glslType},
                                       {"%in_t_type%", inType->typeId},
                                       {"%out_t%", outType->glslType},
