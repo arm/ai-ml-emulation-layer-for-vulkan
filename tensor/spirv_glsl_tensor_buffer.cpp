@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2025-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -15,13 +15,8 @@ using namespace mlsdk::el::utils;
 namespace mlsdk::el::layer {
 
 const std::string CompilerTensorAsBuffer::tensorDefines =
-#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
-#    include "shaders/tensor_mvk.glsl"
+#include "shaders/tensor.glsl"
     ;
-#else
-#    include "shaders/tensor.glsl"
-    ;
-#endif
 
 CompilerTensorAsBuffer::CompilerTensorAsBuffer(std::vector<uint32_t> spirv_) : CompilerGLSL(std::move(spirv_)) {
     /* The CompilerGLSL constructor parses SPIRV to the SPIRV-Cross internal representation
@@ -229,6 +224,7 @@ void CompilerTensorAsBuffer::emit_instruction(const Instruction &instruction) {
             is_array(outType) ? "_emu_GL_ARM_tensors_read_array" : "_emu_GL_ARM_tensors_read_scalar";
         statement(macroName, "(",                            // Macro name
                   to_expression(ops[2]), ", ",               // tensor
+                  getTensorBufferExpression(ops[2]), ", ",   // tensor data buffer
                   to_expression(ops[3]), ", ",               // coordinates
                   to_expression(ops[1]), ", ",               // out value
                   operands, ", ",                            // tensor operands
@@ -259,16 +255,40 @@ void CompilerTensorAsBuffer::emit_instruction(const Instruction &instruction) {
 
         const std::string macroName =
             is_array(outType) ? "_emu_GL_ARM_tensors_write_array" : "_emu_GL_ARM_tensors_write_scalar";
-        statement(macroName, "(",              // Macro name
-                  to_expression(ops[0]), ", ", // tensor
-                  to_expression(ops[1]), ", ", // coordinates
-                  to_expression(ops[2]), ", ", // in value
-                  operands, ", ",              // tensor operands, currently not used
-                  type_to_glsl(elementType),   // glsl type of tensor buffer
+        statement(macroName, "(",                          // Macro name
+                  to_expression(ops[0]), ", ",             // tensor
+                  getTensorBufferExpression(ops[0]), ", ", // tensor data buffer
+                  to_expression(ops[1]), ", ",             // coordinates
+                  to_expression(ops[2]), ", ",             // in value
+                  operands, ", ",                          // tensor operands, currently not used
+                  type_to_glsl(elementType),               // glsl type of tensor buffer
                   ");");
 
         break;
     }
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+    case spv::OpCopyObject: {
+        const auto resultTypeId = ops[0];
+        const auto resultId = ops[1];
+        const auto rhs = ops[2];
+
+        if (tensorBufferTypeIdMap.find(resultTypeId) == tensorBufferTypeIdMap.end()) {
+            CompilerGLSL::emit_instruction(instruction);
+            break;
+        }
+
+        auto &expr = expression_is_lvalue(rhs) ? emit_op(resultTypeId, resultId, to_unpacked_expression(rhs), false)
+                                               : emit_op(resultTypeId, resultId, to_expression(rhs), true, true);
+        if (auto *var = maybe_get_backing_variable(rhs)) {
+            expr.loaded_from = var->self;
+        }
+        if (auto *rhsExpr = maybe_get<SPIRExpression>(rhs)) {
+            expr.implied_read_expressions = rhsExpr->implied_read_expressions;
+            expr.expression_dependencies = rhsExpr->expression_dependencies;
+        }
+        break;
+    }
+#endif
     case spv::OpAccessChain: {
         // Tensor arrays are accessed here, when called with []
         const auto resultId = ops[0];     // ID to be used downstream
@@ -283,7 +303,8 @@ void CompilerTensorAsBuffer::emit_instruction(const Instruction &instruction) {
             // Inject a new GLSL expression:
             std::string newExpr = varName + '[' + to_expression(indexId) + "].descriptor";
 
-            set<SPIRExpression>(resultTypeId, SPIRExpression(newExpr, resultId, true));
+            auto &expr = set<SPIRExpression>(resultTypeId, SPIRExpression(newExpr, resultId, true));
+            expr.loaded_from = varId;
             // Done, don't emit normal code for this Op
         } else {
             CompilerGLSL::emit_instruction(instruction);
@@ -505,6 +526,24 @@ void CompilerTensorAsBuffer::createTensorInterface(uint32_t tensorVarId) {
     }
 }
 
+std::string CompilerTensorAsBuffer::getTensorBufferExpression(uint32_t tensorId) {
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+    auto *backingVar = maybe_get_backing_variable(tensorId);
+    if (backingVar == nullptr) {
+        throw std::runtime_error(
+            "MoltenVK tensor emulation requires tensor accesses to originate from a named tensor variable.");
+    }
+
+    if (auto it = tensorBufferVarIdMap.find(backingVar->self); it != tensorBufferVarIdMap.end()) {
+        return to_name(it->second);
+    }
+
+    throw std::runtime_error(
+        "MoltenVK tensor emulation does not support tensor arrays or transient tensor descriptors.");
+#endif
+    return to_expression(tensorId) + ".address";
+}
+
 #ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
 void CompilerTensorAsBuffer::createTensorBuffer(const std::pair<uint32_t, uint32_t> &tensorVarAndInterface) {
     // Add a buffer variable for each tensor. This buffer will contain a data member which is aliased by the
@@ -553,6 +592,7 @@ void CompilerTensorAsBuffer::createTensorBuffer(const std::pair<uint32_t, uint32
     // Create a new variable to represent the tensor buffer
     set<SPIRVariable>(tensorBufferVarId, tensorBufferPtrId, spv::StorageClassStorageBuffer);
     ir.set_name(tensorBufferVarId, join("_tensorData", varName));
+    tensorBufferVarIdMap[tensorVarId] = tensorBufferVarId;
     auto &execution = get_entry_point();
     execution.interface_variables.push_back(tensorBufferVarId);
 

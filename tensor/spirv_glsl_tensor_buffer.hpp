@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2025-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -45,9 +45,10 @@ class CompilerTensorAsBuffer : public spirv_cross::CompilerGLSL {
     void createTensorStruct(uint32_t tensorTypeId, uint32_t bufferPtrId);
     void createTensorPtr(uint32_t tensorPtrId);
     void createTensorInterface(uint32_t tensorVarId);
+    std::string getTensorBufferExpression(uint32_t tensorId);
+    std::map<uint32_t, uint32_t> tensorBufferVarIdMap;
 #ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
     void createTensorBuffer(const std::pair<uint32_t, uint32_t> &tensorVarAndInterface);
-    static const std::string tensorMVKDefines;
     std::map<uint32_t, uint32_t> tensorBufferTypeIdMap;
 #endif
 };
