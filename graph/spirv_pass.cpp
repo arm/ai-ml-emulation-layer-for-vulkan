@@ -380,13 +380,21 @@ std::shared_ptr<TensorDescriptor> GraphPassBase::makeTensor(const analysis::Tens
     return graphPipeline.makeTensor(format, dimensions);
 }
 
-std::shared_ptr<TensorDescriptor> GraphPassBase::getOrMakeCompositeTensor(const uint32_t id) const {
+std::shared_ptr<TensorDescriptor> GraphPassBase::getOrMakeCompositeTensor(const uint32_t id) {
+    if (tensorMap[id][0] != nullptr) {
+        return tensorMap[id][0];
+    }
+
     const auto &instruction = get_def_use_mgr()->GetDef(id);
     if (instruction->opcode() == spv::Op::OpGraphConstantARM) {
         const auto constantId = static_cast<uint32_t>(instruction->GetOperand(2).AsLiteralUint64());
-        return graphPipeline.getConstTensor(constantId);
+        tensorMap[id][0] = graphPipeline.getConstTensor(constantId);
+        return tensorMap[id][0];
     }
-    return makeCompositeTensor(instruction->result_id());
+
+    auto tensor = makeCompositeTensor(instruction->result_id());
+    tensorMap[id][0] = tensor;
+    return tensor;
 }
 
 std::shared_ptr<TensorDescriptor> GraphPassBase::makeCompositeTensor(const uint32_t id) const {
