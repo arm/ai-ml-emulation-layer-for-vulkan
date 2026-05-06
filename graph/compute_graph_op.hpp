@@ -206,7 +206,7 @@ class ComputePipeline : public ComputePipelineBase {
     VkPipeline pipeline;
 
     static const uint32_t warp1D = 64;
-    static constexpr std::string_view warpIdSv = "64";
+    static constexpr std::string_view warp1DSv = "64";
     static const uint32_t MAX_CONST_LEN = 32;
 };
 
