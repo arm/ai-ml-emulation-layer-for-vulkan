@@ -11,6 +11,7 @@
 #include "tensor.hpp"
 
 #include "graph_log.hpp"
+#include "mlel/utils.hpp"
 
 #include <exception>
 #include <numeric>
@@ -187,10 +188,7 @@ const std::vector<int64_t> &TensorDescriptor::getDimensions() const { return dim
 
 uint32_t TensorDescriptor::getRank() const { return static_cast<uint32_t>(dimensions.size()); }
 
-size_t TensorDescriptor::getShapeSize() const {
-    return static_cast<size_t>(
-        std::abs(std::accumulate(dimensions.begin(), dimensions.end(), int64_t(1), std::multiplies<int64_t>())));
-}
+size_t TensorDescriptor::getShapeSize() const { return utils::getElementCount(dimensions); }
 
 size_t TensorDescriptor::getSize() const {
     if (strides.data() != nullptr && strides[0] < 0) {

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -9,6 +9,7 @@
  *******************************************************************************/
 
 #include "mlel/tensor.hpp"
+#include "mlel/utils.hpp"
 
 #include <iostream>
 #include <numeric>
@@ -29,10 +30,7 @@ const std::vector<int64_t> &Shape::getStrides() const { return strides; };
 
 size_t Shape::getSize() const { return dimensions[0] * strides[0]; }
 
-size_t Shape::elementCount() const {
-    return static_cast<size_t>(
-        std::abs(std::accumulate(dimensions.begin(), dimensions.end(), int64_t(1), std::multiplies<int64_t>())));
-}
+size_t Shape::elementCount() const { return utils::getElementCount(dimensions); }
 
 size_t Shape::getElementOffset(size_t index) const {
     std::vector<size_t> coordinates(dimensions.size());

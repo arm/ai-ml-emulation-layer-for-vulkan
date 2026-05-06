@@ -180,8 +180,7 @@ void TensorARM::copyToTensor(CommandBuffer &cmd, const TensorARM &dstTensor) {
         VkBufferCopy copyInfo = {0, 0, m_info.size};
         cmd.loader->vkCmdCopyBuffer(cmd.commandBuffer, getTensorBuffer(), dstTensor.getTensorBuffer(), 1, &copyInfo);
     } else {
-        const auto regionCount = static_cast<uint32_t>(std::abs(
-            std::accumulate(srcDimensions.begin(), srcDimensions.end(), int64_t(1), std::multiplies<int64_t>())));
+        const auto regionCount = static_cast<uint32_t>(utils::getElementCount(srcDimensions));
         m_copy_pipeline = std::make_shared<TensorCopyPipeline>(cmd.loader, cmd.device->device, *this, dstTensor);
         cmd.beginSecondaryCommandBuffer();
         assert(regionCount < std::numeric_limits<uint32_t>::max());
