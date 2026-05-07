@@ -29,6 +29,9 @@ template <typename T> T roundUp(const T data, size_t multiple) {
 
 inline uint32_t divideRoundUp(const uint32_t value, const uint32_t divide) { return (value + divide - 1) / divide; }
 
+/// Gets the total number of elements in a tensor given its dimensions, throws if result is negative.
+size_t getElementCount(const std::vector<int64_t> &dimensions);
+
 std::vector<uint32_t> glslToSpirv(const std::string &glsl);
 
 struct FormatInfo {

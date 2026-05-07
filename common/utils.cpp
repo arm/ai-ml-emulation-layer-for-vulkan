@@ -10,7 +10,10 @@
 
 #include "mlel/utils.hpp"
 #include "mlel/log.hpp"
+
 #include <functional>
+#include <numeric>
+
 #include <glslang/Include/glslang_c_interface.h>
 #include <glslang/Public/resource_limits_c.h>
 
@@ -21,6 +24,14 @@ namespace mlsdk::el::utils {
 namespace {
 Log layerLog("VMEL_COMMON_SEVERITY", "Layer");
 } // namespace
+
+size_t getElementCount(const std::vector<int64_t> &dimensions) {
+    auto result = std::accumulate(dimensions.begin(), dimensions.end(), int64_t(1), std::multiplies<int64_t>());
+    if (result < 0) {
+        throw std::runtime_error("Tensor element count became negative: " + std::to_string(result));
+    }
+    return static_cast<size_t>(result);
+}
 
 std::vector<uint32_t> glslToSpirv(const std::string &glsl) {
     class Finally {

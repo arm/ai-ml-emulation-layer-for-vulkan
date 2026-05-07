@@ -48,14 +48,12 @@ class GraphPassBase : public Pass {
     void handleGraphs();
     void handleInputsAndOutputs(const Instruction &opGraphEntryPoint);
     const Graph *getGraphById(const Operand &operand);
-    std::tuple<std::vector<analysis::TensorARM *>, std::vector<analysis::TensorARM *>>
-    getGraphType(const Operand &operand);
-    analysis::TensorARM *getTensorType(const Operand &operand, uint32_t index = 0) const;
-    analysis::TensorARM *getTensorType(uint32_t id, uint32_t index = 0) const;
+
+    const analysis::TensorARM *getTensorType(const Operand &operand) const;
+    const analysis::TensorARM *getTensorType(uint32_t id) const;
     std::tuple<uint64_t, uint64_t> getDescriptorSetAndBinding(const Operand &operand);
     std::tuple<uint64_t, uint64_t, std::shared_ptr<mlsdk::el::compute::TensorDescriptor>>
     getTensorByDecoration(const Operand &operand, uint32_t arrayIndex);
-    void mapTensorByDecoration(uint32_t resultId, const Operand &operand, uint32_t arrayIndex = 0);
     std::shared_ptr<mlsdk::el::compute::TensorDescriptor> getTensor(const Instruction &instruction,
                                                                     uint32_t arrayIndex = 0);
     std::shared_ptr<mlsdk::el::compute::TensorDescriptor> getTensor(const Operand &operand, uint32_t arrayIndex = 0);
@@ -72,8 +70,8 @@ class GraphPassBase : public Pass {
     template <typename T = uint32_t>
     void getFlattenedCompositeConstant(const spvtools::opt::analysis::CompositeConstant *composite,
                                        std::vector<T> &kernel) const {
-        for (const auto &component : composite->GetComponents()) {
-            if (const auto &innerComposite = component->AsCompositeConstant()) {
+        for (const auto *component : composite->GetComponents()) {
+            if (const auto *innerComposite = component->AsCompositeConstant()) {
                 getFlattenedCompositeConstant(innerComposite, kernel);
             } else {
                 kernel.push_back(getConstScalar<T>(component));
@@ -85,26 +83,21 @@ class GraphPassBase : public Pass {
         const auto &constant = context()->get_constant_mgr()->FindDeclaredConstant(id);
         std::vector<T> kernel;
 
-        if (const auto &composite = constant->AsCompositeConstant()) {
-            const auto &instruction = context()->get_def_use_mgr()->GetDef(id);
-            bool isSplat = instruction->opcode() == spv::Op::OpConstantCompositeReplicateEXT ||
-                           instruction->opcode() == spv::Op::OpSpecConstantCompositeReplicateEXT;
+        if (const auto *composite = constant->AsCompositeConstant()) {
+            const auto *instruction = context()->get_def_use_mgr()->GetDef(id);
+            const bool isSplat = isCompositeReplicateConstantOpcode(instruction->opcode());
             getFlattenedCompositeConstant(composite, kernel);
 
             if (isSplat) {
                 assert(kernel.size() == 1);
-                auto *const tensorType = getTensorType(id);
-                const auto &dimensions = getConstVector<int64_t>(tensorType->shape_id());
-                const auto elemCount = static_cast<size_t>(std::abs(
-                    std::accumulate(dimensions.begin(), dimensions.end(), int64_t(1), std::multiplies<int64_t>())));
+                const auto *tensorType = getTensorType(id);
+                const auto elemCount = getElementCount(tensorType->shape_id());
                 kernel.resize(elemCount, kernel.front());
             }
-        } else if (const auto &null = constant->AsNullConstant()) {
-            if (const auto &tensor = constant->type()->AsTensorARM()) {
+        } else if (const auto *null = constant->AsNullConstant(); null != nullptr) {
+            if (const auto *tensor = constant->type()->AsTensorARM()) {
                 // TensorARM: zero-initialize a composite tensor with the total element count
-                const auto &dimensions = getConstVector<int64_t>(tensor->shape_id());
-                const auto elemCount = static_cast<size_t>(std::abs(
-                    std::accumulate(dimensions.begin(), dimensions.end(), int64_t(1), std::multiplies<int64_t>())));
+                const auto elemCount = getElementCount(tensor->shape_id());
                 kernel.resize(elemCount);
             } else {
                 assert(false);
@@ -116,15 +109,14 @@ class GraphPassBase : public Pass {
         return kernel;
     }
 
-    template <typename T = int64_t> T getConstScalar(const Operand &operand, const bool isUnsigned = false) const {
-        return getConstScalar<T>(context()->get_constant_mgr()->FindDeclaredConstant(operand.AsId()), isUnsigned);
+    template <typename T = int64_t> T getConstScalar(const Operand &operand) const {
+        return getConstScalar<T>(context()->get_constant_mgr()->FindDeclaredConstant(operand.AsId()));
     }
 
-    template <typename T = int64_t>
-    T getConstScalar(const analysis::Constant *constant, const bool isUnsigned = false) const {
-        const auto &intConstant = constant->AsIntConstant();
+    template <typename T = int64_t> T getConstScalar(const analysis::Constant *constant) const {
+        const auto *intConstant = constant->AsIntConstant();
         if (intConstant) {
-            const auto &type = intConstant->type()->AsInteger();
+            const auto *type = intConstant->type()->AsInteger();
 
             if (type->IsSigned()) {
                 return static_cast<T>(constant->GetSignExtendedValue());
@@ -132,22 +124,22 @@ class GraphPassBase : public Pass {
 
             switch (type->width()) {
             case 8:
-                return isUnsigned ? T(constant->GetZeroExtendedValue()) : T(int8_t(constant->GetZeroExtendedValue()));
+                return T(int8_t(constant->GetZeroExtendedValue()));
             case 16:
-                return isUnsigned ? T(constant->GetZeroExtendedValue()) : T(int16_t(constant->GetZeroExtendedValue()));
+                return T(int16_t(constant->GetZeroExtendedValue()));
             case 32:
-                return isUnsigned ? T(constant->GetZeroExtendedValue()) : T(int32_t(constant->GetZeroExtendedValue()));
+                return T(int32_t(constant->GetZeroExtendedValue()));
             case 64:
-                return isUnsigned ? T(constant->GetZeroExtendedValue()) : T(int64_t(constant->GetZeroExtendedValue()));
+                return T(int64_t(constant->GetZeroExtendedValue()));
             default:
                 throw std::runtime_error(std::string("Unsupported integer constant width: ") +
                                          std::to_string(type->width()));
             }
         }
 
-        const auto &floatConstant = constant->AsFloatConstant();
+        const auto *floatConstant = constant->AsFloatConstant();
         if (floatConstant) {
-            const auto &type = floatConstant->type()->AsFloat();
+            const auto *type = floatConstant->type()->AsFloat();
 
             switch (type->width()) {
             case 8: {
@@ -179,7 +171,7 @@ class GraphPassBase : public Pass {
             }
         }
 
-        const auto &boolConstant = constant->AsBoolConstant();
+        const auto *boolConstant = constant->AsBoolConstant();
         if (boolConstant) {
             return T(boolConstant->value() ? 1 : 0);
         }
@@ -188,8 +180,17 @@ class GraphPassBase : public Pass {
     }
 
     GraphPipeline &graphPipeline;
-    VkDevice device = {};
+
+  private:
     std::map<uint32_t, std::array<std::shared_ptr<mlsdk::el::compute::TensorDescriptor>, 2>> tensorMap;
+
+    size_t getElementCount(uint32_t id) const;
+
+    static bool isCompositeReplicateConstantOpcode(spv::Op opcode);
+
+    template <typename T, spv::FPEncoding fpEncoding>
+    std::vector<T> getConstVector(const spvtools::opt::Instruction *instruction,
+                                  const std::vector<int64_t> &dimensions) const;
 };
 
 } // namespace opt

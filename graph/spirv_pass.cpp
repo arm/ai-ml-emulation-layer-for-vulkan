@@ -11,76 +11,43 @@
 #include "spirv_pass.hpp"
 #include "graph_log.hpp"
 
+#include "mlel/utils.hpp"
+
 using namespace mlsdk::el::log;
 using namespace mlsdk::el::compute;
 
 namespace {
 
+template <typename T, spv::FPEncoding encoding> bool isFloatEncoding(const spvtools::opt::analysis::Float *f) {
+    return f && f->width() == (8 * sizeof(T)) && f->encoding() == encoding;
+}
+
 bool isBFloat16(const spvtools::opt::analysis::Float *f) {
-    return f && f->width() == 16 && f->encoding() == spv::FPEncoding::BFloat16KHR;
+    return isFloatEncoding<uint16_t, spv::FPEncoding::BFloat16KHR>(f);
 }
 
 bool isFloat8E5M2(const spvtools::opt::analysis::Float *f) {
-    return f && f->width() == 8 && f->encoding() == spv::FPEncoding::Float8E5M2EXT;
+    return isFloatEncoding<uint8_t, spv::FPEncoding::Float8E5M2EXT>(f);
 }
 
 bool isFloat8E4M3(const spvtools::opt::analysis::Float *f) {
-    return f && f->width() == 8 && f->encoding() == spv::FPEncoding::Float8E4M3EXT;
+    return isFloatEncoding<uint8_t, spv::FPEncoding::Float8E4M3EXT>(f);
 }
 
-void flattenBFloat16Composite(const spvtools::opt::analysis::CompositeConstant *composite,
-                              std::vector<uint16_t> &values) {
+template <typename T, spv::FPEncoding encoding>
+void flattenFloatComposite(const spvtools::opt::analysis::CompositeConstant *composite, std::vector<T> &values) {
     for (const auto &component : composite->GetComponents()) {
         if (const auto *innerComposite = component->AsCompositeConstant()) {
-            flattenBFloat16Composite(innerComposite, values);
+            flattenFloatComposite<T, encoding>(innerComposite, values);
             continue;
         }
 
         const auto *floatConstant = component->AsFloatConstant();
-        if (floatConstant == nullptr || !isBFloat16(floatConstant->type()->AsFloat())) {
-            throw std::runtime_error("Unsupported BF16 composite constant encoding");
+        if (floatConstant == nullptr || !isFloatEncoding<T, encoding>(floatConstant->type()->AsFloat())) {
+            throw std::runtime_error("Unsupported float constant encoding in composite constant");
         }
 
-        values.push_back(uint16_t(floatConstant->words()[0]));
-    }
-}
-
-size_t tensorElementCount(const std::vector<int64_t> &dimensions) {
-    return std::accumulate(dimensions.begin(), dimensions.end(), size_t{1},
-                           [](size_t acc, int64_t dim) { return acc * static_cast<size_t>(dim); });
-}
-
-void flattenFloat8E5M2Composite(const spvtools::opt::analysis::CompositeConstant *composite,
-                                std::vector<uint8_t> &values) {
-    for (const auto &component : composite->GetComponents()) {
-        if (const auto *innerComposite = component->AsCompositeConstant()) {
-            flattenFloat8E5M2Composite(innerComposite, values);
-            continue;
-        }
-
-        const auto *floatConstant = component->AsFloatConstant();
-        if (floatConstant == nullptr || !isFloat8E5M2(floatConstant->type()->AsFloat())) {
-            throw std::runtime_error("Unsupported FLOAT8E5M2 composite constant encoding");
-        }
-
-        values.push_back(uint8_t(floatConstant->words()[0]));
-    }
-}
-
-void flattenFloat8E4M3Composite(const spvtools::opt::analysis::CompositeConstant *composite,
-                                std::vector<uint8_t> &values) {
-    for (const auto &component : composite->GetComponents()) {
-        if (const auto *innerComposite = component->AsCompositeConstant()) {
-            flattenFloat8E4M3Composite(innerComposite, values);
-            continue;
-        }
-
-        const auto *floatConstant = component->AsFloatConstant();
-        if (floatConstant == nullptr || !isFloat8E4M3(floatConstant->type()->AsFloat())) {
-            throw std::runtime_error("Unsupported FLOAT8E4M3 composite constant encoding");
-        }
-
-        values.push_back(uint8_t(floatConstant->words()[0]));
+        values.push_back(T(floatConstant->words()[0]));
     }
 }
 
@@ -222,35 +189,11 @@ const Graph *GraphPassBase::getGraphById(const Operand &operand) {
     return nullptr;
 }
 
-std::tuple<std::vector<analysis::TensorARM *>, std::vector<analysis::TensorARM *>>
-GraphPassBase::getGraphType(const Operand &operand) {
-    // <return id> = OpTypeGraphARM <number of inputs> [inputs] [outputs]
-    const auto &opTypeGraphARM = get_def_use_mgr()->GetDef(operand.AsId());
-    assert(opTypeGraphARM->opcode() == spv::Op::OpTypeGraphARM);
-    auto op = opTypeGraphARM->begin();
-
-    auto numInputs = (op++)->AsLiteralUint64();
-
-    // Inputs
-    std::vector<analysis::TensorARM *> inputs;
-    while (numInputs-- > 0) {
-        inputs.push_back(getTensorType(*op++));
-    }
-
-    // Outputs
-    std::vector<analysis::TensorARM *> outputs;
-    while (op != opTypeGraphARM->end()) {
-        outputs.push_back(getTensorType(*op++));
-    }
-
-    return {inputs, outputs};
+const analysis::TensorARM *GraphPassBase::getTensorType(const Operand &operand) const {
+    return getTensorType(operand.AsId());
 }
 
-analysis::TensorARM *GraphPassBase::getTensorType(const Operand &operand, const uint32_t index) const {
-    return getTensorType(operand.AsId(), index);
-}
-
-analysis::TensorARM *GraphPassBase::getTensorType(uint32_t id, const uint32_t index) const {
+const analysis::TensorARM *GraphPassBase::getTensorType(uint32_t id) const {
     const auto &instruction = get_def_use_mgr()->GetDef(id);
 
     switch (instruction->opcode()) {
@@ -266,15 +209,15 @@ analysis::TensorARM *GraphPassBase::getTensorType(uint32_t id, const uint32_t in
         id = instruction->GetOperand(0).AsId();
         break;
     case spv::Op::OpTypeStruct:
-        id = instruction->GetInOperand(index).AsId();
+        id = instruction->GetInOperand(0).AsId();
         break;
     default:
         return nullptr;
     }
 
-    const auto &type = context()->get_type_mgr()->GetType(id);
+    const auto *type = context()->get_type_mgr()->GetType(id);
     assert(type);
-    const auto &tensorType = type->AsTensorARM();
+    const auto *tensorType = type->AsTensorARM();
     assert(tensorType);
 
     return tensorType;
@@ -311,17 +254,6 @@ GraphPassBase::getTensorByDecoration(const Operand &operand, const uint32_t arra
     auto tensor =
         graphPipeline.getTensor(static_cast<uint32_t>(descriptorSet), static_cast<uint32_t>(binding), arrayIndex);
     return std::make_tuple(descriptorSet, binding, std::move(tensor));
-}
-
-void GraphPassBase::mapTensorByDecoration(uint32_t resultId, const Operand &operand, const uint32_t arrayIndex) {
-    // If the tensor has already been mapped we don't want to map it again
-    if (tensorMap[resultId][0] == nullptr) {
-        const auto &[descriptorSet, binding, tensor] = getTensorByDecoration(operand, arrayIndex);
-        tensorMap[resultId][0] = tensor;
-        graphLog(Severity::Info) << "%" << resultId << "[" << arrayIndex << "]: set=" << descriptorSet
-                                 << ", binding=" << binding << ", tensor=" << tensorMap[resultId][0] << ", "
-                                 << *tensorMap[resultId][0] << std::endl;
-    }
 }
 
 std::shared_ptr<TensorDescriptor> GraphPassBase::getTensor(const Instruction &instruction, const uint32_t arrayIndex) {
@@ -421,54 +353,15 @@ std::shared_ptr<TensorDescriptor> GraphPassBase::makeCompositeTensor(const uint3
         return graphPipeline.makeConstCompositeTensor(format, dimensions,
                                                       getConstVector<float16>(instruction->result_id()).data());
     case VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM: {
-        const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(instruction->result_id());
-        std::vector<uint16_t> bf16Values;
-
-        if (const auto *composite = constant->AsCompositeConstant()) {
-            const bool isSplat = instruction->opcode() == spv::Op::OpConstantCompositeReplicateEXT ||
-                                 instruction->opcode() == spv::Op::OpSpecConstantCompositeReplicateEXT;
-            flattenBFloat16Composite(composite, bf16Values);
-
-            if (isSplat) {
-                assert(bf16Values.size() == 1);
-                size_t compositeCount = tensorElementCount(dimensions);
-                bf16Values.resize(compositeCount, bf16Values.front());
-            }
-        } else if (constant->AsNullConstant()) {
-            size_t compositeCount = tensorElementCount(dimensions);
-            bf16Values.resize(compositeCount, 0);
-        } else {
-            throw std::runtime_error("Unsupported BF16 constant kind for composite tensor");
-        }
-
+        const auto bf16Values = getConstVector<uint16_t, spv::FPEncoding::BFloat16KHR>(instruction, dimensions);
         return graphPipeline.makeConstCompositeTensor(format, dimensions, bf16Values.data());
     }
-    case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM:
+    case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM: {
+        const auto f8Values = getConstVector<uint8_t, spv::FPEncoding::Float8E5M2EXT>(instruction, dimensions);
+        return graphPipeline.makeConstCompositeTensor(format, dimensions, f8Values.data());
+    }
     case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM: {
-        const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(instruction->result_id());
-        std::vector<uint8_t> f8Values;
-
-        if (const auto *composite = constant->AsCompositeConstant()) {
-            const bool isSplat = instruction->opcode() == spv::Op::OpConstantCompositeReplicateEXT ||
-                                 instruction->opcode() == spv::Op::OpSpecConstantCompositeReplicateEXT;
-            if (format == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM) {
-                flattenFloat8E5M2Composite(composite, f8Values);
-            } else {
-                flattenFloat8E4M3Composite(composite, f8Values);
-            }
-
-            if (isSplat) {
-                assert(f8Values.size() == 1);
-                size_t compositeCount = tensorElementCount(dimensions);
-                f8Values.resize(compositeCount, f8Values.front());
-            }
-        } else if (constant->AsNullConstant()) {
-            size_t compositeCount = tensorElementCount(dimensions);
-            f8Values.resize(compositeCount, 0);
-        } else {
-            throw std::runtime_error("Unsupported FP8 constant kind for composite tensor");
-        }
-
+        const auto f8Values = getConstVector<uint8_t, spv::FPEncoding::Float8E4M3EXT>(instruction, dimensions);
         return graphPipeline.makeConstCompositeTensor(format, dimensions, f8Values.data());
     }
     case VK_FORMAT_R32_SFLOAT:
@@ -560,4 +453,39 @@ std::string GraphPassBase::extractDebugInfoFromSPV(const Instruction *opExtInst,
 
     return defaultName;
 }
+
+size_t GraphPassBase::getElementCount(const uint32_t id) const {
+    const auto dimensions = getConstVector<int64_t>(id);
+    return mlsdk::el::utils::getElementCount(dimensions);
+}
+
+bool GraphPassBase::isCompositeReplicateConstantOpcode(const spv::Op opcode) {
+    return opcode == spv::Op::OpConstantCompositeReplicateEXT || opcode == spv::Op::OpSpecConstantCompositeReplicateEXT;
+}
+
+template <typename T, spv::FPEncoding fpEncoding>
+std::vector<T> GraphPassBase::getConstVector(const spvtools::opt::Instruction *instruction,
+                                             const std::vector<int64_t> &dimensions) const {
+    std::vector<T> values;
+    const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(instruction->result_id());
+    if (const auto *composite = constant->AsCompositeConstant()) {
+        const bool isSplat = isCompositeReplicateConstantOpcode(instruction->opcode());
+        flattenFloatComposite<T, fpEncoding>(composite, values);
+
+        if (isSplat) {
+            assert(values.size() == 1);
+            const auto compositeCount = mlsdk::el::utils::getElementCount(dimensions);
+            values.resize(compositeCount, values.front());
+        }
+    } else if (constant->AsNullConstant()) {
+        const auto compositeCount = mlsdk::el::utils::getElementCount(dimensions);
+        values.resize(compositeCount, 0);
+    } else {
+        throw std::runtime_error("Unsupported format " + std::to_string(int(fpEncoding)) +
+                                 " constant kind for composite tensor");
+    }
+
+    return values;
+}
+
 } // namespace spvtools::opt
