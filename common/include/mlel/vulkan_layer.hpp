@@ -358,10 +358,9 @@ class CommandBuffer : public Loader {
 
 class ShaderModule {
   public:
-    explicit ShaderModule(const VkShaderModuleCreateInfo *_info)
-        : info{*_info}, code{_info->pCode, _info->pCode + _info->codeSize / sizeof(uint32_t)} {}
+    explicit ShaderModule(const VkShaderModuleCreateInfo *info)
+        : code{info->pCode, info->pCode + info->codeSize / sizeof(uint32_t)} {}
 
-    const VkShaderModuleCreateInfo info;
     const std::vector<uint32_t> code;
 };
 
@@ -371,18 +370,17 @@ class ShaderModule {
 
 class DescriptorSetLayout {
   public:
-    explicit DescriptorSetLayout(const VkDescriptorSetLayoutCreateInfo *_info)
-        : info{*_info}, bindings{createBindings()} {}
+    explicit DescriptorSetLayout(const VkDescriptorSetLayoutCreateInfo *info) : bindings{createBindings(info)} {}
 
-    const VkDescriptorSetLayoutCreateInfo info;
-    const std::map<uint32_t, VkDescriptorSetLayoutBinding> bindings;
+    using Bindings = std::map<uint32_t, VkDescriptorSetLayoutBinding>;
+    const Bindings bindings;
 
   private:
-    std::map<uint32_t, VkDescriptorSetLayoutBinding> createBindings() const {
-        std::map<uint32_t, VkDescriptorSetLayoutBinding> newBindings;
+    static Bindings createBindings(const VkDescriptorSetLayoutCreateInfo *info) {
+        Bindings newBindings;
 
-        for (uint32_t i = 0; i < info.bindingCount; i++) {
-            newBindings[info.pBindings[i].binding] = info.pBindings[i];
+        for (uint32_t i = 0; i < info->bindingCount; i++) {
+            newBindings[info->pBindings[i].binding] = info->pBindings[i];
         }
 
         return newBindings;

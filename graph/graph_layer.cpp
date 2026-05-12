@@ -276,26 +276,46 @@ void sprivMessageConsumer(spv_message_level_t level, const char *, const spv_pos
     graphLog(severity) << "SPIRV-Tools message: " << message << " at position " << position.index << std::endl;
 }
 
-inline std::optional<bool> isGraphSpirv(const std::vector<uint32_t> &spirv) {
-    auto ir = spvtools::BuildModule(SPV_ENV_UNIVERSAL_1_6, sprivMessageConsumer, spirv.data(), spirv.size());
+std::optional<bool> isGraphSpirv(const uint32_t *spirvCode, const size_t spirvSize) {
+    auto ir = spvtools::BuildModule(SPV_ENV_UNIVERSAL_1_6, sprivMessageConsumer, spirvCode, spirvSize);
     if (ir == nullptr || ir->module() == nullptr) {
+        graphLog(Severity::Error) << "Failed to compile spirv code." << std::endl;
         return std::nullopt;
     }
     return !ir->module()->graphs().empty();
 }
 
-std::optional<std::string> tryGetExtInstVersion(const uint32_t *spirvCode, const size_t spirvSize,
-                                                const std::regex &pattern) {
-    auto ir = spvtools::BuildModule(SPV_ENV_UNIVERSAL_1_6, sprivMessageConsumer, spirvCode, spirvSize);
-    for (const auto &inst : ir->module()->ext_inst_imports()) {
-        const auto name = inst.GetInOperand(0).AsString();
-        if (std::regex_search(name, pattern)) {
-            return name;
+bool checkInstVersion(const uint32_t *spirvCode, const size_t spirvSize) {
+    const auto ir = spvtools::BuildModule(SPV_ENV_UNIVERSAL_1_6, sprivMessageConsumer, spirvCode, spirvSize);
+    const auto tryGetExtInstVersion = [&ir](const std::regex &pattern) -> std::optional<std::string> {
+        for (const auto &inst : ir->module()->ext_inst_imports()) {
+            const auto name = inst.GetInOperand(0).AsString();
+            if (std::regex_search(name, pattern)) {
+                return name;
+            }
         }
-    }
-    return std::nullopt;
-}
+        return std::nullopt;
+    };
 
+    static const std::regex tosaVersionRegex("^TOSA\\.\\d{6}\\.\\d");
+    const auto tosaVersion = tryGetExtInstVersion(tosaVersionRegex);
+    const bool isTosaVersionUnsupported = tosaVersion.has_value() && tosaVersion != tosaSpv100;
+    if (isTosaVersionUnsupported) {
+        graphLog(Severity::Error) << "Unsupported Tosa version provided." << std::endl;
+        return false;
+    }
+
+    static const std::regex motionEngineVersionRegex("^Arm\\.MotionEngine\\.\\d{3}");
+    const auto motionEngineVersion = tryGetExtInstVersion(motionEngineVersionRegex);
+    const bool isMotionEngineVersionUnsupported =
+        motionEngineVersion.has_value() && motionEngineVersion != motionEngine100;
+    if (isMotionEngineVersionUnsupported) {
+        graphLog(Severity::Error) << "Unsupported MotionEngine version provided." << std::endl;
+        return false;
+    }
+
+    return true;
+}
 } // namespace
 
 constexpr std::array<const VkExtensionProperties, 3> extensions{
@@ -596,7 +616,7 @@ class GraphLayer : public VulkanLayerImpl {
             if (pipeline->isGraph()) {
                 // Given by type check above, this should never be nullptr
                 assert(dataGraphPipelineShaderModuleCreateInfo);
-                auto graphPipeline = pipeline->graphPipeline;
+                auto &graphPipeline = pipeline->graphPipeline;
                 // Copy tensor resources to pipeline
                 for (uint32_t j = 0; j < createInfo.resourceInfoCount; j++) {
                     const auto &resourceInfo = createInfo.pResourceInfos[j];
@@ -626,7 +646,8 @@ class GraphLayer : public VulkanLayerImpl {
 
                     graphPipeline->makeConstTensor(constant.id, *graphPipelineConstantTensor, constant.pConstantData);
                 }
-                std::shared_ptr<ShaderModule> shaderModule;
+                const uint32_t *spirvCode = nullptr;
+                size_t spirvSize = 0;
                 if (dataGraphPipelineShaderModuleCreateInfo->module == VK_NULL_HANDLE) {
                     const auto *shaderModuleCreateInfo = findType<VkShaderModuleCreateInfo>(
                         createInfo.pNext, VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);
@@ -635,57 +656,41 @@ class GraphLayer : public VulkanLayerImpl {
                         return VK_ERROR_UNKNOWN;
                     }
 
-                    std::vector<uint32_t> spirvSource = {shaderModuleCreateInfo->pCode,
-                                                         shaderModuleCreateInfo->pCode +
-                                                             shaderModuleCreateInfo->codeSize / sizeof(uint32_t)};
-                    auto isGraph = isGraphSpirv(spirvSource);
+                    spirvCode = shaderModuleCreateInfo->pCode;
+                    spirvSize = shaderModuleCreateInfo->codeSize / sizeof(uint32_t);
+                    auto isGraph = isGraphSpirv(spirvCode, spirvSize);
                     if (!isGraph.has_value()) {
-                        graphLog(Severity::Error) << "Failed to compile spirv code." << std::endl;
                         return VK_ERROR_UNKNOWN;
                     }
-                    if (isGraph.value()) {
-                        shaderModule = std::make_shared<ShaderModule>(shaderModuleCreateInfo);
-                    } else {
+                    if (!isGraph.value()) {
                         graphLog(Severity::Error) << "spirv code does not contain graph." << std::endl;
                         return VK_ERROR_UNKNOWN;
                     }
                 } else {
-                    shaderModule = getHandle(deviceHandle, dataGraphPipelineShaderModuleCreateInfo->module);
+                    auto shaderModule = getHandle(deviceHandle, dataGraphPipelineShaderModuleCreateInfo->module);
+                    if (!shaderModule) {
+                        graphLog(Severity::Error) << "Shader module not recognized by Graph layer" << std::endl;
+                        return VK_ERROR_FEATURE_NOT_PRESENT;
+                    }
+                    spirvCode = shaderModule->code.data();
+                    spirvSize = shaderModule->code.size();
                 }
 
-                if (!shaderModule) {
-                    graphLog(Severity::Error) << "Shader module not recognized by Graph layer" << std::endl;
-                    return VK_ERROR_FEATURE_NOT_PRESENT;
+                if (!checkInstVersion(spirvCode, spirvSize)) {
+                    return VK_ERROR_UNKNOWN;
                 }
 
                 // Create optimizer
                 spvtools::Optimizer optimizer{SPV_ENV_UNIVERSAL_1_6};
 
                 // Register passes
-                const auto tosaVersion = tryGetExtInstVersion(shaderModule->code.data(), shaderModule->code.size(),
-                                                              std::regex("^TOSA\\.\\d{6}\\.\\d"));
-                const auto motionEngineVersion = tryGetExtInstVersion(
-                    shaderModule->code.data(), shaderModule->code.size(), std::regex("^Arm\\.MotionEngine\\.\\d{3}"));
-
-                const bool isTosaVersionUnsupported = tosaVersion.has_value() && tosaVersion != tosaSpv100;
-                if (isTosaVersionUnsupported) {
-                    graphLog(Severity::Error) << "Unsupported Tosa version provided." << std::endl;
-                    return VK_ERROR_UNKNOWN;
-                }
-
-                const bool isMotionEngineVersionUnsupported =
-                    motionEngineVersion.has_value() && motionEngineVersion != motionEngine100;
-                if (isMotionEngineVersionUnsupported) {
-                    graphLog(Severity::Error) << "Unsupported MotionEngine version provided." << std::endl;
-                    return VK_ERROR_UNKNOWN;
-                }
-
                 optimizer.RegisterPass(spvtools::CreateGraphPass<spvtools::opt::GraphPassTosaSpv100>(*graphPipeline));
 
                 // Run passes
+                spvtools::OptimizerOptions options;
+                options.set_run_validator(false);
                 std::vector<uint32_t> optimizedModule;
-                if (!optimizer.Run(shaderModule->code.data(), shaderModule->code.size(), &optimizedModule,
-                                   spvtools::ValidatorOptions(), true)) {
+                if (!optimizer.Run(spirvCode, spirvSize, &optimizedModule, options)) {
                     graphLog(Severity::Error) << "Failed to run optimizer passes" << std::endl;
                     return VK_ERROR_UNKNOWN;
                 }
@@ -1608,11 +1613,10 @@ class GraphLayer : public VulkanLayerImpl {
                                                     const VkAllocationCallbacks *pAllocator,
                                                     VkShaderModule *pShaderModule) {
         auto deviceHandle = VulkanLayerImpl::getHandle(device);
-        std::vector<uint32_t> spirvSource = {pCreateInfo->pCode,
-                                             pCreateInfo->pCode + pCreateInfo->codeSize / sizeof(uint32_t)};
-        auto isGraph = isGraphSpirv(spirvSource);
+        const uint32_t *spirvCode = pCreateInfo->pCode;
+        const size_t spirvSize = pCreateInfo->codeSize / sizeof(uint32_t);
+        auto isGraph = isGraphSpirv(spirvCode, spirvSize);
         if (!isGraph.has_value()) {
-            graphLog(Severity::Error) << "Failed to compile spirv code." << std::endl;
             return VK_ERROR_UNKNOWN;
         }
         if (isGraph.value()) {
