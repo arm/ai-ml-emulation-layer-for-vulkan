@@ -875,41 +875,35 @@ class GraphLayer : public VulkanLayerImpl {
                     }
 
                     /* Create configuration */
+                    OpticalFlow::Config::InputImage inputImage;
+                    inputImage.binding = binding;
+                    inputImage.set = set;
+                    inputImage.layout = *layout;
                     switch (connectionType) {
                     case VK_DATA_GRAPH_PIPELINE_NODE_CONNECTION_TYPE_OPTICAL_FLOW_REFERENCE_ARM:
                         /* Input Image storage */
                         hasReference = true;
-                        config.srcSearch.binding = binding;
-                        config.srcSearch.set = set;
-                        config.srcSearch.layout = *layout;
+                        config.srcSearch = inputImage;
                         break;
                     case VK_DATA_GRAPH_PIPELINE_NODE_CONNECTION_TYPE_OPTICAL_FLOW_INPUT_ARM:
                         /* Input Template Image storage */
                         hasInput = true;
-                        config.srcTemplate.binding = binding;
-                        config.srcTemplate.set = set;
-                        config.srcTemplate.layout = *layout;
+                        config.srcTemplate = inputImage;
                         break;
                     case VK_DATA_GRAPH_PIPELINE_NODE_CONNECTION_TYPE_OPTICAL_FLOW_HINT_ARM:
                         /* Input Flow Input hint storage */
                         hasHint = true;
-                        config.srcFlow.binding = binding;
-                        config.srcFlow.set = set;
-                        config.srcFlow.layout = *layout;
+                        config.srcFlow = inputImage;
                         break;
                     case VK_DATA_GRAPH_PIPELINE_NODE_CONNECTION_TYPE_OPTICAL_FLOW_FLOW_VECTOR_ARM:
                         /* Output Flow Image storage */
                         hasFlowVector = true;
-                        config.dstFlow.binding = binding;
-                        config.dstFlow.set = set;
-                        config.dstFlow.layout = *layout;
+                        config.dstFlow = inputImage;
                         break;
                     case VK_DATA_GRAPH_PIPELINE_NODE_CONNECTION_TYPE_OPTICAL_FLOW_COST_ARM:
                         /* Output Cost Image storage */
                         hasCost = true;
-                        config.dstCost.binding = binding;
-                        config.dstCost.set = set;
-                        config.dstCost.layout = *layout;
+                        config.dstCost = inputImage;
                         break;
                     default:
                         graphLog(Severity::Error) << "Invalid OF connection" << std::endl;
@@ -1571,8 +1565,8 @@ class GraphLayer : public VulkanLayerImpl {
                         descriptorMap[{set, binding, arrayIndex}] = {vkDescriptorSet, imageViews[arrayIndex]};
                     }
                 }
-                opticalFlowPipeline->updateDescriptorSets(descriptorMap);
             }
+            opticalFlowPipeline->updateDescriptorSets(descriptorMap);
             opticalFlowPipeline->cmdBindAndDispatch(commandBuffer, opticalFlowFlags, meanFlowL1NormHint);
         }
     }
