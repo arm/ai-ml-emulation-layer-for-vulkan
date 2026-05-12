@@ -464,14 +464,14 @@ void OpticalFlow::cmdBindAndDispatch(VkCommandBuffer cmdBuf, VkDataGraphOpticalF
 
     if (!(effectiveFlags & (VK_DATA_GRAPH_OPTICAL_FLOW_EXECUTE_REFERENCE_UNCHANGED_BIT_ARM |
                             VK_DATA_GRAPH_OPTICAL_FLOW_EXECUTE_REFERENCE_IS_PREVIOUS_INPUT_BIT_ARM))) {
-        for (const auto &pipeline : downsampleTemplatePipelines_) {
+        for (const auto &pipeline : downsampleSearchPipelines_) {
             pipeline->bindAndDispatch(cmdBuf);
         }
     }
 
     if (!(effectiveFlags & (VK_DATA_GRAPH_OPTICAL_FLOW_EXECUTE_INPUT_UNCHANGED_BIT_ARM |
                             VK_DATA_GRAPH_OPTICAL_FLOW_EXECUTE_INPUT_IS_PREVIOUS_REFERENCE_BIT_ARM))) {
-        for (const auto &pipeline : downsampleSearchPipelines_) {
+        for (const auto &pipeline : downsampleTemplatePipelines_) {
             pipeline->bindAndDispatch(cmdBuf);
         }
     }
