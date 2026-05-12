@@ -41,7 +41,8 @@ class Builder:
         self.cmake_toolchain_for_android = args.cmake_toolchain_for_android
         self.disable_precompile_shaders = args.disable_precompile_shaders
         self.use_float_as_double = args.use_float_as_double
-        self.doc = args.doc
+        self.doc_only = args.doc_only
+        self.doc = args.doc or self.doc_only
         self.clang_tidy_fix = args.clang_tidy_fix
 
         self.package_dir = args.package_dir or self.build_dir
@@ -239,6 +240,8 @@ class Builder:
             "--config",
             self.build_type,
         ]
+        if self.doc_only:
+            cmake_build_cmd.extend(["--target", "mlel_doc"])
 
         try:
             subprocess.run(cmake_setup_cmd, check=True)
@@ -466,9 +469,16 @@ def parse_arguments():
         help="Path to the cmake compiler toolchain. Default: %(default)s",
         default="",
     )
-    parser.add_argument(
+    doc_group = parser.add_mutually_exclusive_group()
+    doc_group.add_argument(
         "--doc",
         help="Build documentation. Default: %(default)s",
+        action="store_true",
+        default=False,
+    )
+    doc_group.add_argument(
+        "--doc-only",
+        help="Only build documentation. Default: %(default)s",
         action="store_true",
         default=False,
     )
