@@ -3,7 +3,7 @@
 #
 
 if(ANDROID)
-    set(SHADER_SOURCE_DIR "/data/local/tmp/tests/shader")
+    set(SHADER_SOURCE_DIR "tests/shader")
 else()
     set(SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shader")
 endif()
