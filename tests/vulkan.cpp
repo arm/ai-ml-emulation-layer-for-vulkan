@@ -371,7 +371,7 @@ TEST_F(MLEmulationLayerForVulkan, EnumeratePhysicalDevices) {
 
         std::cout << "  Extensions:" << std::endl;
         auto extensionProperties = physicalDevice.enumerateDeviceExtensionProperties();
-        for (auto &property : extensionProperties) {
+        for (const auto &property : extensionProperties) {
             std::cout << "    name=" << property.extensionName << std::endl;
         }
     }

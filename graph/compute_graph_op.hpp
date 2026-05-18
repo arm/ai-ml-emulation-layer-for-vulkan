@@ -43,7 +43,7 @@ struct DescriptorBindingId {
 struct DescriptorEntry {
     DescriptorBindingId id{};
     Direction direction = Input;
-    std::shared_ptr<TensorDescriptor> tensor{};
+    std::shared_ptr<TensorDescriptor> tensor;
 
     DescriptorEntry() = default;
     DescriptorEntry(Direction _direction, std::shared_ptr<TensorDescriptor> _tensor)

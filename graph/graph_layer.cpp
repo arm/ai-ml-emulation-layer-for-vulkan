@@ -289,7 +289,7 @@ bool checkInstVersion(const uint32_t *spirvCode, const size_t spirvSize) {
     const auto ir = spvtools::BuildModule(SPV_ENV_UNIVERSAL_1_6, sprivMessageConsumer, spirvCode, spirvSize);
     const auto tryGetExtInstVersion = [&ir](const std::regex &pattern) -> std::optional<std::string> {
         for (const auto &inst : ir->module()->ext_inst_imports()) {
-            const auto name = inst.GetInOperand(0).AsString();
+            auto name = inst.GetInOperand(0).AsString();
             if (std::regex_search(name, pattern)) {
                 return name;
             }

@@ -26,12 +26,12 @@ class TensorARM {
         explicit TensorInfo(const VkTensorCreateInfoARM &createInfo);
         std::vector<int64_t> dimensions;
         std::vector<int64_t> strides;
-        size_t size;
-        size_t elementSize;
-        VkBufferUsageFlags usage;
-        VkBufferCreateFlags flags;
-        VkFormat format;
-        bool isOptimalTilingAliasing;
+        size_t size = 0;
+        size_t elementSize = 0;
+        VkBufferUsageFlags usage = 0;
+        VkBufferCreateFlags flags = 0;
+        VkFormat format = VK_FORMAT_UNDEFINED;
+        bool isOptimalTilingAliasing = false;
 
         static VkBufferCreateFlags convertToBufferCreateFlags(VkTensorCreateFlagsARM flags);
         static VkBufferUsageFlags convertToBufferUsageFlags(VkTensorUsageFlagsARM usage);

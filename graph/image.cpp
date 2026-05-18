@@ -228,13 +228,13 @@ std::vector<uint32_t> Image::candidateMemoryTypes(uint32_t bits, VkMemoryPropert
         out.emplace_back(i);
     }
     std::sort(out.begin(), out.end(), [&](uint32_t a, uint32_t b) {
-        auto ha = memProps.memoryHeaps[memProps.memoryTypes[a].heapIndex];
-        auto hb = memProps.memoryHeaps[memProps.memoryTypes[b].heapIndex];
         bool aDev = memProps.memoryTypes[a].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
         bool bDev = memProps.memoryTypes[b].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
         if (aDev != bDev) {
-            return aDev > bDev;
+            return aDev;
         }
+        auto ha = memProps.memoryHeaps[memProps.memoryTypes[a].heapIndex];
+        auto hb = memProps.memoryHeaps[memProps.memoryTypes[b].heapIndex];
         return ha.size > hb.size;
     });
     return out;
