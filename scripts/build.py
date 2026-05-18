@@ -260,6 +260,7 @@ class Builder:
                     f"{EMULATION_LAYER_DIR / 'tests'}",
                     f"{EMULATION_LAYER_DIR / 'utilities'}",
                 ]
+                os.makedirs(f"{self.build_dir}/cppcheck", exist_ok=True)
 
                 lint_cmd = [
                     "cppcheck",
@@ -273,6 +274,8 @@ class Builder:
                     "--suppress=unassignedVariable",
                     "--suppress=unmatchedSuppression",
                     "--suppress=useStlAlgorithm",
+                    "--suppress=missingInclude",
+                    "--suppress=missingIncludeSystem",
                     "--suppress=*:MachineIndependent*",
                     f"--suppress=*:{DEPENDENCY_DIR}*",
                 ] + source_dirs

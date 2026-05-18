@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -73,8 +73,9 @@ void GraphConstants::makeGraphPipelineConstantTensor(uint32_t id, const Shape &s
 
 std::vector<vk::DataGraphPipelineConstantARM> GraphConstants::getGraphPipelineConstants() const {
     std::vector<vk::DataGraphPipelineConstantARM> graphPipelineConstants;
+    graphPipelineConstants.reserve(constants.size());
 
-    for (auto [id, constant] : constants) {
+    for (const auto &[id, constant] : constants) {
         graphPipelineConstants.push_back({
             id,                                       // id
             constant->data(),                         // data

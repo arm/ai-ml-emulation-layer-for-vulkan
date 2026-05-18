@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -26,7 +26,7 @@ class TensorViewARM {
     VkResult getOpaqueCaptureDescriptorDataEXT(const Device &dev, void *pData) const;
 
   private:
-    TensorDescriptor *m_descriptor;
-    VkTensorARM m_tensor;
+    TensorDescriptor *m_descriptor = nullptr;
+    VkTensorARM m_tensor = {};
 };
 } // namespace mlsdk::el::layer

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2025-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -45,7 +45,7 @@ class PipelineCache {
     using Entry = std::pair<std::vector<uint32_t>, uint32_t>;
 
     VkPipelineCache pipelineCache;
-    std::map<std::string, Entry> cache{};
+    std::map<std::string, Entry> cache;
 
     static std::string makeKey(std::string_view shaderName, const KeyList &keys);
     static std::vector<uint32_t> replaceCompileGlsl(std::string_view glslSource, const ReplaceList &replaceList);

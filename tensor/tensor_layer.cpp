@@ -264,7 +264,7 @@ class TensorLayer : public VulkanLayerImpl {
     static void VKAPI_CALL vkGetTensorMemoryRequirementsARM(VkDevice device,
                                                             const VkTensorMemoryRequirementsInfoARM *info,
                                                             VkMemoryRequirements2 *requirements) {
-        auto *tensor = reinterpret_cast<TensorARM *>(info->tensor);
+        const auto *tensor = reinterpret_cast<const TensorARM *>(info->tensor);
         tensor->getMemoryRequirements(*VulkanLayerImpl::getHandle(device), &requirements->memoryRequirements);
     }
 
@@ -301,14 +301,14 @@ class TensorLayer : public VulkanLayerImpl {
                                               const VkCopyTensorInfoARM *copyTensorInfo) {
         assert(copyTensorInfo->regionCount == 1 && "Only support single region to copy tensor.");
         auto *srcTensor = reinterpret_cast<TensorARM *>(copyTensorInfo->srcTensor);
-        auto *dstTensor = reinterpret_cast<TensorARM *>(copyTensorInfo->dstTensor);
+        const auto *dstTensor = reinterpret_cast<const TensorARM *>(copyTensorInfo->dstTensor);
         srcTensor->copyToTensor(*VulkanLayerImpl::getHandle(commandBuffer), *dstTensor);
     }
 
     static VkResult vkGetTensorViewOpaqueCaptureDescriptorDataARM(VkDevice device,
                                                                   const VkTensorViewCaptureDescriptorDataInfoARM *pInfo,
                                                                   void *pData) {
-        auto *tensorView = reinterpret_cast<TensorViewARM *>(pInfo->tensorView);
+        const auto *tensorView = reinterpret_cast<const TensorViewARM *>(pInfo->tensorView);
         return tensorView->getOpaqueCaptureDescriptorDataEXT(*VulkanLayerImpl::getHandle(device), pData);
     }
 
@@ -519,17 +519,17 @@ class TensorLayer : public VulkanLayerImpl {
         const void *pNext = bindingInfo ? bindingInfo->pNext : pCreateInfo->pNext;
         const VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsCreateInfo{
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-            const_cast<void *>(pNext),
+            pNext,
             uint32_t(bindingFlags.size()),
             bindingFlags.data(),
         };
 
         const VkDescriptorSetLayoutCreateInfo newCreateInfo{
-            pCreateInfo->sType,                // type
-            (void *)(&bindingFlagsCreateInfo), // next
-            pCreateInfo->flags,                // flags
-            uint32_t(bindings.size()),         // binding count
-            bindings.data(),                   // bindings
+            pCreateInfo->sType,        // type
+            &bindingFlagsCreateInfo,   // next
+            pCreateInfo->flags,        // flags
+            uint32_t(bindings.size()), // binding count
+            bindings.data(),           // bindings
         };
 #else
         const VkDescriptorSetLayoutCreateInfo newCreateInfo{
@@ -607,7 +607,7 @@ class TensorLayer : public VulkanLayerImpl {
                 tensorDependencyInfo->pTensorMemoryBarriers + tensorDependencyInfo->tensorMemoryBarrierCount};
 
             for (const auto &barrier : tensorMemoryBarriers) {
-                auto *tensorARM = reinterpret_cast<TensorARM *>(barrier.tensor);
+                const auto *tensorARM = reinterpret_cast<const TensorARM *>(barrier.tensor);
                 bufferMemoryBarriers.emplace_back(VkBufferMemoryBarrier2{
                     VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2, // sType
                     nullptr,                                   // pNext
@@ -623,7 +623,7 @@ class TensorLayer : public VulkanLayerImpl {
                 });
             }
         } else if (tensorBarrier != nullptr) {
-            auto *tensorARM = reinterpret_cast<TensorARM *>(tensorBarrier->tensor);
+            const auto *tensorARM = reinterpret_cast<const TensorARM *>(tensorBarrier->tensor);
             bufferMemoryBarriers.emplace_back(VkBufferMemoryBarrier2{
                 VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2, // sType
                 nullptr,                                   // pNext
@@ -884,7 +884,7 @@ class TensorLayer : public VulkanLayerImpl {
         auto handle = VulkanLayerImpl::getHandle(device);
         switch (pNameInfo->objectType) {
         case VK_OBJECT_TYPE_TENSOR_ARM: {
-            auto *tensorARM = reinterpret_cast<TensorARM *>(pNameInfo->objectHandle);
+            const auto *tensorARM = reinterpret_cast<const TensorARM *>(pNameInfo->objectHandle);
             VkDebugUtilsObjectNameInfoEXT newNameInfo{
                 VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT, pNameInfo->pNext, VK_OBJECT_TYPE_BUFFER,
                 reinterpret_cast<uint64_t>(tensorARM->getTensorBuffer()), pNameInfo->pObjectName};

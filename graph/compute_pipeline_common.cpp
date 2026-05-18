@@ -49,26 +49,12 @@ VkShaderModule createShaderModule(const std::shared_ptr<VULKAN_HPP_NAMESPACE::de
     return shaderModule;
 }
 
-VkPipeline createComputePipeline(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader,
-                                 const VkDevice device, const VkPipelineCache pipelineCache,
-                                 const VkShaderModule shaderModule, const VkPipelineLayout pipelineLayout,
-                                 const SpecializationConstantsView *specializationConstants,
-                                 const VkAllocationCallbacks *allocator) {
-    std::vector<VkSpecializationMapEntry> specEntries;
-    const VkSpecializationInfo *specializationInfo = nullptr;
-    VkSpecializationInfo specializationInfoStorage{};
+namespace {
 
-    if (specializationConstants != nullptr && specializationConstants->entryCount > 0) {
-        specEntries = makeSpecializationMapEntries(specializationConstants->entryCount);
-        specializationInfoStorage = {
-            static_cast<uint32_t>(specEntries.size()), // mapEntryCount
-            specEntries.data(),                        // pMapEntries
-            specializationConstants->sizeBytes,        // dataSize
-            specializationConstants->data,             // pData
-        };
-        specializationInfo = &specializationInfoStorage;
-    }
-
+VkPipeline createComputePipelineWithSpecializationInfo(
+    const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, const VkDevice device,
+    const VkPipelineCache pipelineCache, const VkShaderModule shaderModule, const VkPipelineLayout pipelineLayout,
+    const VkSpecializationInfo *specializationInfo, const VkAllocationCallbacks *allocator) {
     const VkPipelineShaderStageCreateInfo pipelineShaderCreateInfo = {
         VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, // type
         nullptr,                                             // next
@@ -96,6 +82,29 @@ VkPipeline createComputePipeline(const std::shared_ptr<VULKAN_HPP_NAMESPACE::det
     }
 
     return pipeline;
+}
+
+} // namespace
+
+VkPipeline createComputePipeline(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader,
+                                 const VkDevice device, const VkPipelineCache pipelineCache,
+                                 const VkShaderModule shaderModule, const VkPipelineLayout pipelineLayout,
+                                 const SpecializationConstantsView *specializationConstants,
+                                 const VkAllocationCallbacks *allocator) {
+    if (specializationConstants == nullptr || specializationConstants->entryCount == 0) {
+        return createComputePipelineWithSpecializationInfo(loader, device, pipelineCache, shaderModule, pipelineLayout,
+                                                           nullptr, allocator);
+    }
+
+    const auto specEntries = makeSpecializationMapEntries(specializationConstants->entryCount);
+    const VkSpecializationInfo specializationInfo = {
+        static_cast<uint32_t>(specEntries.size()), // mapEntryCount
+        specEntries.data(),                        // pMapEntries
+        specializationConstants->sizeBytes,        // dataSize
+        specializationConstants->data,             // pData
+    };
+    return createComputePipelineWithSpecializationInfo(loader, device, pipelineCache, shaderModule, pipelineLayout,
+                                                       &specializationInfo, allocator);
 }
 
 } // namespace mlsdk::el::compute::common
