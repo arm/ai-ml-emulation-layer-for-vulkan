@@ -62,7 +62,7 @@ class TensorDescriptor {
   public:
     TensorDescriptor(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader,
                      VkPhysicalDevice _physicalDevice, VkDevice _device, VkFormat _format,
-                     const std::vector<int64_t> &_dimensions = {}, const std::vector<int64_t> &_strides = {});
+                     std::vector<int64_t> _dimensions = {}, std::vector<int64_t> _strides = {});
 
     TensorDescriptor(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader,
                      VkPhysicalDevice _physicalDevice, VkDevice _device,
