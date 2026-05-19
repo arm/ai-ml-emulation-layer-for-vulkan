@@ -119,69 +119,68 @@ class GraphPassBase : public Pass {
     }
 
     template <typename T = int64_t> T getConstScalar(const analysis::Constant *constant) const {
-        if constexpr (std::is_integral_v<T>) {
-            const auto *intConstant = constant->AsIntConstant();
-            if (intConstant) {
-                const auto *type = intConstant->type()->AsInteger();
+        const auto *intConstant = constant->AsIntConstant();
+        if (intConstant) {
+            const auto *type = intConstant->type()->AsInteger();
 
-                if (type->IsSigned()) {
-                    return static_cast<T>(constant->GetSignExtendedValue());
-                }
-
-                switch (type->width()) {
-                case 8:
-                    return T(int8_t(constant->GetZeroExtendedValue()));
-                case 16:
-                    return T(int16_t(constant->GetZeroExtendedValue()));
-                case 32:
-                    return T(int32_t(constant->GetZeroExtendedValue()));
-                case 64:
-                    return T(int64_t(constant->GetZeroExtendedValue()));
-                default:
-                    throw std::runtime_error(std::string("Unsupported integer constant width: ") +
-                                             std::to_string(type->width()));
-                }
+            if (type->IsSigned()) {
+                return static_cast<T>(constant->GetSignExtendedValue());
             }
-        } else if constexpr (std::is_floating_point_v<T> || is_el_floating_point_v<T>) {
-            const auto *floatConstant = constant->AsFloatConstant();
-            if (floatConstant) {
-                const auto *type = floatConstant->type()->AsFloat();
 
-                switch (type->width()) {
-                case 8: {
-                    if (type->encoding() == spv::FPEncoding::Float8E5M2EXT) {
-                        const auto value = uint8_t(floatConstant->words()[0]);
-                        const auto &fp = reinterpret_cast<const float8_e5m2 &>(value);
-                        return T(fp);
-                    }
-                    if (type->encoding() == spv::FPEncoding::Float8E4M3EXT) {
-                        const auto value = uint8_t(floatConstant->words()[0]);
-                        const auto &fp = reinterpret_cast<const float8_e4m3 &>(value);
-                        return T(fp);
-                    }
-                    throw std::runtime_error(std::string("Unsupported 8-bit float encoding: ") +
-                                             std::to_string(static_cast<uint32_t>(type->encoding())));
-                }
-                case 16: {
-                    const auto value = uint16_t(floatConstant->words()[0]);
-                    const auto &fp = reinterpret_cast<const float16 &>(value);
-                    return T(fp);
-                }
-                case 32:
-                    return T(floatConstant->GetFloatValue());
-                case 64:
-                    return T(floatConstant->GetDoubleValue());
-                default:
-                    throw std::runtime_error(std::string("Unsupported constant float width: ") +
-                                             std::to_string(type->width()));
-                }
-            }
-        } else if constexpr (std::is_same_v<T, bool>) {
-            const auto *boolConstant = constant->AsBoolConstant();
-            if (boolConstant) {
-                return boolConstant->value();
+            switch (type->width()) {
+            case 8:
+                return T(int8_t(constant->GetZeroExtendedValue()));
+            case 16:
+                return T(int16_t(constant->GetZeroExtendedValue()));
+            case 32:
+                return T(int32_t(constant->GetZeroExtendedValue()));
+            case 64:
+                return T(int64_t(constant->GetZeroExtendedValue()));
+            default:
+                throw std::runtime_error(std::string("Unsupported integer constant width: ") +
+                                         std::to_string(type->width()));
             }
         }
+
+        const auto *floatConstant = constant->AsFloatConstant();
+        if (floatConstant) {
+            const auto *type = floatConstant->type()->AsFloat();
+
+            switch (type->width()) {
+            case 8: {
+                if (type->encoding() == spv::FPEncoding::Float8E5M2EXT) {
+                    const auto value = uint8_t(floatConstant->words()[0]);
+                    const auto &fp = reinterpret_cast<const float8_e5m2 &>(value);
+                    return T(fp);
+                }
+                if (type->encoding() == spv::FPEncoding::Float8E4M3EXT) {
+                    const auto value = uint8_t(floatConstant->words()[0]);
+                    const auto &fp = reinterpret_cast<const float8_e4m3 &>(value);
+                    return T(fp);
+                }
+                throw std::runtime_error(std::string("Unsupported 8-bit float encoding: ") +
+                                         std::to_string(static_cast<uint32_t>(type->encoding())));
+            }
+            case 16: {
+                const auto value = uint16_t(floatConstant->words()[0]);
+                const auto &fp = reinterpret_cast<const float16 &>(value);
+                return T(fp);
+            }
+            case 32:
+                return T(floatConstant->GetFloatValue());
+            case 64:
+                return T(floatConstant->GetDoubleValue());
+            default:
+                throw std::runtime_error(std::string("Unsupported constant float width: ") +
+                                         std::to_string(type->width()));
+            }
+        }
+
+        const auto *boolConstant = constant->AsBoolConstant();
+        if (boolConstant) {
+            return T(boolConstant->value() ? 1 : 0);
+        }
+
         throw std::runtime_error(std::string("Unsupported constant type: ") + std::to_string(constant->type()->kind()) +
                                  " for requested return type: " + typeid(T).name());
     }
