@@ -527,6 +527,7 @@ ComputePipeline::ComputePipeline(const std::shared_ptr<VULKAN_HPP_NAMESPACE::det
                                  const std::string &debugName, const SpecConstants &_constants)
     : ComputePipelineBase(createPipelineLayout(_loader, _device, std::move(descriptorMap), pushConstant)),
       loader{_loader}, device{_device}, pipelineCache{_pipelineCache},
+      // Vulkan objects created from the provided SPIR-V.
       shaderModule{createShaderModule(_spirv)}, pipeline{createComputePipeline(_constants)} {
     assert(std::to_string(warp1D) == warp1DSv);
     connectPipelines();

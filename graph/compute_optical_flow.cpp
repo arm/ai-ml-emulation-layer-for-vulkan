@@ -368,6 +368,7 @@ MVProcessAndWarp::MVProcessAndWarp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::d
     : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstImage->width(), dstImage->height()}, debugName),
       srcSearch_(std::move(srcImage)), srcFlow_(std::move(srcFlow)), dstWarped_(dstImage),
+      // Output flow and specialization state.
       dstFlow_(std::move(dstFlow)), specConstants_{makeSpecConstants()},
       linearSampler_{createSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
@@ -411,6 +412,7 @@ DenseWarp::DenseWarp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispatc
     : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstImage->width(), dstImage->height()}, debugName),
       srcSearch_(std::move(srcImage)), srcFlow_(std::move(srcFlow)),
+      // Output image and specialization state.
       dstWarped_(dstImage), specConstants_{makeSpecConstants(inputFlowScale)},
       linearSampler_{createSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)},
       nearestSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
@@ -497,6 +499,7 @@ BilateralFilter::BilateralFilter(const std::shared_ptr<VULKAN_HPP_NAMESPACE::det
     : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstFlow->width(), dstFlow->height()}, debugName),
       srcTemplate_(std::move(srcImage)), srcFlow_(std::move(srcFlow)),
+      // Output flow and specialization state.
       dstFlow_(dstFlow), specConstants_{makeSpecConstants(outputFlowScale)},
       nearestSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 

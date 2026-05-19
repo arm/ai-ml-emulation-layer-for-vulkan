@@ -18,11 +18,15 @@
  * uint helper classes
  *******************************************************************************/
 
+template <typename T> struct TypeIdentity {
+    // C++17 replacement for std::type_identity.
+    using type = T;
+};
 template <std::size_t SIZE> struct UIntT {};
-template <> struct UIntT<8> { using type = uint8_t; };
-template <> struct UIntT<16> { using type = uint16_t; };
-template <> struct UIntT<32> { using type = uint32_t; };
-template <> struct UIntT<64> { using type = uint64_t; };
+template <> struct UIntT<8> : TypeIdentity<uint8_t> {};
+template <> struct UIntT<16> : TypeIdentity<uint16_t> {};
+template <> struct UIntT<32> : TypeIdentity<uint32_t> {};
+template <> struct UIntT<64> : TypeIdentity<uint64_t> {};
 
 /*******************************************************************************
  * FloatingPoint
