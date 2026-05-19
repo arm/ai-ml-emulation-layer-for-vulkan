@@ -142,7 +142,7 @@ class GraphPassBase : public Pass {
                                              std::to_string(type->width()));
                 }
             }
-        } else if constexpr (std::is_floating_point_v<T>) {
+        } else if constexpr (std::is_floating_point_v<T> || is_el_floating_point_v<T>) {
             const auto *floatConstant = constant->AsFloatConstant();
             if (floatConstant) {
                 const auto *type = floatConstant->type()->AsFloat();
@@ -182,7 +182,8 @@ class GraphPassBase : public Pass {
                 return boolConstant->value();
             }
         }
-        throw std::runtime_error(std::string("Unsupported constant type: ") + std::to_string(constant->type()->kind()));
+        throw std::runtime_error(std::string("Unsupported constant type: ") + std::to_string(constant->type()->kind()) +
+                                 " for requested return type: " + typeid(T).name());
     }
 
     static bool isBFloat16(const spvtools::opt::analysis::Float *f);
