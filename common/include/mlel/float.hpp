@@ -36,13 +36,6 @@ using float16 = FloatingPoint<5, 10>;
 using float32 = FloatingPoint<8, 23>;
 using float64 = FloatingPoint<11, 52>;
 
-template <typename T> struct IsElFloatingPoint : std::false_type {};
-
-template <std::size_t EXPONENT, std::size_t MANTISSA>
-struct IsElFloatingPoint<FloatingPoint<EXPONENT, MANTISSA>> : std::true_type {};
-
-template <typename T> inline constexpr bool is_el_floating_point_v = IsElFloatingPoint<std::remove_cv_t<T>>::value;
-
 /**
  * Floating point conversion between double and the most common floating point types.
  *
