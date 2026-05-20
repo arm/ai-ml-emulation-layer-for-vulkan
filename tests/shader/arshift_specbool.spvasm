@@ -1,0 +1,53 @@
+;
+; SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
+; SPDX-License-Identifier: Apache-2.0
+;
+               OpCapability GraphARM
+               OpCapability TensorsARM
+               OpCapability Shader
+               OpCapability VulkanMemoryModel
+               OpCapability Int16
+               OpExtension "SPV_ARM_graph"
+               OpExtension "SPV_ARM_tensors"
+               OpExtension "SPV_KHR_vulkan_memory_model"
+         %20 = OpExtInstImport "TOSA.001000.1"
+               OpMemoryModel Logical Vulkan
+               OpName %in0 "in0"
+               OpName %in1 "in1"
+               OpName %out0 "out0"
+               OpName %main "spec_arshift"
+               OpDecorate %in0 Binding 0
+               OpDecorate %in0 DescriptorSet 0
+               OpDecorate %in1 Binding 1
+               OpDecorate %in1 DescriptorSet 0
+               OpDecorate %out0 Binding 2
+               OpDecorate %out0 DescriptorSet 0
+               OpDecorate %roundc SpecId 0
+; types
+     %uint = OpTypeInt 32 0
+    %boolt = OpTypeBool
+   %int16t = OpTypeInt 16 1
+   %uint16t = OpTypeInt 16 0
+   %uint_1 = OpConstant %uint 1
+   %uint_4 = OpConstant %uint 4
+%arr_u1_u = OpTypeArray %uint %uint_1
+    %dims = OpConstantComposite %arr_u1_u %uint_4
+   %tensor = OpTypeTensorARM %uint16t %uint_1 %dims
+%ptr_uc_ts = OpTypePointer UniformConstant %tensor
+; specialization bool controlling rounding
+   %roundc = OpSpecConstantFalse %boolt
+; variables
+       %in0 = OpVariable %ptr_uc_ts UniformConstant
+       %in1 = OpVariable %ptr_uc_ts UniformConstant
+       %out0 = OpVariable %ptr_uc_ts UniformConstant
+; graph
+  %graph_t = OpTypeGraphARM 2 %tensor %tensor %tensor
+  %uint_0  = OpConstant %uint 0
+  %uint_1x = OpConstant %uint 1
+               OpGraphEntryPointARM %main "spec_arshift" %in0 %in1 %out0
+       %main = OpGraphARM %graph_t
+        %g0 = OpGraphInputARM %tensor %uint_0
+        %g1 = OpGraphInputARM %tensor %uint_1x
+        %r0 = OpExtInst %tensor %20 ARITHMETIC_RIGHT_SHIFT %roundc %g0 %g1
+               OpGraphSetOutputARM %r0 %uint_0
+               OpGraphEndARM

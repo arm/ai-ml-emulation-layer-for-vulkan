@@ -436,8 +436,24 @@ VkFormat GraphPassBase::getVkFormat(const analysis::Type *type) const {
 }
 
 bool GraphPassBase::getBoolConstant(const Operand &operand) {
-    const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(operand.AsId());
-    return constant->AsBoolConstant()->value();
+    const auto id = operand.AsId();
+    const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(id);
+    if (constant == nullptr) {
+        const auto *instruction = get_def_use_mgr()->GetDef(id);
+        const auto opcode = instruction == nullptr ? std::string{"unknown"}
+                                                   : std::to_string(static_cast<uint32_t>(instruction->opcode()));
+        throw std::runtime_error("Expected boolean constant for id %" + std::to_string(id) + ", found opcode " +
+                                 opcode);
+    }
+
+    const auto *boolConstant = constant->AsBoolConstant();
+    if (boolConstant == nullptr) {
+        throw std::runtime_error("Expected boolean constant for id %" + std::to_string(id) +
+                                 ", found constant type kind " +
+                                 std::to_string(static_cast<uint32_t>(constant->type()->kind())));
+    }
+
+    return boolConstant->value();
 }
 
 // Disabled until needed

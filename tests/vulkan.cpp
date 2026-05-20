@@ -1913,6 +1913,139 @@ TEST_F(MLEmulationLayerForVulkan, PipelineCreationFeedback) {
     ASSERT_GT(creationFeedback.duration, 0);
 }
 
+TEST_F(MLEmulationLayerForVulkan, SpecConstBoolDoesNotBlockLowering) {
+    auto device = createDevice();
+
+    constexpr vk::Format kTensorFormat = vk::Format::eR16Uint;
+    constexpr int64_t kTensorLength = 4;
+    constexpr uint32_t kBindingInput = 0u;
+    constexpr uint32_t kBindingShift = 1u;
+    constexpr uint32_t kBindingOutput = 2u;
+    constexpr uint32_t kSpecIdRound = 0u;
+
+    // Create three tensors: 1D R16Sint of length 4 for inputs and output
+    auto inputTensor = std::make_shared<Tensor>(device, Shape{kTensorFormat, std::vector<int64_t>{kTensorLength}});
+    auto shiftTensor = std::make_shared<Tensor>(device, Shape{kTensorFormat, std::vector<int64_t>{kTensorLength}});
+    auto outputTensor = std::make_shared<Tensor>(device, Shape{kTensorFormat, std::vector<int64_t>{kTensorLength}});
+
+    const GraphPipeline::DescriptorMap descriptorMap = {{
+        {kBindingInput, {inputTensor}},
+        {kBindingShift, {shiftTensor}},
+        {kBindingOutput, {outputTensor}},
+    }};
+
+    const auto spirv = assembleSpirv(fileToString("arshift_specbool.spvasm"));
+
+    // Build resource infos for pipeline creation
+    std::vector<vk::DataGraphPipelineResourceInfoARM> graphPipelineResourceInfos;
+    constexpr size_t kResourceInfoCapacity = 3u; // input, shift, output
+    graphPipelineResourceInfos.reserve(kResourceInfoCapacity);
+    uint32_t set = 0;
+    for (const auto &bindingMap : descriptorMap) {
+        for (const auto &[binding, tensors] : bindingMap) {
+            for (uint32_t i = 0; i < tensors.size(); i++) {
+                graphPipelineResourceInfos.push_back(vk::DataGraphPipelineResourceInfoARM{
+                    set,                                // descriptor set
+                    binding,                            // binding
+                    i,                                  // array element
+                    &tensors[i]->getTensorDescription() // next
+                });
+            }
+        }
+        set++;
+    }
+
+    // Shader module
+    const vk::ShaderModuleCreateInfo info{
+        {},                                                     // flags
+        static_cast<uint32_t>(spirv.size() * sizeof(uint32_t)), // code size
+        spirv.data()                                            // code
+    };
+    vk::raii::ShaderModule shaderModule{&(*device), info};
+
+    // Descriptor set layouts
+    std::vector<vk::raii::DescriptorSetLayout> descriptorSetLayouts;
+    descriptorSetLayouts.reserve(descriptorMap.size());
+    for (const auto &bindingMap : descriptorMap) {
+        std::vector<vk::DescriptorSetLayoutBinding> descriptorSetLayoutBindings;
+        descriptorSetLayoutBindings.reserve(bindingMap.size());
+        for (const auto &[binding, tensors] : bindingMap) {
+            descriptorSetLayoutBindings.push_back(vk::DescriptorSetLayoutBinding{
+                binding,                        // binding
+                vk::DescriptorType::eTensorARM, // descriptor type
+                uint32_t(tensors.size()),       // descriptor count
+                vk::ShaderStageFlagBits::eAll,  // stage flags
+            });
+        }
+
+        std::vector<vk::DescriptorBindingFlags> descriptorBindingFlags(descriptorSetLayoutBindings.size(),
+                                                                       vk::DescriptorBindingFlagBits::eUpdateAfterBind);
+
+        const vk::DescriptorSetLayoutBindingFlagsCreateInfo descriptorSetBindingFlagsCreateInfo{
+            static_cast<uint32_t>(descriptorBindingFlags.size()), // binding count
+            descriptorBindingFlags.data(),                        // binding flags
+        };
+
+        const vk::DescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo{
+            vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool, // flags
+            static_cast<uint32_t>(descriptorSetLayoutBindings.size()),   // binding count
+            descriptorSetLayoutBindings.data(),                          // bindings
+            &descriptorSetBindingFlagsCreateInfo,                        // next
+        };
+
+        descriptorSetLayouts.push_back(vk::raii::DescriptorSetLayout(&(*device), descriptorSetLayoutCreateInfo));
+    }
+
+    std::vector<vk::DescriptorSetLayout> vkDescriptorSetLayouts;
+    vkDescriptorSetLayouts.reserve(descriptorSetLayouts.size());
+    std::transform(descriptorSetLayouts.begin(), descriptorSetLayouts.end(), std::back_inserter(vkDescriptorSetLayouts),
+                   [](const auto &layout) { return *layout; });
+
+    const vk::PipelineLayoutCreateInfo pipelineLayoutCreateInfo{
+        {},                                                   // flags
+        static_cast<uint32_t>(vkDescriptorSetLayouts.size()), // descriptor set layout count
+        vkDescriptorSetLayouts.data()                         // descriptor set layouts
+    };
+    vk::raii::PipelineLayout pipelineLayout{&(*device), pipelineLayoutCreateInfo};
+
+    // Specialization constant for SpecId 0 (bool round). Vulkan expects 4 bytes for bool specialization.
+    constexpr uint32_t specRoundTrue = 1u;
+    constexpr uint32_t kMapEntryCount = 1u;
+    const vk::SpecializationMapEntry mapEntry{kSpecIdRound, /*offset*/ 0u, /*size*/ sizeof(uint32_t)};
+    const vk::SpecializationInfo specInfo{
+        kMapEntryCount,   // mapEntryCount
+        &mapEntry,        // pMapEntries
+        sizeof(uint32_t), // dataSize
+        &specRoundTrue    // pData
+    };
+
+    vk::PipelineCreationFeedback creationFeedback{};
+    const vk::PipelineCreationFeedbackCreateInfo feedbackCreateInfo{&creationFeedback, 0, nullptr, nullptr};
+
+    const vk::DataGraphPipelineShaderModuleCreateInfoARM shaderModuleCreateInfo{
+        *shaderModule,       // shader module
+        "Graph Pipeline",    // name
+        &specInfo,           // specialization info (non-null to trigger spec-const passes)
+        0,                   // constant count
+        nullptr,             // constants
+        &feedbackCreateInfo, // next
+    };
+
+    const vk::DataGraphPipelineCreateInfoARM graphPipelineCreateInfo{
+        {},                                          // flags
+        *pipelineLayout,                             // pipeline layout
+        uint32_t(graphPipelineResourceInfos.size()), // resource info count
+        graphPipelineResourceInfos.data(),           // resource infos
+        &shaderModuleCreateInfo,                     // next
+    };
+
+    // Creating the pipeline runs our optimizer passes including spec-const defaults and folding
+    vk::raii::Pipeline pipeline{&(*device), nullptr, nullptr, graphPipelineCreateInfo};
+
+    ASSERT_TRUE(creationFeedback.flags & vk::PipelineCreationFeedbackFlagBits::eValid);
+    ASSERT_GT(creationFeedback.duration, 0);
+}
+
 TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelineAvailablePropertiesARM) {
     const auto device = createDevice();
     const auto &vkDevice = &(*device);
