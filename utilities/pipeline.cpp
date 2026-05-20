@@ -286,6 +286,7 @@ GraphPipeline::GraphPipeline(std::shared_ptr<Device> &_device, const DescriptorM
                              const GraphConstants &_graphConstants, const std::vector<uint32_t> &_spirv,
                              bool _hostMemory)
     : PipelineBase(_device, _descriptorMap, _spirv), graphConstants{_graphConstants},
+      // Runtime options and pipeline object.
       hostMemory{_hostMemory}, pipeline{createPipeline()} {}
 
 GraphPipeline::GraphPipeline(std::shared_ptr<Device> &_device, const DescriptorMap &_descriptorMap,

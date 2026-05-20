@@ -243,10 +243,9 @@ class Instance : public Loader {
   public:
     explicit Instance(VkInstance _instance, PFN_vkGetInstanceProcAddr _gipr, const VkAllocationCallbacks *_callbacks,
                       PFN_vkGetInstanceProcAddr _nextGetInstanceProcAddr,
-                      PFN_GetPhysicalDeviceProcAddr _nextGetPhysicalDeviceProcAddr)
+                      PFN_GetPhysicalDeviceProcAddr _nextGetPhysicalDevice)
         : Loader(_callbacks, _instance, _gipr), instance{_instance}, callbacks{_callbacks},
-          nextGetInstanceProcAddr{_nextGetInstanceProcAddr}, nextGetPhysicalDeviceProcAddr{
-                                                                 _nextGetPhysicalDeviceProcAddr} {}
+          nextGetInstanceProcAddr{_nextGetInstanceProcAddr}, nextGetPhysicalDeviceProcAddr{_nextGetPhysicalDevice} {}
     VkInstance instance;
     const VkAllocationCallbacks *callbacks;
     PFN_vkGetInstanceProcAddr nextGetInstanceProcAddr;
