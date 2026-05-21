@@ -24,7 +24,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <optional>
-#include <regex>
+#include <string_view>
 
 using namespace mlsdk::el::compute;
 using namespace mlsdk::el::compute::graph_op;
@@ -38,7 +38,24 @@ using namespace mlsdk::el::log;
 namespace mlsdk::el::layer {
 namespace {
 constexpr char graphPipelineCreatedLog[] = "Graph pipeline created";
+
+bool isDigit(char value) { return value >= '0' && value <= '9'; }
+
+bool hasVersionPrefix(std::string_view name, std::string_view prefix, size_t digitCount) {
+    const auto minSize = prefix.size() + digitCount + 2;
+    if (name.size() < minSize || name.compare(0, prefix.size(), prefix) != 0) {
+        return false;
+    }
+
+    for (size_t i = 0; i < digitCount; ++i) {
+        if (!isDigit(name[prefix.size() + i])) {
+            return false;
+        }
+    }
+
+    return name[prefix.size() + digitCount] == '.' && isDigit(name[prefix.size() + digitCount + 1]);
 }
+} // namespace
 
 /**************************************************************************
  * DataGraphDescriptorSet
@@ -287,26 +304,24 @@ std::optional<bool> isGraphSpirv(const uint32_t *spirvCode, const size_t spirvSi
 
 bool checkInstVersion(const uint32_t *spirvCode, const size_t spirvSize) {
     const auto ir = spvtools::BuildModule(SPV_ENV_UNIVERSAL_1_6, sprivMessageConsumer, spirvCode, spirvSize);
-    const auto tryGetExtInstVersion = [&ir](const std::regex &pattern) -> std::optional<std::string> {
+    const auto tryGetExtInstVersion = [&ir](std::string_view prefix, size_t digitCount) -> std::optional<std::string> {
         for (const auto &inst : ir->module()->ext_inst_imports()) {
             auto name = inst.GetInOperand(0).AsString();
-            if (std::regex_search(name, pattern)) {
+            if (hasVersionPrefix(name, prefix, digitCount)) {
                 return name;
             }
         }
         return std::nullopt;
     };
 
-    static const std::regex tosaVersionRegex("^TOSA\\.\\d{6}\\.\\d");
-    const auto tosaVersion = tryGetExtInstVersion(tosaVersionRegex);
+    const auto tosaVersion = tryGetExtInstVersion("TOSA.", 6);
     const bool isTosaVersionUnsupported = tosaVersion.has_value() && tosaVersion != tosaSpv100;
     if (isTosaVersionUnsupported) {
         graphLog(Severity::Error) << "Unsupported Tosa version provided." << std::endl;
         return false;
     }
 
-    static const std::regex motionEngineVersionRegex("^Arm\\.MotionEngine\\.\\d{3}");
-    const auto motionEngineVersion = tryGetExtInstVersion(motionEngineVersionRegex);
+    const auto motionEngineVersion = tryGetExtInstVersion("Arm.MotionEngine.", 3);
     const bool isMotionEngineVersionUnsupported =
         motionEngineVersion.has_value() && motionEngineVersion != motionEngine100;
     if (isMotionEngineVersionUnsupported) {

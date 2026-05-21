@@ -14,7 +14,6 @@
 #include <algorithm>
 #include <cmath>
 #include <numeric>
-#include <regex>
 #include <string_view>
 
 using namespace mlsdk::el::log;

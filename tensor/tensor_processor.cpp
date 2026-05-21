@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -10,7 +10,6 @@
 #include "mlel/utils.hpp"
 #include "tensor_log.hpp"
 #include <map>
-#include <regex>
 #include <set>
 #include <spirv_cross_error_handling.hpp>
 #include <sstream>
