@@ -29,6 +29,18 @@ template <typename T> T roundUp(const T data, size_t multiple) {
 
 inline uint32_t divideRoundUp(const uint32_t value, const uint32_t divide) { return (value + divide - 1) / divide; }
 
+inline void replaceAll(std::string &str, std::string_view pattern, std::string_view replacement) {
+    if (pattern.empty()) {
+        return;
+    }
+
+    for (size_t pos = str.find(pattern.data(), 0, pattern.size()); pos != std::string::npos;
+         pos = str.find(pattern.data(), pos, pattern.size())) {
+        str.replace(pos, pattern.size(), replacement.data(), replacement.size());
+        pos += replacement.size();
+    }
+}
+
 /// Gets the total number of elements in a tensor given its dimensions, throws if result is negative.
 size_t getElementCount(const std::vector<int64_t> &dimensions);
 

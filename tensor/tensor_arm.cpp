@@ -8,7 +8,6 @@
 #include "mlel/utils.hpp"
 
 #include <numeric>
-#include <regex>
 #include <vulkan/vulkan_format_traits.hpp>
 
 using namespace mlsdk::el::utils;
@@ -233,10 +232,9 @@ VkShaderModule TensorCopyPipeline::createShaderModule(const TensorARM &srcTensor
     auto &spirv = spirvCache[srcType];
     if (spirv.empty()) {
         std::string tmp = glsl;
-        tmp = std::regex_replace(tmp, std::regex{"%warpX%"}, std::to_string(warp1D));
-        tmp = std::regex_replace(tmp, std::regex{"%type%"}, srcType);
-        tmp = std::regex_replace(tmp, std::regex{"%type_size%"},
-                                 std::to_string(vk::blockSize(vk::Format(srcTensor.getTensorInfo().format))));
+        replaceAll(tmp, "%warpX%", std::to_string(warp1D));
+        replaceAll(tmp, "%type%", srcType);
+        replaceAll(tmp, "%type_size%", std::to_string(vk::blockSize(vk::Format(srcTensor.getTensorInfo().format))));
         spirv = glslToSpirv(tmp);
     }
 

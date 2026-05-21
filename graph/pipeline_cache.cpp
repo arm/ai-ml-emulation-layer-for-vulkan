@@ -17,7 +17,6 @@
 #include <array>
 #include <map>
 #include <numeric>
-#include <regex>
 #include <set>
 #include <string>
 #include <vector>
@@ -114,7 +113,7 @@ std::vector<uint32_t> PipelineCache::replaceCompileGlsl(std::string_view glslSou
     auto tmp = std::string(glslSource);
 
     for (const auto &[pattern, repl] : replaceList) {
-        tmp = std::regex_replace(tmp, std::regex(std::string(pattern)), std::string(repl));
+        replaceAll(tmp, pattern, repl);
     }
 
     return glslToSpirv(tmp);
