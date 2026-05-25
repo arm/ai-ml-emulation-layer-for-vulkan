@@ -87,7 +87,7 @@ std::shared_ptr<Tensor> TensorDescriptor::makeTensor(const std::shared_ptr<Tenso
 
     auto tensor = std::make_shared<Tensor>(_this->loader, _this->device, _this, tensorARM, tensorViewARM);
 
-    graphLog(Severity::Debug) << "Create tensor. tensor=" << tensor << " " << *tensor << std::endl;
+    graphLog(Severity::Debug) << "Create tensor. tensor=" << tensor << ' ' << *tensor << std::endl;
 
     return tensor;
 }
@@ -327,7 +327,7 @@ VkTensorViewARM TensorDescriptor::createTensorViewARM(const VkTensorARM tensor, 
 }
 
 Log &operator<<(Log &os, const Tensor &tensor) {
-    return os << "tensorARM=" << tensor.getVkTensorARM() << " " << *tensor.getTensorDescriptor();
+    return os << "tensorARM=" << tensor.getVkTensorARM() << ' ' << *tensor.getTensorDescriptor();
 }
 
 Log &operator<<(Log &os, const TensorDescriptor &tensor) {

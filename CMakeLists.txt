@@ -57,12 +57,20 @@ include(spirv-headers)
 include(spirv-cross)
 include(spirv-tools)
 include(glslang)
+include(version)
 
 if(NOT EXISTS ${SPIRV_TOOLS_PATH}/CMakeLists.txt)
     message(FATAL_ERROR "ML Emulation Layer for Vulkan only supports building SPIR-V Tools from source")
 endif()
 
 include(setLayerEntrypoints)
+
+set(VMEL_VERSION_DEPS
+    glslang
+    SPIRV-Cross
+    SPIRV-Headers
+    SPIRV-Tools
+    VulkanHeaders)
 
 ###############################################################################
 # Precision configuration

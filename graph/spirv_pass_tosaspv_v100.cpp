@@ -366,7 +366,7 @@ void GraphPassTosaSpv100::handleArgmax(const Instruction *opExtInst, const std::
     const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(3));
     const auto &inputId = opExtInst->GetInOperand(4);
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", axis=" << axis
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", axis=" << axis
                              << ", nanMode=" << nanMode << ", input=%" << inputId.AsId() << std::endl;
 
     graphPipeline.makeArgmax(getTensor(inputId), getTensor(*opExtInst), axis, nanMode, debugName);
@@ -381,7 +381,7 @@ void GraphPassTosaSpv100::handleArithmeticRightShift(const Instruction *opExtIns
     const auto &inputId1 = opExtInst->GetInOperand(3);
     const auto &inputId2 = opExtInst->GetInOperand(4);
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", round=" << round
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", round=" << round
                              << ", input1=%" << inputId1.AsId() << ", input2=%" << inputId2.AsId() << std::endl;
 
     graphPipeline.makeArithmeticRightShift(getTensor(inputId1), getTensor(inputId2), getTensor(*opExtInst), round,
@@ -418,7 +418,7 @@ void GraphPassTosaSpv100::handleCast(const Instruction *opExtInst, const std::st
     const auto &resultId = opExtInst->result_id();
     const auto &inputId = opExtInst->GetInOperand(2);
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", input=%" << inputId.AsId()
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input=%" << inputId.AsId()
                              << std::endl;
 
     graphPipeline.makeCast(getTensor(inputId), getTensor(*opExtInst), debugName);
@@ -450,7 +450,7 @@ void GraphPassTosaSpv100::handleClamp(const Instruction *opExtInst, const std::s
     const auto nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(4));
     const auto &inputId = opExtInst->GetInOperand(5);
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", minVal=" << minVal
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", minVal=" << minVal
                              << ", maxVal=" << maxVal << ", nanMode=" << nanMode << ", input=%" << inputId.AsId()
                              << std::endl;
 
@@ -471,7 +471,7 @@ void GraphPassTosaSpv100::handleConcat(const Instruction *opExtInst, const std::
         inputsStr += ", input" + std::to_string(i - 3) + "=%" + std::to_string(opExtInst->GetInOperand(i).AsId());
     }
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", axis=" << axis << inputsStr
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", axis=" << axis << inputsStr
                              << std::endl;
 
     graphPipeline.makeConcat(inputs, getTensor(*opExtInst), axis, debugName);
@@ -494,7 +494,7 @@ void GraphPassTosaSpv100::handleConv2D(const Instruction *opExtInst, const std::
     const auto &inputZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(10));
     const auto &weightZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(11));
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", pad=" << pad
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", pad=" << pad
                              << ", stride=" << stride << ", dilation=" << dilation << ", accType=" << accType
                              << ", localBound=" << localBound << ", input=%" << inputId.AsId() << ", weight=%"
                              << weightId.AsId() << ", bias=%" << biasId.AsId() << ", inputZeroPoint=" << inputZeroPoint
@@ -521,7 +521,7 @@ void GraphPassTosaSpv100::handleConv3D(const Instruction *opExtInst, const std::
     const auto &inputZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(10));
     const auto &weightZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(11));
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", pad=" << pad
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", pad=" << pad
                              << ", stride=" << stride << ", dilation=" << dilation << ", accType=" << accType
                              << ", localBound=" << localBound << ", input=%" << inputId.AsId() << ", weight=%"
                              << weightId.AsId() << ", bias=%" << biasId.AsId() << ", inputZeroPoint=" << inputZeroPoint
@@ -548,7 +548,7 @@ void GraphPassTosaSpv100::handleDepthwiseConv2D(const Instruction *opExtInst, co
     const auto &inputZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(10));
     const auto &weightZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(11));
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", pad=" << pad
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", pad=" << pad
                              << ", stride=" << stride << ", dilation=" << dilation << ", accType=" << accType
                              << ", localBound=" << localBound << ", input=%" << inputId.AsId() << ", weight=%"
                              << weightId.AsId() << ", bias=%" << biasId.AsId() << ", inputZeroPoint=" << inputZeroPoint
@@ -586,7 +586,7 @@ void GraphPassTosaSpv100::handleElementwiseUnary(
     const auto &resultId = opExtInst->result_id();
     const auto &inputId1 = opExtInst->GetInOperand(2);
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", input1=%" << inputId1.AsId()
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input1=%" << inputId1.AsId()
                              << std::endl;
 
     std::invoke(function, &graphPipeline, getTensor(inputId1), getTensor(*opExtInst), debugName);
@@ -602,7 +602,7 @@ void GraphPassTosaSpv100::handleFft2D(const Instruction *opExtInst, const std::s
     const auto &inputRealId = opExtInst->GetInOperand(4);
     const auto &inputImagId = opExtInst->GetInOperand(5);
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", inverse=" << inverse
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", inverse=" << inverse
                              << ", localBound=" << localBound << ", inputReal=%" << inputRealId.AsId()
                              << ", inputImag=%" << inputImagId.AsId() << std::endl;
 
@@ -618,7 +618,7 @@ void GraphPassTosaSpv100::handleGather(const Instruction *opExtInst, const std::
     const auto &valuesId = opExtInst->GetInOperand(2);
     const auto &indicesId = opExtInst->GetInOperand(3);
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", values=%" << valuesId.AsId()
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", values=%" << valuesId.AsId()
                              << ", indices=%" << indicesId.AsId() << std::endl;
 
     graphPipeline.makeGather(getTensor(valuesId), getTensor(indicesId), getTensor(*opExtInst), debugName);
@@ -634,7 +634,7 @@ void GraphPassTosaSpv100::handleMatmul(const Instruction *opExtInst, const std::
     const auto &input1ZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(4));
     const auto &input2ZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(5));
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", input1=%" << inputId1.AsId()
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input1=%" << inputId1.AsId()
                              << ", input2=%" << inputId2.AsId() << ", input1ZeroPoint=" << input1ZeroPoint
                              << ", input2ZeroPoint=" << input2ZeroPoint << std::endl;
 
@@ -651,7 +651,7 @@ void GraphPassTosaSpv100::handleMaximum(const Instruction *opExtInst, const std:
     const auto &inputId1 = opExtInst->GetInOperand(3);
     const auto &inputId2 = opExtInst->GetInOperand(4);
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", nanMode=" << nanMode
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", nanMode=" << nanMode
                              << ", input1=%" << inputId1.AsId() << ", input2=%" << inputId2.AsId() << std::endl;
 
     graphPipeline.makeMaximum(getTensor(inputId1), getTensor(inputId2), getTensor(*opExtInst), nanMode, debugName);
@@ -668,7 +668,7 @@ void GraphPassTosaSpv100::handleMaxPool2D(const Instruction *opExtInst, const st
     const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
     const auto &inputId = opExtInst->GetInOperand(6);
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", kernel=" << kernel
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", kernel=" << kernel
                              << ", stride=" << stride << ", pad=" << pad << ", nanMode=" << nanMode << ", input=%"
                              << inputId.AsId() << std::endl;
 
@@ -684,7 +684,7 @@ void GraphPassTosaSpv100::handleMinimum(const Instruction *opExtInst, const std:
     const auto &inputId1 = opExtInst->GetInOperand(3);
     const auto &inputId2 = opExtInst->GetInOperand(4);
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", nanMode=" << nanMode
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", nanMode=" << nanMode
                              << ", input1=%" << inputId1.AsId() << ", input2=%" << inputId2.AsId() << std::endl;
 
     graphPipeline.makeMinimum(getTensor(inputId1), getTensor(inputId2), getTensor(*opExtInst), nanMode, debugName);
@@ -699,7 +699,7 @@ void GraphPassTosaSpv100::handleMul(const Instruction *opExtInst, const std::str
     const auto &inputId2 = opExtInst->GetInOperand(3);
     const auto &shift = getConstVector<uint8_t>(opExtInst->GetInOperand(4));
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", input1=%" << inputId1.AsId()
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input1=%" << inputId1.AsId()
                              << ", input2=%" << inputId2.AsId() << ", shift=" << shift << std::endl;
 
     graphPipeline.makeMul(getTensor(inputId1), getTensor(inputId2), getTensor(*opExtInst), shift[0], debugName);
@@ -714,7 +714,7 @@ void GraphPassTosaSpv100::handleNegate(const Instruction *opExtInst, const std::
     const auto &inputZeroPoint = getConstVector<int32_t>(opExtInst->GetInOperand(3));
     const auto &outputZeroPoint = getConstVector<int32_t>(opExtInst->GetInOperand(4));
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", input=%" << inputId.AsId()
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input=%" << inputId.AsId()
                              << ", inputZeroPoint=" << inputZeroPoint << ", outputZeroPoint=" << outputZeroPoint
                              << std::endl;
 
@@ -784,7 +784,7 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
         padConstInt = int32_t(padConst);
     }
 
-    graphLog(Severity::Info) << "OpExtInst result=" << resultId << "," << debugName << ", padding=" << padding
+    graphLog(Severity::Info) << "OpExtInst result=" << resultId << ',' << debugName << ", padding=" << padding
                              << ", padConst=" << std::fixed << std::setprecision(0) << padConst << ", input=%"
                              << inputId.AsId() << std::endl;
 
@@ -808,7 +808,7 @@ void GraphPassTosaSpv100::handleRescale(const Instruction *opExtInst, const std:
     const auto &inputZeroPoint = getConstVector<int32_t>(opExtInst->GetInOperand(10));
     const auto &outputZeroPoint = getConstVector<int32_t>(opExtInst->GetInOperand(11));
 
-    graphLog(Severity::Info) << "OpExtInst result=" << resultId << "," << debugName << ", scale32=" << scale32
+    graphLog(Severity::Info) << "OpExtInst result=" << resultId << ',' << debugName << ", scale32=" << scale32
                              << ", roundingRound=" << roundingMode << ", perChannel=" << perChannel
                              << ", inputUnsigned=" << inputUnsigned << ", outputUnsigned=" << outputUnsigned
                              << ", input=%" << inputId.AsId() << ", multiplier=" << multiplier << ", shift=" << shift
@@ -849,7 +849,7 @@ void GraphPassTosaSpv100::handleReduceMax(const Instruction *opExtInst, const st
     const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(3));
     const auto &inputId = opExtInst->GetInOperand(4);
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", axis=" << axis
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", axis=" << axis
                              << ", nanMode=" << nanMode << ", input=%" << inputId.AsId() << std::endl;
 
     graphPipeline.makeReduceMax(getTensor(inputId), getTensor(*opExtInst), axis, nanMode, debugName);
@@ -864,7 +864,7 @@ void GraphPassTosaSpv100::handleReduceMin(const Instruction *opExtInst, const st
     const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(3));
     const auto &inputId = opExtInst->GetInOperand(4);
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", axis=" << axis
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", axis=" << axis
                              << ", nanMode=" << nanMode << ", input=%" << inputId.AsId() << std::endl;
 
     graphPipeline.makeReduceMin(getTensor(inputId), getTensor(*opExtInst), axis, nanMode, debugName);
@@ -878,7 +878,7 @@ void GraphPassTosaSpv100::handleReshape(const Instruction *opExtInst, const std:
     const auto &inputId = opExtInst->GetInOperand(2);
     const auto &shape = getConstVector(opExtInst->GetInOperand(3));
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", input=%" << inputId.AsId()
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input=%" << inputId.AsId()
                              << ", shape=" << shape << std::endl;
 
     graphPipeline.makeReshape(getTensor(inputId), getTensor(*opExtInst), debugName);
@@ -895,7 +895,7 @@ void GraphPassTosaSpv100::handleResize(const Instruction *opExtInst, const std::
     const auto &offset = getConstVector<int32_t>(opExtInst->GetInOperand(5));
     const auto &border = getConstVector<int32_t>(opExtInst->GetInOperand(6));
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", scale=" << scale
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", scale=" << scale
                              << ", offset=" << offset << ", border=" << border << ", mode=" << mode << ", input=%"
                              << inputId.AsId() << std::endl;
 
@@ -910,7 +910,7 @@ void GraphPassTosaSpv100::handleReverse(const Instruction *opExtInst, const std:
     const auto &axis = getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
     const auto &inputId = opExtInst->GetInOperand(3);
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", axis=" << axis << ", input=%"
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", axis=" << axis << ", input=%"
                              << inputId.AsId() << std::endl;
 
     graphPipeline.makeReverse(getTensor(inputId), getTensor(*opExtInst), axis, debugName);
@@ -924,7 +924,7 @@ void GraphPassTosaSpv100::handleRfft2D(const Instruction *opExtInst, const std::
     const auto &localBound = getBoolConstant(opExtInst->GetInOperand(2));
     const auto &inputId = opExtInst->GetInOperand(3);
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", localBound=" << localBound
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", localBound=" << localBound
                              << ", input=%" << inputId.AsId() << std::endl;
 
     graphPipeline.makeRfft2D(getTensor(inputId), getTensor(*opExtInst, 0), getTensor(*opExtInst, 1), debugName);
@@ -939,7 +939,7 @@ void GraphPassTosaSpv100::handleScatter(const Instruction *opExtInst, const std:
     const auto &indicesId = opExtInst->GetInOperand(3);
     const auto &inputId = opExtInst->GetInOperand(4);
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", valuesIn=%" << inputId.AsId()
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", valuesIn=%" << inputId.AsId()
                              << ", indices=%" << indicesId.AsId() << ", input=%" << inputId.AsId() << std::endl;
 
     graphPipeline.makeScatter(getTensor(inputId), getTensor(valuesInId), getTensor(indicesId), getTensor(*opExtInst),
@@ -955,7 +955,7 @@ void GraphPassTosaSpv100::handleSelect(const Instruction *opExtInst, const std::
     const auto &inputId2 = opExtInst->GetInOperand(3);
     const auto &inputId3 = opExtInst->GetInOperand(4);
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", input1=%" << inputId1.AsId()
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input1=%" << inputId1.AsId()
                              << ", input2=%" << inputId2.AsId() << ", input3=%" << inputId3.AsId() << std::endl;
 
     graphPipeline.makeSelect(getTensor(inputId1), getTensor(inputId2), getTensor(inputId3), getTensor(*opExtInst),
@@ -971,7 +971,7 @@ void GraphPassTosaSpv100::handleSlice(const Instruction *opExtInst, const std::s
     const auto &start = getConstVector(opExtInst->GetInOperand(3));
     const auto &size = getConstVector(opExtInst->GetInOperand(4));
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << " , input=%" << inputId.AsId()
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << " , input=%" << inputId.AsId()
                              << ", start=" << start << ", size=" << size << std::endl;
 
     graphPipeline.makeSlice(getTensor(inputId), getTensor(*opExtInst), start, debugName);
@@ -985,7 +985,7 @@ void GraphPassTosaSpv100::handleTable(const Instruction *opExtInst, const std::s
     const auto &inputId = opExtInst->GetInOperand(2);
     const auto &table = getOrMakeCompositeTensor(opExtInst->GetInOperand(3).AsId());
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", input=%" << inputId.AsId()
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input=%" << inputId.AsId()
                              << ", table=" << table << std::endl;
 
     graphPipeline.makeTable(getTensor(inputId), getTensor(*opExtInst), table, debugName);
@@ -999,7 +999,7 @@ void GraphPassTosaSpv100::handleTile(const Instruction *opExtInst, const std::st
     const auto &inputId = opExtInst->GetInOperand(2);
     const auto &multiples = getConstVector(opExtInst->GetInOperand(3));
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", input=%" << inputId.AsId()
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input=%" << inputId.AsId()
                              << ", multiples=" << multiples << std::endl;
 
     graphPipeline.makeTile(getTensor(inputId), getTensor(*opExtInst), debugName);
@@ -1013,7 +1013,7 @@ void GraphPassTosaSpv100::handleTranspose(const Instruction *opExtInst, const st
     const auto &perms = getConstVector(opExtInst->GetInOperand(2));
     const auto &inputId = opExtInst->GetInOperand(3);
 
-    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << "," << debugName << ", perms=" << perms
+    graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", perms=" << perms
                              << ", input=%" << inputId.AsId() << std::endl;
 
     graphPipeline.makeTranspose(getTensor(inputId), getTensor(*opExtInst), perms, debugName);
@@ -1035,7 +1035,7 @@ void GraphPassTosaSpv100::handleTransposeConv2D(const Instruction *opExtInst, co
     const auto &inputZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(9));
     const auto &weightZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(10));
 
-    graphLog(Severity::Info) << "OpExtInst result=" << resultId << "," << debugName << " , outPad=" << outPad
+    graphLog(Severity::Info) << "OpExtInst result=" << resultId << ',' << debugName << " , outPad=" << outPad
                              << ", stride=" << stride << ", accType=" << accType << ", localBound=" << localBound
                              << ", input=%" << inputId.AsId() << ", weight=%" << weightId.AsId() << ", bias=%"
                              << biasId.AsId() << ", inputZeroPoint=" << inputZeroPoint

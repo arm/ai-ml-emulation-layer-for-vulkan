@@ -15,6 +15,8 @@
 #include "memory_planner.hpp"
 #include "optical_flow.hpp"
 #include "pipeline_cache.hpp"
+#include "version.hpp"
+
 #include "source/opt/build_module.h"
 #include "source/opt/ir_context.h"
 #include "source/opt/module.h"
@@ -1893,6 +1895,8 @@ vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *pNegotiateLaye
     if (pNegotiateLayerInterface->loaderLayerInterfaceVersion < 2) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
+
+    graphLog(Severity::Info) << mlsdk::el::details::version << std::endl;
 
     pNegotiateLayerInterface->loaderLayerInterfaceVersion = 2;
     pNegotiateLayerInterface->pfnGetInstanceProcAddr = GraphLayer::vkGetInstanceProcAddr;
