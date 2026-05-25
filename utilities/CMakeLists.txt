@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright 2023-2024 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -8,6 +8,8 @@
 
 add_library(mlelutilities STATIC)
 
+target_compile_options(mlelutilities PUBLIC ${VMEL_COMPILE_OPTIONS})
+
 target_sources(mlelutilities PRIVATE
     device.cpp
     pipeline.cpp
@@ -16,7 +18,7 @@ target_sources(mlelutilities PRIVATE
 target_include_directories(mlelutilities PUBLIC include)
 
 target_link_libraries(mlelutilities PUBLIC
-    VkLayer_Log
+    VkLayer_Common
     Vulkan::Headers
     SPIRV-Tools
     glslang::glslang

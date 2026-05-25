@@ -3,47 +3,44 @@
 #
 
 ###############################################################################
-# Logger
-###############################################################################
-
-add_library(VkLayer_Log INTERFACE)
-
-target_sources(VkLayer_Log INTERFACE
-    log.cpp)
-
-target_include_directories(VkLayer_Log INTERFACE
-    include)
-
-###############################################################################
 # Common
 ###############################################################################
 
-add_library(VkLayer_Common INTERFACE)
+add_library(VkLayer_Common STATIC)
 
-target_compile_options(VkLayer_Common INTERFACE ${VMEL_COMPILE_OPTIONS})
+target_compile_options(VkLayer_Common PUBLIC ${VMEL_COMPILE_OPTIONS})
 
 if(VMEL_USE_FLOAT_AS_DOUBLE)
-    target_compile_definitions(VkLayer_Common INTERFACE USE_FLOAT_AS_DOUBLE)
-    target_compile_definitions(VkLayer_Common INTERFACE real_t=float)
+    target_compile_definitions(VkLayer_Common PUBLIC USE_FLOAT_AS_DOUBLE)
+    target_compile_definitions(VkLayer_Common PUBLIC real_t=float)
 else()
-    target_compile_definitions(VkLayer_Common INTERFACE real_t=double)
+    target_compile_definitions(VkLayer_Common PUBLIC real_t=double)
 endif()
 
-target_include_directories(VkLayer_Common INTERFACE
+target_include_directories(VkLayer_Common PUBLIC
     include)
 
-target_include_directories(VkLayer_Common SYSTEM INTERFACE
+target_include_directories(VkLayer_Common SYSTEM PUBLIC
     ${SPIRV_TOOLS_PATH}
     ${spirv-tools_BINARY_DIR})
 
-target_sources(VkLayer_Common INTERFACE
+target_sources(VkLayer_Common PRIVATE
+    log.cpp
     utils.cpp)
 
-target_link_libraries(VkLayer_Common INTERFACE
-    VkLayer_Log
+target_link_libraries(VkLayer_Common PUBLIC
     Vulkan::Headers
     SPIRV-Tools
     SPIRV-Tools-opt
     glslang::glslang
     glslang::glslang-default-resource-limits
     glslang::SPIRV)
+
+set(COMMON_VERSION_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/version.hpp")
+mlsdk_generate_version_header(
+    TARGET VkLayer_Common
+    SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/version.hpp.in"
+    DESTINATION "${COMMON_VERSION_HEADER}"
+    DEPENDENCIES
+        ${VMEL_VERSION_DEPS}
+)

@@ -24,15 +24,6 @@ target_link_libraries(VkLayer_Tensor PRIVATE
     spirv-cross-core
     spirv-cross-glsl)
 
-set(TENSOR_VERSION_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/version.hpp")
-mlsdk_generate_version_header(
-    TARGET VkLayer_Tensor
-    SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/../common/version.hpp.in"
-    DESTINATION "${TENSOR_VERSION_HEADER}"
-    DEPENDENCIES
-        ${VMEL_VERSION_DEPS}
-)
-
 install(TARGETS VkLayer_Tensor EXPORT ${ML_SDK_EL_PACKAGE_NAME}Config)
 
 # Generate VkLayer_Tensor.json

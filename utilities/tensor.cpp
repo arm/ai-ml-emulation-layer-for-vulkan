@@ -28,7 +28,7 @@ const std::vector<int64_t> &Shape::getDimensions() const { return dimensions; }
 
 const std::vector<int64_t> &Shape::getStrides() const { return strides; };
 
-size_t Shape::getSize() const { return dimensions[0] * strides[0]; }
+size_t Shape::getSize() const { return static_cast<size_t>(dimensions[0] * strides[0]); }
 
 size_t Shape::elementCount() const { return utils::getElementCount(dimensions); }
 
@@ -36,10 +36,12 @@ size_t Shape::getElementOffset(size_t index) const {
     std::vector<size_t> coordinates(dimensions.size());
     size_t byteOffset = 0;
 
-    for (int i = dimensions.size() - 1; i >= 0; i--) {
-        coordinates[i] = index % dimensions[i];
-        index /= dimensions[i];
-        byteOffset += coordinates[i] * strides[i];
+    for (auto it = dimensions.rbegin(); it != dimensions.rend(); ++it) {
+        const auto i = static_cast<size_t>(it - dimensions.rbegin());
+        const auto dimension = static_cast<size_t>(dimensions[i]);
+        coordinates[i] = index % dimension;
+        index /= dimension;
+        byteOffset += static_cast<size_t>(coordinates[i]) * static_cast<size_t>(strides[i]);
     }
 
     return byteOffset;
@@ -52,17 +54,17 @@ std::vector<int64_t> Shape::createStrides(const std::vector<int64_t> &_strides) 
         }
         throw std::runtime_error("Stride size should be equal to dimension size.");
     }
-    std::vector<int64_t> strides;
-    strides.resize(dimensions.size());
+    std::vector<int64_t> result;
+    result.resize(dimensions.size());
 
-    if (!strides.empty()) {
-        strides.back() = getFormatSize();
-        for (size_t i = strides.size() - 1; i > 0; i--) {
-            strides[i - 1] = strides[i] * dimensions[i];
+    if (!result.empty()) {
+        result.back() = static_cast<int64_t>(getFormatSize());
+        for (size_t i = result.size() - 1; i > 0; i--) {
+            result[i - 1] = result[i] * dimensions[i];
         }
     }
 
-    return strides;
+    return result;
 }
 
 size_t Shape::getFormatSize() const { return vk::blockSize(format); }
@@ -155,7 +157,7 @@ void Tensor::print() const {
 
 vk::raii::TensorARM Tensor::createTensor(bool useForCopy) const {
     const auto flags = useForCopy ? vk::TensorUsageFlagBitsARM::eShader : vk::TensorUsageFlagsARM{};
-    const vk::TensorDescriptionARM tensorDescription{
+    const vk::TensorDescriptionARM vkTensorDescription{
         vk::TensorTilingARM::eLinear,           // tiling
         shape.getFormat(),                      // format
         uint32_t(shape.getDimensions().size()), // dimensions count
@@ -166,7 +168,7 @@ vk::raii::TensorARM Tensor::createTensor(bool useForCopy) const {
 
     const vk::TensorCreateInfoARM tensorCreateInfo{
         {},                          // flags
-        &tensorDescription,          // tensor description
+        &vkTensorDescription,        // tensor description
         vk::SharingMode::eExclusive, // sharing mode
         0,                           // queue family index count
     };
@@ -183,9 +185,9 @@ vk::MemoryRequirements Tensor::getTensorMemoryRequirements() const {
     const vk::TensorMemoryRequirementsInfoARM requirementsInfo{
         *tensor,
     };
-    vk::MemoryRequirements2 memoryRequirements = (&(*device)).getTensorMemoryRequirementsARM(requirementsInfo);
+    vk::MemoryRequirements2 vkMemoryRequirements = (&(*device)).getTensorMemoryRequirementsARM(requirementsInfo);
 
-    return memoryRequirements.memoryRequirements;
+    return vkMemoryRequirements.memoryRequirements;
 }
 
 void *Tensor::bindAndMapTensor() const {
@@ -195,9 +197,9 @@ void *Tensor::bindAndMapTensor() const {
         {}              // memory offset
     };
     (&(*device)).bindTensorMemoryARM(bindInfo);
-    void *pointer = deviceMemory->mapMemory({}, VK_WHOLE_SIZE, {});
+    void *ptr = deviceMemory->mapMemory({}, VK_WHOLE_SIZE, {});
 
-    return pointer;
+    return ptr;
 }
 
 vk::raii::TensorViewARM Tensor::createTensorView() const {
@@ -206,13 +208,13 @@ vk::raii::TensorViewARM Tensor::createTensorView() const {
         *tensor,           // tensor
         shape.getFormat(), // format
     };
-    vk::raii::TensorViewARM tensorView{&(*device), tensorViewCreateInfo};
+    vk::raii::TensorViewARM vkTensorView{&(*device), tensorViewCreateInfo};
 
-    return tensorView;
+    return vkTensorView;
 }
 
 vk::TensorDescriptionARM Tensor::createTensorDescription() const {
-    vk::TensorDescriptionARM tensorDescription{
+    vk::TensorDescriptionARM vkTensorDescription{
         vk::TensorTilingARM::eLinear,                        // tiling
         shape.getFormat(),                                   // format
         static_cast<uint32_t>(shape.getDimensions().size()), // dimension count
@@ -221,7 +223,7 @@ vk::TensorDescriptionARM Tensor::createTensorDescription() const {
         vk::TensorUsageFlagBitsARM::eDataGraph               // usage
     };
 
-    return tensorDescription;
+    return vkTensorDescription;
 }
 
 } // namespace mlsdk::el::utilities
