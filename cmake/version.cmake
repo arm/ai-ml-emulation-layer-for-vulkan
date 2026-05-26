@@ -1,5 +1,5 @@
 #
-# SPDX-FileCopyrightText: Copyright 2024 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-FileCopyrightText: Copyright 2024,2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -75,5 +75,5 @@ function(mlsdk_generate_version_header)
     configure_file("${ARGS_SOURCE}" "${ARGS_DESTINATION}")
     get_filename_component(GEN_DIR_PATH "${ARGS_DESTINATION}" DIRECTORY)
 
-    target_include_directories(${ARGS_TARGET} PRIVATE "${GEN_DIR_PATH}")
+    target_include_directories(${ARGS_TARGET} PUBLIC "${GEN_DIR_PATH}")
 endfunction()

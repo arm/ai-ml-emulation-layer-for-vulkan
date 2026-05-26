@@ -44,15 +44,6 @@ target_link_libraries(VkLayer_Graph PRIVATE
 target_include_directories(VkLayer_Graph PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR})
 
-set(GRAPH_VERSION_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/version.hpp")
-mlsdk_generate_version_header(
-    TARGET VkLayer_Graph
-    SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/../common/version.hpp.in"
-    DESTINATION "${GRAPH_VERSION_HEADER}"
-    DEPENDENCIES
-        ${VMEL_VERSION_DEPS}
-)
-
 install(TARGETS VkLayer_Graph EXPORT ${ML_SDK_EL_PACKAGE_NAME}Config)
 
 # Generate VkLayer_Graph.json

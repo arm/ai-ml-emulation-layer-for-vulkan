@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -56,7 +56,7 @@ class GraphConstants {
 
     std::vector<vk::DataGraphPipelineConstantARM> getGraphPipelineConstants() const;
     const std::map<uint32_t, std::shared_ptr<GraphPipelineConstantTensor>> &operator&() const;
-    GraphPipelineConstantTensor &operator[](size_t size);
+    GraphPipelineConstantTensor &operator[](uint32_t id);
 
   private:
     std::map<uint32_t, std::shared_ptr<GraphPipelineConstantTensor>> constants;

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -49,8 +49,8 @@ vk::raii::Instance Instance::createInstance(const std::vector<const char *> &lay
         exts.data(),                          // enabled extensions
     };
 
-    vk::raii::Instance instance(*context, instanceCreateInfo);
-    return instance;
+    vk::raii::Instance vkInstance(*context, instanceCreateInfo);
+    return vkInstance;
 }
 
 /*******************************************************************************
@@ -130,9 +130,9 @@ std::vector<uint32_t> PhysicalDevice::getMemoryTypeIndices(const vk::MemoryPrope
     return memoryTypeIndices;
 }
 
-bool PhysicalDevice::hasExtensionProperties(const vk::raii::PhysicalDevice &physicalDevice,
+bool PhysicalDevice::hasExtensionProperties(const vk::raii::PhysicalDevice &vkPhysicalDevice,
                                             const std::vector<const char *> &extensions) const {
-    const auto extensionProperties = physicalDevice.enumerateDeviceExtensionProperties();
+    const auto extensionProperties = vkPhysicalDevice.enumerateDeviceExtensionProperties();
 
     for (const auto &extension : extensions) {
         auto it = std::find_if(extensionProperties.begin(), extensionProperties.end(), [&](const auto &property) {
@@ -169,7 +169,7 @@ vk::raii::PhysicalDevice PhysicalDevice::createPhysicalDevice(const std::vector<
         physicalDevices.push_back(currentPhysicalDevice);
     }
 
-    std::sort(physicalDevices.begin(), physicalDevices.end(), [this](const auto &left, const auto &right) {
+    std::sort(physicalDevices.begin(), physicalDevices.end(), [](const auto &left, const auto &right) {
         // Select discrete GPU
         if (left.getProperties().deviceType != right.getProperties().deviceType) {
             std::map<vk::PhysicalDeviceType, int> priority = {
@@ -270,9 +270,9 @@ vk::raii::Device Device::createDevice(const std::vector<const char *> &layers,
         nullptr,                                       // Don't set pEnabledFeatures here!
         deviceFeatures                                 // Attach deviceFeatures via pNext
     };
-    vk::raii::Device device(&(*physicalDevice), deviceCreateInfo);
+    vk::raii::Device vkDevice(&(*physicalDevice), deviceCreateInfo);
 
-    return device;
+    return vkDevice;
 }
 
 } // namespace mlsdk::el::utilities

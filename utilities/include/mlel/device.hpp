@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -51,7 +51,7 @@ class PhysicalDevice {
                                                uint32_t memoryTypeBits = 0xffffffff) const;
 
   private:
-    bool hasExtensionProperties(const vk::raii::PhysicalDevice &physicalDevice,
+    bool hasExtensionProperties(const vk::raii::PhysicalDevice &vkPhysicalDevice,
                                 const std::vector<const char *> &extensions) const;
 
     std::vector<vk::raii::PhysicalDevice> enumeratePhysicalDevices() const;

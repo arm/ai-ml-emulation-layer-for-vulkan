@@ -90,7 +90,7 @@ const std::map<uint32_t, std::shared_ptr<GraphPipelineConstantTensor>> &GraphCon
     return constants;
 }
 
-GraphPipelineConstantTensor &GraphConstants::operator[](size_t size) { return *constants[size]; }
+GraphPipelineConstantTensor &GraphConstants::operator[](uint32_t id) { return *constants[id]; }
 
 /*******************************************************************************
  * PipelineBase
@@ -177,7 +177,7 @@ vk::raii::DescriptorPool PipelineBase::createDescriptorPool() const {
 }
 
 std::vector<vk::raii::DescriptorSetLayout> PipelineBase::createDescriptorSetLayouts() const {
-    std::vector<vk::raii::DescriptorSetLayout> descriptorSetLayouts;
+    std::vector<vk::raii::DescriptorSetLayout> vkDescriptorSetLayouts;
 
     for (const auto &bindingMap : descriptorMap) {
         std::vector<vk::DescriptorSetLayoutBinding> descriptorSetLayoutBindings;
@@ -207,21 +207,21 @@ std::vector<vk::raii::DescriptorSetLayout> PipelineBase::createDescriptorSetLayo
             &descriptorSetBindingFlagsCreateInfo,                        // next
         };
 
-        descriptorSetLayouts.push_back(vk::raii::DescriptorSetLayout(&(*device), descriptorSetLayoutCreateInfo));
+        vkDescriptorSetLayouts.push_back(vk::raii::DescriptorSetLayout(&(*device), descriptorSetLayoutCreateInfo));
     }
 
-    return descriptorSetLayouts;
+    return vkDescriptorSetLayouts;
 }
 
 PipelineBase::PoolAndSet PipelineBase::createDescriptorSets(const DescriptorMap &_descriptorMap) const {
-    auto descriptorPool = createDescriptorPool();
+    auto vkDescriptorPool = createDescriptorPool();
 
     std::vector<vk::DescriptorSetLayout> vkDescriptorSetLayouts;
     std::transform(descriptorSetLayouts.begin(), descriptorSetLayouts.end(), std::back_inserter(vkDescriptorSetLayouts),
                    [](const auto &layout) { return *layout; });
 
     const vk::DescriptorSetAllocateInfo descriptorSetAllocateInfo{
-        descriptorPool,                          // descriptor pool
+        vkDescriptorPool,                        // descriptor pool
         uint32_t(vkDescriptorSetLayouts.size()), // descriptor set layout count
         vkDescriptorSetLayouts.data()            // descriptor set layouts
     };
@@ -230,7 +230,7 @@ PipelineBase::PoolAndSet PipelineBase::createDescriptorSets(const DescriptorMap 
 
     updateDescriptorSet(descriptorSets, _descriptorMap);
 
-    return {std::move(descriptorPool), std::move(descriptorSets)};
+    return {std::move(vkDescriptorPool), std::move(descriptorSets)};
 }
 
 std::shared_ptr<vk::raii::PipelineLayout> PipelineBase::createPipelineLayout() const {
@@ -316,7 +316,7 @@ void GraphPipeline::dispatch(const vk::raii::CommandBuffer &commandBuffer,
 }
 
 void GraphPipeline::dispatchSubmit() {
-    auto [descriptorPool, descriptorSets] = createDescriptorSets(descriptorMap);
+    [[maybe_unused]] auto [_, descriptorSets] = createDescriptorSets(descriptorMap);
 
     auto commandBuffer = createCommandBuffer();
 
@@ -340,7 +340,7 @@ void GraphPipeline::dispatchUpdateSubmit() {
 
     commandBuffer.begin(commandBufferBeginInfo);
 
-    auto [descriptorPool, descriptorSets] = createDescriptorSets(descriptorMap);
+    [[maybe_unused]] auto [_, descriptorSets] = createDescriptorSets(descriptorMap);
     dispatch(commandBuffer, descriptorSets);
 
     // Update just one of them to prove the point
@@ -506,7 +506,7 @@ TensorComputePipeline::TensorComputePipeline(std::shared_ptr<Device> &_device, c
     : PipelineBase(_device, _descriptorMap, _spirv), pipeline{createPipeline()} {}
 
 void TensorComputePipeline::dispatchSubmit(uint32_t _x, uint32_t _y, uint32_t _z) {
-    auto [descriptorPool, descriptorSets] = createDescriptorSets(descriptorMap);
+    [[maybe_unused]] auto [_, descriptorSets] = createDescriptorSets(descriptorMap);
 
     auto commandBuffer = createCommandBuffer();
 
