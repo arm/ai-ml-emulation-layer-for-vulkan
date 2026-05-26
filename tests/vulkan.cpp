@@ -1551,6 +1551,18 @@ TEST_F(MLEmulationLayerForVulkan, CreateTensorComputePipeline) {
 }
 #endif
 
+TEST_F(MLEmulationLayerForVulkan, ShapeGetElementOffsetNonPacked) {
+    const Shape shape{vk::Format::eR64Sint, {2, 3, 4}, {160, 40, 8}};
+
+    EXPECT_EQ(shape.getElementOffset(0), 0u);
+    EXPECT_EQ(shape.getElementOffset(1), 8u);
+    EXPECT_EQ(shape.getElementOffset(3), 24u);
+    EXPECT_EQ(shape.getElementOffset(4), 40u);
+    EXPECT_EQ(shape.getElementOffset(11), 104u);
+    EXPECT_EQ(shape.getElementOffset(12), 160u);
+    EXPECT_EQ(shape.getElementOffset(23), 264u);
+}
+
 TEST_F(MLEmulationLayerForVulkan, CopyLargeNonPackedTensor) {
     auto device = createDevice();
     const std::vector<int64_t> dimensions{1, 1920, 1080, 3};
