@@ -36,8 +36,8 @@ size_t Shape::getElementOffset(size_t index) const {
     std::vector<size_t> coordinates(dimensions.size());
     size_t byteOffset = 0;
 
-    for (auto it = dimensions.rbegin(); it != dimensions.rend(); ++it) {
-        const auto i = static_cast<size_t>(it - dimensions.rbegin());
+    for (size_t rev = dimensions.size(); rev > 0; --rev) {
+        const size_t i = rev - 1; // iterate dimensions/strides backwards
         const auto dimension = static_cast<size_t>(dimensions[i]);
         coordinates[i] = index % dimension;
         index /= dimension;
