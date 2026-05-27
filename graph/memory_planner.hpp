@@ -15,6 +15,7 @@
 
 #include <map>
 #include <memory>
+#include <set>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 
@@ -70,27 +71,28 @@ class BestFitMemoryPlanner : public MemoryPlanner {
     void bindGraphPipelineSessionMemory(VkDeviceMemory memory, VkDeviceSize offset,
                                         const ComputeDescriptorSetMap &descriptorSets) override;
 
-  protected:
-    void bestFitAllocation();
-
-    VkDeviceSize memorySize;
-
-    const Tensors tensors;
-    const std::map<std::shared_ptr<TensorDescriptor>, Tensors> safeToReuse;
-    const std::map<std::shared_ptr<TensorDescriptor>, Tensors> allAlternatives;
+  private:
+    VkDeviceSize memorySize{0};
     std::map<std::shared_ptr<TensorDescriptor>, VkDeviceSize> tensorOffsets;
 
-  private:
+    using SafeSet = std::set<std::shared_ptr<TensorDescriptor>>;
+    using SafeToReuseMap = std::map<std::shared_ptr<TensorDescriptor>, SafeSet>;
+    using AlternativesMap = std::map<std::shared_ptr<TensorDescriptor>, Tensors>;
+    using OccupationMap = std::map<std::shared_ptr<TensorDescriptor>, std::shared_ptr<Tensors>>;
+
+    void bestFitAllocation(const Tensors &tensors, const SafeToReuseMap &safeToReuse,
+                           const AlternativesMap &allAlternatives);
     void allocate(const std::shared_ptr<TensorDescriptor> &tensor, VkDeviceSize memoryAddress);
-    std::shared_ptr<TensorDescriptor> findAlternativeTensor(
-        const std::shared_ptr<TensorDescriptor> &tensor,
-        const std::map<std::shared_ptr<TensorDescriptor>, std::shared_ptr<Tensors>> &tensorOccupation);
+    std::shared_ptr<TensorDescriptor> findAlternativeTensor(const std::shared_ptr<TensorDescriptor> &tensor,
+                                                            const OccupationMap &tensorOccupation,
+                                                            const AlternativesMap &allAlternatives,
+                                                            const SafeToReuseMap &safeToReuse) const;
     bool isAllocated(const std::shared_ptr<TensorDescriptor> &tensor) const;
-    bool isSafeToReuse(const std::shared_ptr<Tensors> &occupationList,
-                       const std::shared_ptr<TensorDescriptor> &tensor) const;
-    std::map<std::shared_ptr<TensorDescriptor>, Tensors> liveTensorAnalysis() const;
+    bool isSafeToReuse(const std::shared_ptr<Tensors> &occupationList, const std::shared_ptr<TensorDescriptor> &tensor,
+                       const SafeToReuseMap &safeToReuse) const;
+    SafeToReuseMap liveTensorAnalysis(const Tensors &tensors) const;
     Tensors createInitialTensorOrder() const;
-    std::map<std::shared_ptr<TensorDescriptor>, Tensors> createAllAlternatives() const;
+    AlternativesMap createAllAlternatives(const Tensors &tensors, const SafeToReuseMap &safeToReuse) const;
     std::vector<ComputePipelineBase *> getTopologicalOrder() const;
 };
 

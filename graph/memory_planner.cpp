@@ -17,6 +17,7 @@
 #include <numeric>
 #include <set>
 #include <stdexcept>
+#include <unordered_set>
 
 using namespace mlsdk::el::utils;
 using namespace mlsdk::el::log;
@@ -35,7 +36,7 @@ std::tuple<VkDeviceSize, uint32_t> MemoryPlanner::getGraphPipelineSessionMemoryR
 
     VkDeviceSize alignment = 1;
     uint32_t memoryTypeBits = 0xffffffff;
-    for (auto const &tensor : tensorSet) {
+    for (const auto &tensor : tensorSet) {
         const auto &tensorMemReqs = tensor->getMemoryRequirements();
         alignment = std::max(alignment, tensorMemReqs.alignment);
         memoryTypeBits &= tensorMemReqs.memoryTypeBits;
@@ -97,10 +98,12 @@ void LinearMemoryPlanner::bindGraphPipelineSessionMemory(VkDeviceMemory memory, 
  *******************************************************************************/
 
 BestFitMemoryPlanner::BestFitMemoryPlanner(const std::shared_ptr<GraphPipeline> &_graphPipeline)
-    : MemoryPlanner(_graphPipeline), tensors{createInitialTensorOrder()}, safeToReuse{liveTensorAnalysis()},
-      allAlternatives{createAllAlternatives()} {
+    : MemoryPlanner(_graphPipeline) {
+    const Tensors tensors = createInitialTensorOrder();
     graphLog(Severity::Debug) << "Number of tensors: " << tensors.size() << std::endl;
-    bestFitAllocation();
+    const SafeToReuseMap safeToReuse = liveTensorAnalysis(tensors);
+    const AlternativesMap allAlternatives = createAllAlternatives(tensors, safeToReuse);
+    bestFitAllocation(tensors, safeToReuse, allAlternatives);
 
     graphLog(Severity::Info) << "Memory usage after best-fit allocation: " << memorySize << std::endl;
 }
@@ -148,13 +151,13 @@ void BestFitMemoryPlanner::bindGraphPipelineSessionMemory(VkDeviceMemory memory,
  *     4. For all descendant tensors of the node, if the tensor is not an input/output tensor,
  *        place the tensor in the descendant tensor's safeToReuse-set, and vice versa.
  */
-std::map<std::shared_ptr<TensorDescriptor>, Tensors> BestFitMemoryPlanner::liveTensorAnalysis() const {
+BestFitMemoryPlanner::SafeToReuseMap BestFitMemoryPlanner::liveTensorAnalysis(const Tensors &tensors) const {
     const auto &topological = getTopologicalOrder();
-    std::map<ComputePipelineBase *, std::set<std::shared_ptr<VirtualTensor>>> carryOnSet;
+    std::map<ComputePipelineBase *, std::unordered_set<VirtualTensor *>> carryOnSeen;
     std::map<ComputePipelineBase *, std::vector<std::shared_ptr<VirtualTensor>>> carryOn;
-    std::map<std::shared_ptr<TensorDescriptor>, Tensors> safeTensors;
+    SafeToReuseMap safeTensors;
     for (const auto &tensor : tensors) {
-        safeTensors.emplace(tensor, Tensors());
+        safeTensors.emplace(tensor, SafeSet());
     }
 
     const auto &input = graphPipeline->getInputs();
@@ -179,8 +182,7 @@ std::map<std::shared_ptr<TensorDescriptor>, Tensors> BestFitMemoryPlanner::liveT
             auto *const descendantPipeline = descendant->getDescendantPipeline();
 
             auto carryOnInsert = [&](const auto &tensor) {
-                auto [iterator, inserted] = carryOnSet[descendantPipeline].insert(tensor);
-                if (inserted) {
+                if (carryOnSeen[descendantPipeline].insert(tensor.get()).second) {
                     carryOn[descendantPipeline].push_back(tensor);
                 }
             };
@@ -212,8 +214,8 @@ std::map<std::shared_ptr<TensorDescriptor>, Tensors> BestFitMemoryPlanner::liveT
                             continue;
                         }
 
-                        safeTensors[descendantTensor].push_back(tensor);
-                        safeTensors[tensor].push_back(descendantTensor);
+                        safeTensors[descendantTensor].insert(tensor);
+                        safeTensors[tensor].insert(descendantTensor);
                     }
                 }
             }
@@ -234,15 +236,16 @@ std::map<std::shared_ptr<TensorDescriptor>, Tensors> BestFitMemoryPlanner::liveT
  *     3A Allocate the tensor in the alternative tensor's space.
  *     3B Allocate the tensor at the end of the memory and update memory size.
  */
-void BestFitMemoryPlanner::bestFitAllocation() {
+void BestFitMemoryPlanner::bestFitAllocation(const Tensors &tensors, const SafeToReuseMap &safeToReuse,
+                                             const AlternativesMap &allAlternatives) {
     // tensorOccupation is used to track which tensor has already been occupied on the same tensor space
 
-    std::map<std::shared_ptr<TensorDescriptor>, std::shared_ptr<Tensors>> tensorOccupation;
+    OccupationMap tensorOccupation;
     const auto [alignment, memoryTypeBits] = memoryRequirements;
 
     memorySize = 0;
     for (const auto &tensor : tensors) {
-        const auto alternativeTensor = findAlternativeTensor(tensor, tensorOccupation);
+        const auto alternativeTensor = findAlternativeTensor(tensor, tensorOccupation, allAlternatives, safeToReuse);
 
         // If no alternative was found, use a new occupation list
         // Otherwise, use the occupation list from the alternative and retrieve the memory address of the alternative
@@ -277,14 +280,15 @@ Tensors BestFitMemoryPlanner::createInitialTensorOrder() const {
  * of alternatives is sorted so that the closest tensor in size comes first, in order to find the best
  * fitting match.
  */
-std::map<std::shared_ptr<TensorDescriptor>, Tensors> BestFitMemoryPlanner::createAllAlternatives() const {
-    auto all = std::map<std::shared_ptr<TensorDescriptor>, Tensors>();
+BestFitMemoryPlanner::AlternativesMap
+BestFitMemoryPlanner::createAllAlternatives(const Tensors &tensors, const SafeToReuseMap &safeToReuse) const {
+    AlternativesMap all;
 
     for (const auto &tensor : tensors) {
         auto &alternatives = all[tensor];
         const auto tensorSize = tensor->getMemoryRequirementsSize();
 
-        for (auto const &safeTensor : safeToReuse.at(tensor)) {
+        for (const auto &safeTensor : safeToReuse.at(tensor)) {
             const auto safeTensorSize = safeTensor->getMemoryRequirementsSize();
 
             if (safeTensorSize >= tensorSize) {
@@ -348,10 +352,11 @@ void BestFitMemoryPlanner::allocate(const std::shared_ptr<TensorDescriptor> &ten
 }
 
 std::shared_ptr<TensorDescriptor> BestFitMemoryPlanner::findAlternativeTensor(
-    const std::shared_ptr<TensorDescriptor> &tensor,
-    const std::map<std::shared_ptr<TensorDescriptor>, std::shared_ptr<Tensors>> &tensorOccupation) {
+    const std::shared_ptr<TensorDescriptor> &tensor, const OccupationMap &tensorOccupation,
+    const AlternativesMap &allAlternatives, const SafeToReuseMap &safeToReuse) const {
     for (const auto &alternativeTensor : allAlternatives.at(tensor)) {
-        if (isAllocated(alternativeTensor) && isSafeToReuse(tensorOccupation.at(alternativeTensor), tensor)) {
+        if (isAllocated(alternativeTensor) &&
+            isSafeToReuse(tensorOccupation.at(alternativeTensor), tensor, safeToReuse)) {
             return alternativeTensor;
         }
     }
@@ -368,10 +373,11 @@ bool BestFitMemoryPlanner::isAllocated(const std::shared_ptr<TensorDescriptor> &
  * Returns true if all tensors are safe to reuse for tensor, false otherwise.
  */
 bool BestFitMemoryPlanner::isSafeToReuse(const std::shared_ptr<Tensors> &occupationList,
-                                         const std::shared_ptr<TensorDescriptor> &tensor) const {
+                                         const std::shared_ptr<TensorDescriptor> &tensor,
+                                         const SafeToReuseMap &safeToReuse) const {
+    const auto &safeTensors = safeToReuse.at(tensor);
     for (const auto &allocatedTensor : *occupationList) {
-        const auto &safeTensors = safeToReuse.at(tensor);
-        if (std::find(safeTensors.begin(), safeTensors.end(), allocatedTensor) == safeTensors.end()) {
+        if (safeTensors.find(allocatedTensor) == safeTensors.end()) {
             return false;
         }
     }
