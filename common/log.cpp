@@ -12,6 +12,10 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
 
 /*******************************************************************************
  * Log
@@ -42,6 +46,24 @@ Severity getLogLevel(const std::string &environmentVariable, const Severity defa
     }
     return defaultLogLevel;
 }
+
+std::string currentTimestamp() {
+    const auto now = std::chrono::system_clock::now();
+    const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+    const std::time_t currentTime = std::chrono::system_clock::to_time_t(now);
+
+    std::tm localTime{};
+#ifdef _WIN32
+    localtime_s(&localTime, &currentTime);
+#else
+    localtime_r(&currentTime, &localTime);
+#endif
+
+    std::ostringstream timestamp;
+    timestamp << std::put_time(&localTime, "%Y-%m-%d %H:%M:%S") << ',' << std::setw(3) << std::setfill('0')
+              << milliseconds.count() << ' ';
+    return timestamp.str();
+}
 } // namespace
 
 Log::Log(const std::string &_environmentVariable, const std::string &_loggerName, const Severity _defaultLogLevel)
@@ -57,7 +79,7 @@ Log &Log::operator<<(std::ostream &(*f)(std::ostream &)) {
 Log &Log::operator()(const Severity _severity) {
     severity = _severity;
     if (enabled(severity)) {
-        *os << '[' << loggerName << "][" << severityToString() << "] ";
+        *os << currentTimestamp() << '[' << loggerName << "][" << severityToString() << "] ";
     }
     return *this;
 }
