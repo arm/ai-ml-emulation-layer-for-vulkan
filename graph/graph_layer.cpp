@@ -25,8 +25,10 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <cstring>
 #include <optional>
 #include <string_view>
+#include <unordered_map>
 
 using namespace mlsdk::el::compute;
 using namespace mlsdk::el::compute::graph_op;
@@ -56,6 +58,44 @@ bool hasVersionPrefix(std::string_view name, std::string_view prefix, size_t dig
     }
 
     return name[prefix.size() + digitCount] == '.' && isDigit(name[prefix.size() + digitCount + 1]);
+}
+
+std::unordered_map<uint32_t, std::vector<uint32_t>>
+makeSpecConstantDefaultValues(const VkSpecializationInfo &specializationInfo) {
+    std::unordered_map<uint32_t, std::vector<uint32_t>> values;
+    values.reserve(specializationInfo.mapEntryCount);
+
+    for (uint32_t i = 0; i < specializationInfo.mapEntryCount; i++) {
+        const auto &entry = specializationInfo.pMapEntries[i];
+
+        if (entry.size == 0) {
+            values.emplace(entry.constantID, std::vector<uint32_t>{});
+            continue;
+        }
+
+        const auto wordCount = static_cast<size_t>((entry.size + sizeof(uint32_t) - 1) / sizeof(uint32_t));
+        std::vector<uint32_t> words(wordCount, 0u);
+        std::memcpy(words.data(), static_cast<const char *>(specializationInfo.pData) + entry.offset, entry.size);
+
+        values.emplace(entry.constantID, std::move(words));
+    }
+
+    return values;
+}
+
+void registerSpecConstantDefaultPasses(spvtools::Optimizer &optimizer, const VkSpecializationInfo *specializationInfo) {
+    if (specializationInfo == nullptr) {
+        return;
+    }
+
+    const auto specConstantDefaultValues = makeSpecConstantDefaultValues(*specializationInfo);
+    if (specConstantDefaultValues.empty()) {
+        return;
+    }
+
+    optimizer.RegisterPass(spvtools::CreateSetSpecConstantDefaultValuePass(specConstantDefaultValues));
+    optimizer.RegisterPass(spvtools::CreateFreezeSpecConstantValuePass());
+    optimizer.RegisterPass(spvtools::CreateFoldSpecConstantOpAndCompositePass());
 }
 } // namespace
 
@@ -701,6 +741,8 @@ class GraphLayer : public VulkanLayerImpl {
                 spvtools::Optimizer optimizer{SPV_ENV_UNIVERSAL_1_6};
 
                 // Register passes
+                registerSpecConstantDefaultPasses(optimizer,
+                                                  dataGraphPipelineShaderModuleCreateInfo->pSpecializationInfo);
                 optimizer.RegisterPass(spvtools::CreateGraphPass<spvtools::opt::GraphPassTosaSpv100>(*graphPipeline));
 
                 // Run passes
