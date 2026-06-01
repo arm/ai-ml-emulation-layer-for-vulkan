@@ -440,10 +440,10 @@ bool GraphPassBase::getBoolConstant(const Operand &operand) {
     const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(id);
     if (constant == nullptr) {
         const auto *instruction = get_def_use_mgr()->GetDef(id);
-        const auto opcode = instruction == nullptr ? std::string{"unknown"}
-                                                   : std::to_string(static_cast<uint32_t>(instruction->opcode()));
         throw std::runtime_error("Expected boolean constant for id %" + std::to_string(id) + ", found opcode " +
-                                 opcode);
+                                 (instruction == nullptr
+                                      ? std::string{"unknown"}
+                                      : std::to_string(static_cast<uint32_t>(instruction->opcode()))));
     }
 
     const auto *boolConstant = constant->AsBoolConstant();
