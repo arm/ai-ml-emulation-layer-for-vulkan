@@ -205,6 +205,7 @@ const analysis::TensorARM *GraphPassBase::getTensorType(uint32_t id) const {
     case spv::Op::OpExtInst:
     case spv::Op::OpGraphInputARM:
     case spv::Op::OpGraphConstantARM:
+    case spv::Op::OpConstantNull:
     case spv::Op::OpConstantComposite:
     case spv::Op::OpSpecConstantComposite:
     case spv::Op::OpConstantCompositeReplicateEXT:
