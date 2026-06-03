@@ -419,7 +419,7 @@ def get_package_version():
 
     base_version = regex_result.group(1)
 
-    date_tag = datetime.now(timezone.utc).strftime("%Y%m%d")
+    date_tag = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
 
     return f"{base_version}.dev{date_tag}"
 
