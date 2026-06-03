@@ -484,8 +484,9 @@ VkPipelineLayout ComputePipelineLayout::createPipelineLayout() const {
  * ComputePipelineBase
  *******************************************************************************/
 
-ComputePipelineBase::ComputePipelineBase(const std::shared_ptr<ComputePipelineLayout> &_pipelineLayout)
-    : pipelineLayout{_pipelineLayout} {}
+ComputePipelineBase::ComputePipelineBase(const std::shared_ptr<ComputePipelineLayout> &_pipelineLayout,
+                                         std::string _debugName)
+    : pipelineLayout{_pipelineLayout}, debugName{std::move(_debugName)} {}
 
 ComputePipelineBase::~ComputePipelineBase() = default;
 
@@ -504,6 +505,8 @@ const std::vector<std::shared_ptr<VirtualTensor>> &ComputePipelineBase::getDesce
 void ComputePipelineBase::pushDescendant(const std::shared_ptr<VirtualTensor> &tensor) {
     descendants.push_back(tensor);
 }
+
+const std::string &ComputePipelineBase::getDebugName() const { return debugName; }
 
 /*******************************************************************************
  * ComputePipeline
@@ -524,7 +527,7 @@ ComputePipeline::ComputePipeline(const std::shared_ptr<VULKAN_HPP_NAMESPACE::det
                                  VkDevice _device, DescriptorMap descriptorMap, const PushConstant &pushConstant,
                                  const std::shared_ptr<PipelineCache> &_pipelineCache, const SpirvBinary &_spirv,
                                  const std::string &debugName, const SpecConstants &_constants)
-    : ComputePipelineBase(createPipelineLayout(_loader, _device, std::move(descriptorMap), pushConstant)),
+    : ComputePipelineBase(createPipelineLayout(_loader, _device, std::move(descriptorMap), pushConstant), debugName),
       loader{_loader}, device{_device}, pipelineCache{_pipelineCache},
       // Vulkan objects created from the provided SPIR-V.
       shaderModule{createShaderModule(_spirv)}, pipeline{createComputePipeline(_constants)} {
@@ -2465,11 +2468,18 @@ ComputeDescriptorSetMap GraphPipeline::getComputeDescriptorSetMap(const TensorDe
     return mapping;
 }
 
-void GraphPipeline::cmdBindAndDispatch(VkCommandBuffer commandBuffer, const ComputeDescriptorSetMap &descriptorSetMap) {
-    for (auto &pipeline : pipelines) {
-        pipeline->cmdBindAndDispatch(commandBuffer, descriptorSetMap);
+void GraphPipeline::cmdBindAndDispatch(VkCommandBuffer commandBuffer, const ComputeDescriptorSetMap &descriptorSetMap,
+                                       const ComputePipelineDispatchDecorator &dispatchDecorator) {
+    for (uint32_t i = 0; i < pipelines.size(); ++i) {
+        if (dispatchDecorator) {
+            dispatchDecorator(commandBuffer, *pipelines[i], descriptorSetMap, i);
+        } else {
+            pipelines[i]->cmdBindAndDispatch(commandBuffer, descriptorSetMap);
+        }
     }
 }
+
+const std::vector<std::shared_ptr<ComputePipelineBase>> &GraphPipeline::getPipelines() const { return pipelines; }
 
 void GraphPipeline::makeInput(const std::shared_ptr<TensorDescriptor> &tensor) {
     // Register inputs pipeline as producer of tensors

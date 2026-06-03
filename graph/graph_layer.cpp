@@ -12,6 +12,7 @@
 
 #include "compute_graph_op.hpp"
 #include "graph_log.hpp"
+#include "graph_profiler.hpp"
 #include "memory_planner.hpp"
 #include "optical_flow.hpp"
 #include "pipeline_cache.hpp"
@@ -23,12 +24,17 @@
 #include "spirv_pass.hpp"
 #include "spirv_pass_tosaspv_v100.hpp"
 
+#include <algorithm>
+#include <array>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 using namespace mlsdk::el::compute;
 using namespace mlsdk::el::compute::graph_op;
@@ -46,8 +52,8 @@ constexpr char graphPipelineCreatedLog[] = "Graph pipeline created";
 bool isDigit(char value) { return value >= '0' && value <= '9'; }
 
 bool hasVersionPrefix(std::string_view name, std::string_view prefix, size_t digitCount) {
-    const auto minSize = prefix.size() + digitCount + 2;
-    if (name.size() < minSize || name.compare(0, prefix.size(), prefix) != 0) {
+    const auto versionEnd = prefix.size() + digitCount;
+    if (name.size() < versionEnd || name.compare(0, prefix.size(), prefix) != 0) {
         return false;
     }
 
@@ -57,7 +63,8 @@ bool hasVersionPrefix(std::string_view name, std::string_view prefix, size_t dig
         }
     }
 
-    return name[prefix.size() + digitCount] == '.' && isDigit(name[prefix.size() + digitCount + 1]);
+    return name.size() == versionEnd ||
+           (name.size() > versionEnd + 1 && name[versionEnd] == '.' && isDigit(name[versionEnd + 1]));
 }
 
 std::unordered_map<uint32_t, std::vector<uint32_t>>
@@ -97,6 +104,13 @@ void registerSpecConstantDefaultPasses(spvtools::Optimizer &optimizer, const VkS
     optimizer.RegisterPass(spvtools::CreateFreezeSpecConstantValuePass());
     optimizer.RegisterPass(spvtools::CreateFoldSpecConstantOpAndCompositePass());
 }
+// Layer-private property used for graph profiling JSON results.
+constexpr VkDataGraphPipelinePropertyARM graphProfilingProperty =
+    static_cast<VkDataGraphPipelinePropertyARM>(0x7ffffffe);
+constexpr std::array<VkDataGraphPipelinePropertyARM, 2> dataGraphPipelineProperties{
+    VK_DATA_GRAPH_PIPELINE_PROPERTY_CREATION_LOG_ARM,
+    graphProfilingProperty,
+};
 } // namespace
 
 /**************************************************************************
@@ -180,6 +194,8 @@ class DataGraphPipelineARM : public Loader {
     std::shared_ptr<GraphPipeline> graphPipeline;
     std::shared_ptr<OpticalFlow> opticalFlow;
     ComputeDescriptorSetMap constantsDescriptorSets;
+    bool isTosaGraph = false;
+    ProfilingPipelineKind profilingPipelineKind = ProfilingPipelineKind::GRAPH_OP;
 
     void makeConstantsDescriptorSets() {
         constantsDescriptorSets = graphPipeline->makeConstantsDescriptorSets();
@@ -295,12 +311,17 @@ class GraphDevice : public Device {
     explicit GraphDevice(const std::shared_ptr<PhysicalDevice> &_physicalDevice, VkDevice _device,
                          PFN_vkGetInstanceProcAddr _gipr, PFN_vkGetDeviceProcAddr _gdpr,
                          const VkAllocationCallbacks *_callbacks)
-        : Device(_physicalDevice, _device, _gipr, _gdpr, _callbacks) {}
+        : Device(_physicalDevice, _device, _gipr, _gdpr, _callbacks) {
+        if (GraphProfiler::isEnabled()) {
+            profiler = std::make_unique<GraphProfiler>(loader, physicalDevice->physicalDevice, device);
+        }
+    }
 
     std::map<VkDescriptorSet, std::shared_ptr<DataGraphDescriptorSet>> descriptorSetMap;
     std::map<VkPipeline, std::shared_ptr<DataGraphPipelineARM>> dataGraphPipelineMap;
     std::map<VkTensorViewARM, std::shared_ptr<TensorView>> tensorViewMap;
     std::map<VkShaderModule, std::shared_ptr<ShaderModule>> shaderModuleMap;
+    std::unique_ptr<GraphProfiler> profiler;
 };
 
 /*****************************************************************************
@@ -344,9 +365,15 @@ std::optional<bool> isGraphSpirv(const uint32_t *spirvCode, const size_t spirvSi
     return !ir->module()->graphs().empty();
 }
 
-bool checkInstVersion(const uint32_t *spirvCode, const size_t spirvSize) {
+struct SupportedVersions {
+    std::optional<std::string> tosa;
+    std::optional<std::string> motionEngine;
+};
+
+bool checkInstVersion(const uint32_t *spirvCode, const size_t spirvSize, SupportedVersions &supportedVersions) {
     const auto ir = spvtools::BuildModule(SPV_ENV_UNIVERSAL_1_6, sprivMessageConsumer, spirvCode, spirvSize);
-    const auto tryGetExtInstVersion = [&ir](std::string_view prefix, size_t digitCount) -> std::optional<std::string> {
+    const auto tryGetExtInstVersion = [&ir](const std::string_view &prefix,
+                                            size_t digitCount) -> std::optional<std::string> {
         for (const auto &inst : ir->module()->ext_inst_imports()) {
             auto name = inst.GetInOperand(0).AsString();
             if (hasVersionPrefix(name, prefix, digitCount)) {
@@ -362,6 +389,7 @@ bool checkInstVersion(const uint32_t *spirvCode, const size_t spirvSize) {
         graphLog(Severity::Error) << "Unsupported Tosa version provided." << std::endl;
         return false;
     }
+    supportedVersions.tosa = tosaVersion;
 
     const auto motionEngineVersion = tryGetExtInstVersion("Arm.MotionEngine.", 3);
     const bool isMotionEngineVersionUnsupported =
@@ -370,6 +398,7 @@ bool checkInstVersion(const uint32_t *spirvCode, const size_t spirvSize) {
         graphLog(Severity::Error) << "Unsupported MotionEngine version provided." << std::endl;
         return false;
     }
+    supportedVersions.motionEngine = motionEngineVersion;
 
     return true;
 }
@@ -435,6 +464,17 @@ class GraphLayer : public VulkanLayerImpl {
         static const vTable vtable = {
             // Device functions
             {"vkGetDeviceProcAddr", PFN_vkVoidFunction(vkGetDeviceProcAddr)},
+            {"vkDeviceWaitIdle", PFN_vkVoidFunction(vkDeviceWaitIdle)},
+            {"vkWaitForFences", PFN_vkVoidFunction(vkWaitForFences)},
+            {"vkGetFenceStatus", PFN_vkVoidFunction(vkGetFenceStatus)},
+            {"vkResetFences", PFN_vkVoidFunction(vkResetFences)},
+            {"vkDestroyFence", PFN_vkVoidFunction(vkDestroyFence)},
+
+            // Queue
+            {"vkQueueSubmit", PFN_vkVoidFunction(vkQueueSubmit)},
+            {"vkQueueSubmit2", PFN_vkVoidFunction(vkQueueSubmit2)},
+            {"vkQueueSubmit2KHR", PFN_vkVoidFunction(vkQueueSubmit2KHR)},
+            {"vkQueueWaitIdle", PFN_vkVoidFunction(vkQueueWaitIdle)},
 
             // Graph extension
             {"vkBindDataGraphPipelineSessionMemoryARM", PFN_vkVoidFunction(vkBindDataGraphPipelineSessionMemoryARM)},
@@ -461,6 +501,11 @@ class GraphLayer : public VulkanLayerImpl {
             {"vkCmdBindPipeline", PFN_vkVoidFunction(vkCmdBindPipeline)},
             {"vkCmdBindDescriptorSets", PFN_vkVoidFunction(vkCmdBindDescriptorSets)},
             {"vkCmdDispatchDataGraphARM", PFN_vkVoidFunction(vkCmdDispatchDataGraphARM)},
+            {"vkCmdExecuteCommands", PFN_vkVoidFunction(vkCmdExecuteCommands)},
+            {"vkBeginCommandBuffer", PFN_vkVoidFunction(vkBeginCommandBuffer)},
+            {"vkResetCommandBuffer", PFN_vkVoidFunction(vkResetCommandBuffer)},
+            {"vkFreeCommandBuffers", PFN_vkVoidFunction(vkFreeCommandBuffers)},
+            {"vkDestroyCommandPool", PFN_vkVoidFunction(vkDestroyCommandPool)},
 
             // Tensor extension
             {"vkCreateTensorViewARM", PFN_vkVoidFunction(vkCreateTensorViewARM)},
@@ -509,6 +554,158 @@ class GraphLayer : public VulkanLayerImpl {
         }
 
         return VulkanLayerImpl::vk_layerGetPhysicalDeviceProcAddr(instance, name);
+    }
+
+    /*******************************************************************************
+     * Device
+     *******************************************************************************/
+
+    static void collectSignaledFences(const std::shared_ptr<GraphDevice> &handle, uint32_t fenceCount,
+                                      const VkFence *fences) {
+        if (!handle->profiler || fences == nullptr) {
+            return;
+        }
+
+        for (uint32_t i = 0; i < fenceCount; ++i) {
+            if (fences[i] == VK_NULL_HANDLE) {
+                continue;
+            }
+
+            if (handle->loader->vkGetFenceStatus(handle->device, fences[i]) == VK_SUCCESS) {
+                handle->profiler->collectFence(fences[i]);
+            }
+        }
+    }
+
+    static VkResult VKAPI_CALL vkDeviceWaitIdle(VkDevice device) {
+        auto handle = VulkanLayerImpl::getHandle(device);
+        const auto result = handle->loader->vkDeviceWaitIdle(device);
+        if (result == VK_SUCCESS && handle->profiler) {
+            handle->profiler->collectDevice();
+        }
+        return result;
+    }
+
+    static VkResult VKAPI_CALL vkWaitForFences(VkDevice device, uint32_t fenceCount, const VkFence *pFences,
+                                               VkBool32 waitAll, uint64_t timeout) {
+        auto handle = VulkanLayerImpl::getHandle(device);
+        const auto result = handle->loader->vkWaitForFences(device, fenceCount, pFences, waitAll, timeout);
+        if (result == VK_SUCCESS && handle->profiler && pFences != nullptr) {
+            if (waitAll) {
+                for (uint32_t i = 0; i < fenceCount; ++i) {
+                    handle->profiler->collectFence(pFences[i]);
+                }
+            } else {
+                collectSignaledFences(handle, fenceCount, pFences);
+            }
+        }
+        return result;
+    }
+
+    static VkResult VKAPI_CALL vkGetFenceStatus(VkDevice device, VkFence fence) {
+        auto handle = VulkanLayerImpl::getHandle(device);
+        const auto result = handle->loader->vkGetFenceStatus(device, fence);
+        if (result == VK_SUCCESS && handle->profiler) {
+            handle->profiler->collectFence(fence);
+        }
+        return result;
+    }
+
+    static VkResult VKAPI_CALL vkResetFences(VkDevice device, uint32_t fenceCount, const VkFence *pFences) {
+        auto handle = VulkanLayerImpl::getHandle(device);
+        collectSignaledFences(handle, fenceCount, pFences);
+        return handle->loader->vkResetFences(device, fenceCount, pFences);
+    }
+
+    static void VKAPI_CALL vkDestroyFence(VkDevice device, VkFence fence, const VkAllocationCallbacks *allocator) {
+        auto handle = VulkanLayerImpl::getHandle(device);
+        collectSignaledFences(handle, 1, &fence);
+        handle->loader->vkDestroyFence(device, fence, allocator);
+    }
+
+    /*******************************************************************************
+     * Queue
+     *******************************************************************************/
+
+    static std::vector<VkCommandBuffer> getCommandBuffers(uint32_t submitCount, const VkSubmitInfo *pSubmits) {
+        std::vector<VkCommandBuffer> commandBuffers;
+        if (pSubmits == nullptr) {
+            return commandBuffers;
+        }
+
+        for (uint32_t i = 0; i < submitCount; ++i) {
+            for (uint32_t j = 0; j < pSubmits[i].commandBufferCount; ++j) {
+                commandBuffers.push_back(pSubmits[i].pCommandBuffers[j]);
+            }
+        }
+        return commandBuffers;
+    }
+
+    static std::vector<VkCommandBuffer> getCommandBuffers(uint32_t submitCount, const VkSubmitInfo2 *pSubmits) {
+        std::vector<VkCommandBuffer> commandBuffers;
+        if (pSubmits == nullptr) {
+            return commandBuffers;
+        }
+
+        for (uint32_t i = 0; i < submitCount; ++i) {
+            for (uint32_t j = 0; j < pSubmits[i].commandBufferInfoCount; ++j) {
+                commandBuffers.push_back(pSubmits[i].pCommandBufferInfos[j].commandBuffer);
+            }
+        }
+        return commandBuffers;
+    }
+
+    static VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSubmits,
+                                             VkFence fence) {
+        auto handle = VulkanLayerImpl::getHandle(queue);
+        const auto commandBuffers = getCommandBuffers(submitCount, pSubmits);
+        const bool shouldProfile = handle->profiler && handle->profiler->hasProfiledCommandBuffers(commandBuffers);
+
+        const auto result = handle->loader->vkQueueSubmit(queue, submitCount, pSubmits, fence);
+        if (result == VK_SUCCESS && shouldProfile) {
+            handle->profiler->registerSubmit(queue, commandBuffers, fence);
+        }
+
+        return result;
+    }
+
+    static VkResult VKAPI_CALL vkQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2 *pSubmits,
+                                              VkFence fence) {
+        auto handle = VulkanLayerImpl::getHandle(queue);
+        const auto commandBuffers = getCommandBuffers(submitCount, pSubmits);
+        const bool shouldProfile = handle->profiler && handle->profiler->hasProfiledCommandBuffers(commandBuffers);
+
+        const auto result = handle->loader->vkQueueSubmit2(queue, submitCount, pSubmits, fence);
+        if (result == VK_SUCCESS && shouldProfile) {
+            handle->profiler->registerSubmit(queue, commandBuffers, fence);
+        }
+
+        return result;
+    }
+
+    static VkResult VKAPI_CALL vkQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2 *pSubmits,
+                                                 VkFence fence) {
+        auto handle = VulkanLayerImpl::getHandle(queue);
+        const auto commandBuffers = getCommandBuffers(submitCount, pSubmits);
+        const bool shouldProfile = handle->profiler && handle->profiler->hasProfiledCommandBuffers(commandBuffers);
+
+        const auto submit =
+            handle->loader->vkQueueSubmit2KHR ? handle->loader->vkQueueSubmit2KHR : handle->loader->vkQueueSubmit2;
+        const auto result = submit(queue, submitCount, pSubmits, fence);
+        if (result == VK_SUCCESS && shouldProfile) {
+            handle->profiler->registerSubmit(queue, commandBuffers, fence);
+        }
+
+        return result;
+    }
+
+    static VkResult VKAPI_CALL vkQueueWaitIdle(VkQueue queue) {
+        auto handle = VulkanLayerImpl::getHandle(queue);
+        const auto result = handle->loader->vkQueueWaitIdle(queue);
+        if (result == VK_SUCCESS && handle->profiler) {
+            handle->profiler->collectQueue(queue);
+        }
+        return result;
     }
 
     /*******************************************************************************
@@ -733,7 +930,8 @@ class GraphLayer : public VulkanLayerImpl {
                     spirvSize = shaderModule->code.size();
                 }
 
-                if (!checkInstVersion(spirvCode, spirvSize)) {
+                SupportedVersions supportedVersions;
+                if (!checkInstVersion(spirvCode, spirvSize, supportedVersions)) {
                     return VK_ERROR_UNKNOWN;
                 }
 
@@ -743,6 +941,15 @@ class GraphLayer : public VulkanLayerImpl {
                 // Register passes
                 registerSpecConstantDefaultPasses(optimizer,
                                                   dataGraphPipelineShaderModuleCreateInfo->pSpecializationInfo);
+                pipeline->isTosaGraph = supportedVersions.tosa.has_value();
+                if (supportedVersions.tosa.has_value()) {
+                    pipeline->profilingPipelineKind = ProfilingPipelineKind::TOSA;
+                } else if (supportedVersions.motionEngine.has_value()) {
+                    pipeline->profilingPipelineKind = ProfilingPipelineKind::MOTION_ENGINE;
+                } else {
+                    pipeline->profilingPipelineKind = ProfilingPipelineKind::GRAPH_OP;
+                }
+
                 optimizer.RegisterPass(spvtools::CreateGraphPass<spvtools::opt::GraphPassTosaSpv100>(*graphPipeline));
 
                 // Run passes
@@ -1116,7 +1323,6 @@ class GraphLayer : public VulkanLayerImpl {
             graphLog(Severity::Error) << "OF sessions currently require OF cache create flag" << std::endl;
             return VK_ERROR_UNKNOWN;
         }
-
         *session = reinterpret_cast<VkDataGraphPipelineSessionARM>(
             allocateObject<DataGraphPipelineSessionARM>(callbacks, deviceHandle, pipelineImpl, createInfo->flags));
 
@@ -1218,41 +1424,103 @@ class GraphLayer : public VulkanLayerImpl {
         destroyObject(callbacks, reinterpret_cast<DataGraphPipelineSessionARM *>(session));
     }
 
-    static VkResult VKAPI_CALL vkGetDataGraphPipelineAvailablePropertiesARM(
-        VkDevice, const VkDataGraphPipelineInfoARM *, uint32_t *pPropertiesCount,
-        VkDataGraphPipelinePropertyARM *pProperties) {
-        if (!pProperties) {
-            // This property is always available
-            *pPropertiesCount = 1;
+    static VkResult writeTextProperty(VkDataGraphPipelinePropertyQueryResultARM &property, std::string_view data) {
+        property.isText = VK_TRUE;
+        const auto requiredSize = data.size() + 1;
+        if (property.pData == nullptr) {
+            property.dataSize = requiredSize;
             return VK_SUCCESS;
         }
 
-        if (*pPropertiesCount == 0) {
-            return VK_INCOMPLETE;
+        const auto bytesToWrite = std::min(property.dataSize, requiredSize);
+        auto *output = static_cast<char *>(property.pData);
+        if (bytesToWrite == requiredSize) { // property.dataSize >= data.size() + 1
+            if (!data.empty()) {
+                std::memcpy(output, data.data(), data.size());
+            }
+            output[data.size()] = '\0';
+        } else if (bytesToWrite > 0) { // property.dataSize < data.size() + 1
+            std::memcpy(output, data.data(), bytesToWrite);
         }
 
-        *pProperties = VK_DATA_GRAPH_PIPELINE_PROPERTY_CREATION_LOG_ARM;
-        *pPropertiesCount = 1;
-
-        return VK_SUCCESS;
+        property.dataSize = bytesToWrite;
+        return (bytesToWrite < requiredSize) ? VK_INCOMPLETE : VK_SUCCESS;
     }
 
-    static VkResult VKAPI_CALL
-    vkGetDataGraphPipelinePropertiesARM(VkDevice, const VkDataGraphPipelineInfoARM *, uint32_t propertiesCount,
-                                        VkDataGraphPipelinePropertyQueryResultARM *pProperties) {
+    static VkResult VKAPI_CALL vkGetDataGraphPipelineAvailablePropertiesARM(
+        VkDevice device, const VkDataGraphPipelineInfoARM *pPipelineInfo, uint32_t *pPropertiesCount,
+        VkDataGraphPipelinePropertyARM *pProperties) {
+        if (pPropertiesCount == nullptr) {
+            return VK_ERROR_UNKNOWN;
+        }
+
+        const auto deviceHandle = VulkanLayerImpl::getHandle(device);
+        if (pPipelineInfo != nullptr && pPipelineInfo->dataGraphPipeline != VK_NULL_HANDLE) {
+            if (!getHandle(deviceHandle, pPipelineInfo->dataGraphPipeline)) {
+                return VK_ERROR_UNKNOWN;
+            }
+        }
+        const auto dataGraphPipelinePropertiesSize = deviceHandle->profiler != nullptr
+                                                         ? dataGraphPipelineProperties.size()
+                                                         : dataGraphPipelineProperties.size() - 1;
+        if (!pProperties) {
+            *pPropertiesCount = static_cast<uint32_t>(dataGraphPipelinePropertiesSize);
+            return VK_SUCCESS;
+        }
+
+        const auto capacity = *pPropertiesCount;
+        const auto writeCount = std::min<size_t>(capacity, dataGraphPipelinePropertiesSize);
+        for (size_t i = 0; i < writeCount; ++i) {
+            pProperties[i] = dataGraphPipelineProperties[i];
+        }
+
+        *pPropertiesCount = static_cast<uint32_t>(writeCount);
+        return (capacity < dataGraphPipelinePropertiesSize) ? VK_INCOMPLETE : VK_SUCCESS;
+    }
+
+    static VkResult VKAPI_CALL vkGetDataGraphPipelinePropertiesARM(
+        VkDevice device, const VkDataGraphPipelineInfoARM *pPipelineInfo, uint32_t propertiesCount,
+        VkDataGraphPipelinePropertyQueryResultARM *pProperties) {
         if (propertiesCount == 0) {
             return VK_SUCCESS;
         }
-        if (!pProperties->pData) {
-            pProperties->dataSize = sizeof(graphPipelineCreatedLog);
-            return VK_SUCCESS;
+        if (pProperties == nullptr) {
+            return VK_ERROR_UNKNOWN;
         }
-        pProperties->property = VK_DATA_GRAPH_PIPELINE_PROPERTY_CREATION_LOG_ARM;
-        pProperties->isText = VK_TRUE;
-        const auto dataSize = std::min(pProperties->dataSize, sizeof(graphPipelineCreatedLog));
-        pProperties->dataSize = dataSize;
-        std::memcpy(pProperties->pData, &graphPipelineCreatedLog[0], dataSize);
-        return (dataSize < sizeof(graphPipelineCreatedLog)) ? VK_INCOMPLETE : VK_SUCCESS;
+
+        const auto deviceHandle = VulkanLayerImpl::getHandle(device);
+        std::shared_ptr<DataGraphPipelineARM> pipeline;
+        if (pPipelineInfo != nullptr && pPipelineInfo->dataGraphPipeline != VK_NULL_HANDLE) {
+            pipeline = getHandle(deviceHandle, pPipelineInfo->dataGraphPipeline);
+            if (!pipeline) {
+                return VK_ERROR_UNKNOWN;
+            }
+        }
+        VkResult result = VK_SUCCESS;
+        for (uint32_t i = 0; i < propertiesCount; ++i) {
+            VkResult propertyResult = VK_SUCCESS;
+
+            if (pProperties[i].property == graphProfilingProperty) {
+                if (!pipeline || !deviceHandle->profiler) {
+                    return VK_ERROR_UNKNOWN;
+                }
+                propertyResult = writeTextProperty(
+                    pProperties[i], deviceHandle->profiler->getPipelineJson(pPipelineInfo->dataGraphPipeline));
+            } else {
+                switch (pProperties[i].property) {
+                case VK_DATA_GRAPH_PIPELINE_PROPERTY_CREATION_LOG_ARM:
+                    propertyResult = writeTextProperty(pProperties[i], graphPipelineCreatedLog);
+                    break;
+                default:
+                    return VK_ERROR_UNKNOWN;
+                }
+            }
+
+            if (propertyResult != VK_SUCCESS) {
+                result = propertyResult;
+            }
+        }
+        return result;
     }
 
     static void VKAPI_CALL vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM(
@@ -1512,6 +1780,67 @@ class GraphLayer : public VulkanLayerImpl {
         }
     }
 
+    static VkResult VKAPI_CALL vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
+                                                    const VkCommandBufferBeginInfo *pBeginInfo) {
+        auto handle = VulkanLayerImpl::getHandle(commandBuffer);
+        auto deviceHandle = VulkanLayerImpl::getHandle(handle->device->device);
+        if (deviceHandle->profiler) {
+            deviceHandle->profiler->clearCommandBuffer(commandBuffer);
+        }
+        return handle->loader->vkBeginCommandBuffer(commandBuffer, pBeginInfo);
+    }
+
+    static VkResult VKAPI_CALL vkResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags flags) {
+        auto handle = VulkanLayerImpl::getHandle(commandBuffer);
+        auto deviceHandle = VulkanLayerImpl::getHandle(handle->device->device);
+        if (deviceHandle->profiler) {
+            deviceHandle->profiler->clearCommandBuffer(commandBuffer);
+        }
+        return handle->loader->vkResetCommandBuffer(commandBuffer, flags);
+    }
+
+    static void VKAPI_CALL vkFreeCommandBuffers(VkDevice device, VkCommandPool commandPool, uint32_t commandBufferCount,
+                                                const VkCommandBuffer *commandBuffers) {
+        auto deviceHandle = VulkanLayerImpl::getHandle(device);
+        if (deviceHandle->profiler) {
+            for (uint32_t i = 0; i < commandBufferCount; ++i) {
+                deviceHandle->profiler->clearCommandBuffer(commandBuffers[i]);
+            }
+        }
+        VulkanLayerImpl::vkFreeCommandBuffers(device, commandPool, commandBufferCount, commandBuffers);
+    }
+
+    static void VKAPI_CALL vkDestroyCommandPool(VkDevice device, VkCommandPool commandPool,
+                                                const VkAllocationCallbacks *allocator) {
+        auto deviceHandle = VulkanLayerImpl::getHandle(device);
+        if (deviceHandle->profiler) {
+            std::vector<VkCommandBuffer> commandBuffers;
+            {
+                scopedMutex l(globalMutex);
+                for (const auto &[commandBuffer, commandBufferHandle] : commandBufferMap) {
+                    if (commandBufferHandle->device == deviceHandle &&
+                        commandBufferHandle->commandPool == commandPool) {
+                        commandBuffers.push_back(commandBuffer);
+                    }
+                }
+            }
+            for (auto *const commandBuffer : commandBuffers) {
+                deviceHandle->profiler->clearCommandBuffer(commandBuffer);
+            }
+        }
+        VulkanLayerImpl::vkDestroyCommandPool(device, commandPool, allocator);
+    }
+
+    static void VKAPI_CALL vkCmdExecuteCommands(VkCommandBuffer commandBuffer, uint32_t commandBufferCount,
+                                                const VkCommandBuffer *pCommandBuffers) {
+        auto handle = VulkanLayerImpl::getHandle(commandBuffer);
+        auto deviceHandle = VulkanLayerImpl::getHandle(handle->device->device);
+        if (deviceHandle->profiler) {
+            deviceHandle->profiler->registerExecuteCommands(commandBuffer, commandBufferCount, pCommandBuffers);
+        }
+        handle->loader->vkCmdExecuteCommands(commandBuffer, commandBufferCount, pCommandBuffers);
+    }
+
     static void VKAPI_CALL vkCmdDispatchDataGraphARM(VkCommandBuffer commandBuffer,
                                                      VkDataGraphPipelineSessionARM _session,
                                                      const VkDataGraphPipelineDispatchInfoARM *pInfo) {
@@ -1578,7 +1907,14 @@ class GraphLayer : public VulkanLayerImpl {
             allDescriptorSetMap.insert(session->sessionRamDescriptorSets.begin(),
                                        session->sessionRamDescriptorSets.end());
 
-            graphPipeline->cmdBindAndDispatch(commandBuffer, allDescriptorSetMap);
+            if (deviceHandle->profiler) {
+                const auto dispatchDecorator = deviceHandle->profiler->makeDispatchDecorator(
+                    vkPipeline, commandBuffer, handle->queueFamilyIndex,
+                    static_cast<uint32_t>(graphPipeline->getPipelines().size()), pipeline->profilingPipelineKind);
+                graphPipeline->cmdBindAndDispatch(commandBuffer, allDescriptorSetMap, dispatchDecorator);
+            } else {
+                graphPipeline->cmdBindAndDispatch(commandBuffer, allDescriptorSetMap);
+            }
         } else if (pipeline->isOpticalFlow()) {
             const auto &opticalFlowPipeline = pipeline->opticalFlow;
 
@@ -1631,7 +1967,15 @@ class GraphLayer : public VulkanLayerImpl {
                 }
             }
             opticalFlowPipeline->updateDescriptorSets(descriptorMap);
-            opticalFlowPipeline->cmdBindAndDispatch(commandBuffer, opticalFlowFlags, meanFlowL1NormHint);
+            if (deviceHandle->profiler) {
+                const auto dispatchDecorator = deviceHandle->profiler->makeOpticalFlowDispatchDecorator(
+                    vkPipeline, commandBuffer, handle->queueFamilyIndex,
+                    opticalFlowPipeline->getMaxDispatchPipelineCount());
+                opticalFlowPipeline->cmdBindAndDispatch(commandBuffer, opticalFlowFlags, meanFlowL1NormHint,
+                                                        dispatchDecorator);
+            } else {
+                opticalFlowPipeline->cmdBindAndDispatch(commandBuffer, opticalFlowFlags, meanFlowL1NormHint);
+            }
         }
     }
 

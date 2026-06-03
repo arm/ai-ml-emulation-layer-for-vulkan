@@ -123,6 +123,7 @@ class GraphPipeline : public PipelineBase {
     void dispatchSubmit();
     void dispatchUpdateSubmit();
     void printGraphPipelineSessionMemory() const;
+    const vk::raii::Pipeline &getPipeline() const;
 
     void clearSessions();
 

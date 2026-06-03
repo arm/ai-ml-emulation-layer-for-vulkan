@@ -385,6 +385,8 @@ void GraphPipeline::printGraphPipelineSessionMemory() const {
 
 void GraphPipeline::clearSessions() { sessions.clear(); }
 
+const vk::raii::Pipeline &GraphPipeline::getPipeline() const { return pipeline; }
+
 vk::raii::Pipeline GraphPipeline::createPipeline() const {
     std::vector<vk::DataGraphPipelineResourceInfoARM> graphPipelineResourceInfos;
     uint32_t set = 0;

@@ -61,6 +61,7 @@ class Builder:
         self.spirv_tools_path = args.spirv_tools_path
         self.spirv_cross_path = args.spirv_cross_path
         self.glslang_path = args.glslang_path
+        self.json_path = args.json_path
         self.gtest_path = args.gtest_path
 
         if self.package_release_pip:
@@ -182,6 +183,7 @@ class Builder:
         cmake_setup_cmd.append(f"-DSPIRV_TOOLS_PATH={self.spirv_tools_path}")
         cmake_setup_cmd.append(f"-DSPIRV_CROSS_PATH={self.spirv_cross_path}")
         cmake_setup_cmd.append(f"-DGLSLANG_PATH={self.glslang_path}")
+        cmake_setup_cmd.append(f"-DJSON_PATH={self.json_path}")
         cmake_setup_cmd.append(f"-DGTEST_PATH={self.gtest_path}")
 
         # Extra options
@@ -546,6 +548,7 @@ def parse_arguments():
         "--spirv-cross-path", default=f"{DEPENDENCY_DIR / 'SPIRV-Cross'}"
     )
     parser.add_argument("--glslang-path", default=f"{DEPENDENCY_DIR / 'glslang'}")
+    parser.add_argument("--json-path", default=f"{DEPENDENCY_DIR / 'json'}")
     parser.add_argument("--gtest-path", default=f"{DEPENDENCY_DIR / 'googletest'}")
 
     if argcomplete:

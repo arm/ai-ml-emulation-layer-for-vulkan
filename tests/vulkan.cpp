@@ -10,6 +10,8 @@
 
 #include <gtest/gtest.h>
 
+#include "test_utils.hpp"
+
 #include "mlel/device.hpp"
 #include "mlel/pipeline.hpp"
 #include "mlel/tensor.hpp"
@@ -18,7 +20,10 @@
 #include <spirv-tools/libspirv.hpp>
 #include <vulkan/vulkan.hpp>
 
+#include <algorithm>
+#include <array>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <filesystem>
@@ -27,10 +32,13 @@
 #include <iostream>
 #include <iterator>
 #include <numeric>
+#include <optional>
+#include <string>
 #include <tuple>
 #include <vector>
 
 using namespace mlsdk::el::utilities;
+using mlsdk::el::tests::ScopedEnvironment;
 
 /*******************************************************************************
  * Helpers
@@ -319,6 +327,161 @@ std::shared_ptr<Device> createDevice() {
     return std::make_shared<Device>(physicalDevice, extensions, &features2);
 }
 
+struct ProfilingGraph {
+    GraphPipeline::DescriptorMap descriptorMap;
+    std::shared_ptr<GraphPipeline> pipeline;
+};
+
+ProfilingGraph makeMaxPoolProfilingGraph(std::shared_ptr<Device> &device) {
+    auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 16, 16, 3}});
+    auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 8, 8, 3}});
+    GraphPipeline::DescriptorMap descriptorMap = {
+        {
+            {
+                0,                          // binding
+                {inputTensor, inputTensor}, // tensor
+            },
+            {
+                1,              // binding
+                {outputTensor}, // tensor
+            },
+        },
+    };
+    const auto spirv = assembleSpirv(fileToString("maxpool.spvasm"));
+    auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, GraphConstants{}, spirv, true);
+    return {descriptorMap, graphPipeline};
+}
+
+ProfilingGraph makeRawSadProfilingGraph(std::shared_ptr<Device> &device) {
+    const int64_t height = 5;
+    const int64_t width = 5;
+    std::vector<uint8_t> zeros(height * width, 0);
+    std::vector<uint8_t> ones(height * width, 1);
+
+    auto inputTemplate =
+        std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 1, height, width}}, zeros);
+    auto inputSearch =
+        std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 1, height, width}}, ones);
+    auto outputCost =
+        std::make_shared<Tensor>(device, Shape{vk::Format::eR16Uint, std::vector<int64_t>{1, 1, height, width}});
+
+    GraphPipeline::DescriptorMap descriptorMap = {
+        {
+            {0, {outputCost}},
+            {1, {inputTemplate}},
+            {2, {inputSearch}},
+        },
+    };
+
+    const auto spirv = assembleSpirv(fileToString("me_raw_sad_sr0.spvasm"));
+    auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, GraphConstants{}, spirv, true);
+    return {descriptorMap, graphPipeline};
+}
+
+void submitGraphWithoutFence(const std::shared_ptr<Device> &device, const ProfilingGraph &graph, bool waitDevice) {
+    auto [descriptorPool, descriptorSets] = graph.pipeline->createDescriptorSets(graph.descriptorMap);
+    auto commandBuffer = graph.pipeline->createCommandBuffer();
+
+    const vk::CommandBufferBeginInfo commandBufferBeginInfo{
+        vk::CommandBufferUsageFlagBits::eOneTimeSubmit, // flags
+    };
+    commandBuffer.begin(commandBufferBeginInfo);
+    graph.pipeline->dispatch(commandBuffer, descriptorSets);
+    commandBuffer.end();
+
+    vk::raii::Queue queue(&(*device), device->getPhysicalDevice()->getComputeFamilyIndex(), 0);
+    const VkCommandBuffer vkCommandBuffer = *commandBuffer;
+    const VkSubmitInfo submitInfo{
+        VK_STRUCTURE_TYPE_SUBMIT_INFO, // sType
+        nullptr,                       // pNext
+        0,                             // waitSemaphoreCount
+        nullptr,                       // pWaitSemaphores
+        nullptr,                       // pWaitDstStageMask
+        1,                             // commandBufferCount
+        &vkCommandBuffer,              // pCommandBuffers
+        0,                             // signalSemaphoreCount
+        nullptr,                       // pSignalSemaphores
+    };
+
+    const auto &vkDevice = &(*device);
+    ASSERT_EQ(vkDevice.getDispatcher()->vkQueueSubmit(*queue, 1, &submitInfo, VK_NULL_HANDLE), VK_SUCCESS);
+    if (waitDevice) {
+        ASSERT_EQ(vkDevice.getDispatcher()->vkDeviceWaitIdle(*vkDevice), VK_SUCCESS);
+    } else {
+        ASSERT_EQ(vkDevice.getDispatcher()->vkQueueWaitIdle(*queue), VK_SUCCESS);
+    }
+}
+
+std::string queryPipelineTextProperty(const std::shared_ptr<Device> &device, vk::Pipeline pipeline,
+                                      vk::DataGraphPipelinePropertyARM property) {
+    const auto &vkDevice = &(*device);
+    vk::DataGraphPipelineInfoARM info{pipeline};
+    vk::DataGraphPipelinePropertyQueryResultARM queryResult{property};
+    auto result = vkDevice.getDataGraphPipelinePropertiesARM(&info, 1, &queryResult);
+    EXPECT_EQ(result, vk::Result::eSuccess);
+    if (queryResult.dataSize == 0) {
+        return {};
+    }
+
+    std::vector<char> data(queryResult.dataSize);
+    queryResult.pData = data.data();
+    queryResult.dataSize = data.size();
+    result = vkDevice.getDataGraphPipelinePropertiesARM(&info, 1, &queryResult);
+    EXPECT_EQ(result, vk::Result::eSuccess);
+    EXPECT_EQ(queryResult.isText, VK_TRUE);
+    return std::string{data.data(), queryResult.dataSize};
+}
+
+std::optional<vk::DataGraphPipelinePropertyARM> getProfilingProperty(const std::shared_ptr<Device> &device,
+                                                                     vk::Pipeline pipeline) {
+    const auto &vkDevice = &(*device);
+    const vk::DataGraphPipelineInfoARM info{pipeline};
+    const auto properties = vkDevice.getDataGraphPipelineAvailablePropertiesARM(info);
+    const auto it = std::find_if(properties.begin(), properties.end(), [](const auto property) {
+        return property != vk::DataGraphPipelinePropertyARM::eCreationLog;
+    });
+    if (it == properties.end()) {
+        return std::nullopt;
+    }
+    return *it;
+}
+
+void expectProfilePropertyContains(const std::shared_ptr<Device> &device, vk::Pipeline pipeline,
+                                   const std::vector<std::string> &needles) {
+    const auto property = getProfilingProperty(device, pipeline);
+    ASSERT_TRUE(property.has_value());
+    const auto json = queryPipelineTextProperty(device, pipeline, *property);
+    for (const auto &needle : needles) {
+        EXPECT_NE(json.find(needle), std::string::npos) << needle;
+    }
+}
+
+void expectMaxPoolProfileProperty(const std::shared_ptr<Device> &device, const ProfilingGraph &graph) {
+    expectProfilePropertyContains(device, *graph.pipeline->getPipeline(),
+                                  {
+                                      "\"samples\"",
+                                      "\"by_operator\"",
+                                      "\"pipeline_kind\": \"tosa\"",
+                                      "\"operator_name\": \"MAX_POOL2D\"",
+                                      "\"cycle_count_before\"",
+                                      "\"cycle_count_after\"",
+                                      "\"time_ms\"",
+                                  });
+}
+
+void expectRawSadProfileProperty(const std::shared_ptr<Device> &device, const ProfilingGraph &graph) {
+    expectProfilePropertyContains(device, *graph.pipeline->getPipeline(),
+                                  {
+                                      "\"samples\"",
+                                      "\"by_operator\"",
+                                      "\"pipeline_kind\": \"motion_engine\"",
+                                      "\"operator_name\": \"RAW_SAD\"",
+                                      "\"cycle_count_before\"",
+                                      "\"cycle_count_after\"",
+                                      "\"time_ms\"",
+                                  });
+}
+
 } // namespace
 
 /*******************************************************************************
@@ -470,6 +633,61 @@ TEST_F(MLEmulationLayerForVulkan, MaxPool2D) {
         0x79, 0x00, 0x00, 0x7b, 0x00, 0x00, 0x7d, 0x00, 0x00, 0x7f, 0x00, 0x00};
 
     ASSERT_TRUE(outputTensor->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) << "Output mismatch";
+}
+
+TEST_F(MLEmulationLayerForVulkan, GraphProfilingQueryableProperty) {
+    ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
+
+    auto device = createDevice();
+    auto graph = makeMaxPoolProfilingGraph(device);
+    graph.pipeline->dispatchSubmit();
+
+    expectMaxPoolProfileProperty(device, graph);
+}
+
+TEST_F(MLEmulationLayerForVulkan, GraphProfilingCollectsFenceLessSubmitOnQueueWaitIdle) {
+    ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
+
+    auto device = createDevice();
+    auto graph = makeMaxPoolProfilingGraph(device);
+    submitGraphWithoutFence(device, graph, false);
+
+    expectMaxPoolProfileProperty(device, graph);
+}
+
+TEST_F(MLEmulationLayerForVulkan, GraphProfilingCollectsFenceLessSubmitOnDeviceWaitIdle) {
+    ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
+
+    auto device = createDevice();
+    auto graph = makeMaxPoolProfilingGraph(device);
+    submitGraphWithoutFence(device, graph, true);
+
+    expectMaxPoolProfileProperty(device, graph);
+}
+
+TEST_F(MLEmulationLayerForVulkan, GraphProfilingIncludesMotionEngineGraphOps) {
+    ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
+
+    auto device = createDevice();
+    auto graph = makeRawSadProfilingGraph(device);
+    graph.pipeline->dispatchSubmit();
+
+    expectRawSadProfileProperty(device, graph);
+}
+
+TEST_F(MLEmulationLayerForVulkan, GraphProfilingPropertyIsScopedToQueriedPipeline) {
+    ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
+
+    auto device = createDevice();
+    auto maxPoolGraph = makeMaxPoolProfilingGraph(device);
+    auto rawSadGraph = makeRawSadProfilingGraph(device);
+    maxPoolGraph.pipeline->dispatchSubmit();
+
+    const auto property = getProfilingProperty(device, *rawSadGraph.pipeline->getPipeline());
+    ASSERT_TRUE(property.has_value());
+    const auto json = queryPipelineTextProperty(device, *rawSadGraph.pipeline->getPipeline(), *property);
+    EXPECT_NE(json.find("\"samples\": []"), std::string::npos);
+    EXPECT_EQ(json.find("MAX_POOL2D"), std::string::npos);
 }
 
 TEST_F(MLEmulationLayerForVulkan, TwoLayerMaxPool2D) {
@@ -2056,6 +2274,38 @@ TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelineAvailablePropertiesARM) {
     ASSERT_EQ(result[0], vk::DataGraphPipelinePropertyARM{});
 }
 
+TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelineAvailablePropertiesIncludesProfilingWhenEnvEnabled) {
+    ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
+
+    auto device = createDevice();
+    auto graph = makeMaxPoolProfilingGraph(device);
+    const auto &vkDevice = &(*device);
+
+    const vk::DataGraphPipelineInfoARM info{*graph.pipeline->getPipeline()};
+    const auto result = vkDevice.getDataGraphPipelineAvailablePropertiesARM(info);
+
+    ASSERT_NE(std::find(result.begin(), result.end(), vk::DataGraphPipelinePropertyARM::eCreationLog), result.end());
+    ASSERT_TRUE(std::any_of(result.begin(), result.end(), [](const auto property) {
+        return property != vk::DataGraphPipelinePropertyARM::eCreationLog;
+    }));
+}
+
+TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelineAvailablePropertiesOmitsProfilingWhenEnvDisabled) {
+    ScopedEnvironment disableProfiling{"VMEL_GRAPH_PROFILING", "0"};
+
+    auto device = createDevice();
+    auto graph = makeMaxPoolProfilingGraph(device);
+    const auto &vkDevice = &(*device);
+
+    const vk::DataGraphPipelineInfoARM info{*graph.pipeline->getPipeline()};
+    const auto result = vkDevice.getDataGraphPipelineAvailablePropertiesARM(info);
+
+    ASSERT_NE(std::find(result.begin(), result.end(), vk::DataGraphPipelinePropertyARM::eCreationLog), result.end());
+    ASSERT_TRUE(std::all_of(result.begin(), result.end(), [](const auto property) {
+        return property == vk::DataGraphPipelinePropertyARM::eCreationLog;
+    }));
+}
+
 TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelinePropertiesARM) {
     const auto device = createDevice();
     const auto &vkDevice = &(*device);
@@ -2068,6 +2318,32 @@ TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelinePropertiesARM) {
     queryResult.dataSize = static_cast<uint32_t>(data.size());
     result = vkDevice.getDataGraphPipelinePropertiesARM(nullptr, 1, &queryResult);
     ASSERT_EQ(result, vk::Result::eSuccess);
+    ASSERT_EQ(queryResult.isText, VK_TRUE);
+    ASSERT_EQ(queryResult.dataSize, data.size());
+}
+
+TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelinePropertiesARMReturnsIncompleteForSmallProfilingBuffer) {
+    ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
+
+    auto device = createDevice();
+    auto graph = makeMaxPoolProfilingGraph(device);
+    graph.pipeline->dispatchSubmit();
+
+    const auto &vkDevice = &(*device);
+    const vk::DataGraphPipelineInfoARM info{*graph.pipeline->getPipeline()};
+    const auto property = getProfilingProperty(device, *graph.pipeline->getPipeline());
+    ASSERT_TRUE(property.has_value());
+    vk::DataGraphPipelinePropertyQueryResultARM queryResult{*property};
+    auto result = vkDevice.getDataGraphPipelinePropertiesARM(&info, 1, &queryResult);
+    ASSERT_EQ(result, vk::Result::eSuccess);
+    ASSERT_GT(queryResult.dataSize, 4);
+
+    std::array<char, 4> data{};
+    queryResult.pData = data.data();
+    queryResult.dataSize = data.size();
+    result = vkDevice.getDataGraphPipelinePropertiesARM(&info, 1, &queryResult);
+
+    ASSERT_EQ(result, vk::Result::eIncomplete);
     ASSERT_EQ(queryResult.isText, VK_TRUE);
     ASSERT_EQ(queryResult.dataSize, data.size());
 }

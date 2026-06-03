@@ -19,6 +19,7 @@
 #include <vulkan/vulkan.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <set>
 #include <string>
@@ -155,7 +156,8 @@ class ComputePipelineLayout {
 
 class ComputePipelineBase {
   public:
-    explicit ComputePipelineBase(const std::shared_ptr<ComputePipelineLayout> &_pipelineLayout);
+    explicit ComputePipelineBase(const std::shared_ptr<ComputePipelineLayout> &_pipelineLayout,
+                                 std::string _debugName = {});
 
     virtual ~ComputePipelineBase();
 
@@ -169,11 +171,17 @@ class ComputePipelineBase {
     const std::vector<std::shared_ptr<VirtualTensor>> &getDescendants() const;
     void pushDescendant(const std::shared_ptr<VirtualTensor> &tensor);
 
+    const std::string &getDebugName() const;
+
   protected:
     std::shared_ptr<ComputePipelineLayout> pipelineLayout;
     std::vector<std::shared_ptr<VirtualTensor>> parents;
     std::vector<std::shared_ptr<VirtualTensor>> descendants;
+    std::string debugName;
 };
+
+using ComputePipelineDispatchDecorator =
+    std::function<void(VkCommandBuffer, ComputePipelineBase &, const ComputeDescriptorSetMap &, uint32_t)>;
 
 /*******************************************************************************
  * ComputePipeline
@@ -1222,7 +1230,9 @@ class GraphPipeline {
     ComputeDescriptorSetMap makeSessionRamDescriptorSets() const;
     ComputeDescriptorSetMap makeExternalDescriptorSets(uint32_t set) const;
 
-    void cmdBindAndDispatch(VkCommandBuffer commandBuffer, const ComputeDescriptorSetMap &descriptorSetMap);
+    void cmdBindAndDispatch(VkCommandBuffer commandBuffer, const ComputeDescriptorSetMap &descriptorSetMap,
+                            const ComputePipelineDispatchDecorator &dispatchDecorator = {});
+    const std::vector<std::shared_ptr<ComputePipelineBase>> &getPipelines() const;
 
     void makeInput(const std::shared_ptr<TensorDescriptor> &tensor);
 

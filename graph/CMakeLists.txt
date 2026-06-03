@@ -22,6 +22,7 @@ target_sources(VkLayer_Graph PRIVATE
     compute_pipeline_common.cpp
     graph_layer.cpp
     graph_log.cpp
+    graph_profiler.cpp
     image.cpp
     memory_planner.cpp
     optical_flow.cpp
@@ -39,7 +40,8 @@ add_dependencies(VkLayer_Graph
     mlel_generate_spv_header)
 
 target_link_libraries(VkLayer_Graph PRIVATE
-    VkLayer_Common)
+    VkLayer_Common
+    nlohmann_json::nlohmann_json)
 
 target_include_directories(VkLayer_Graph PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR})

@@ -36,6 +36,7 @@ if(NOT APPLE)
         SOURCES
             optical_flow_tests.cpp
             common_tests.cpp
+            test_utils.cpp
             vulkan.cpp
         DEFINITIONS
             SHADER_SOURCE_DIR=${SHADER_SOURCE_DIR}
@@ -56,6 +57,7 @@ else()
         TARGET mlel_unit_tests
         SOURCES
             common_tests.cpp
+            test_utils.cpp
             vulkan.cpp
         DEFINITIONS
             SHADER_SOURCE_DIR=${SHADER_SOURCE_DIR}

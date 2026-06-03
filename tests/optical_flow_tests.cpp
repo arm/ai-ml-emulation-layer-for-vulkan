@@ -6,16 +6,22 @@
 
 #include <gtest/gtest.h>
 
+#include "test_utils.hpp"
+
 #include "mlel/device.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <cstring>
 #include <optional>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <vector>
 
 using namespace mlsdk::el::utilities;
+using mlsdk::el::tests::ScopedEnvironment;
 
 namespace {
 
@@ -44,6 +50,46 @@ std::shared_ptr<Device> createDevice() {
     auto physicalDevice = std::make_shared<PhysicalDevice>(instance, extensions);
 
     return std::make_shared<Device>(physicalDevice, extensions, &features2);
+}
+
+std::string queryPipelineTextProperty(const std::shared_ptr<Device> &device, VkPipeline pipeline,
+                                      vk::DataGraphPipelinePropertyARM property) {
+    const auto &vkDevice = &(*device);
+    vk::DataGraphPipelineInfoARM info{pipeline};
+    vk::DataGraphPipelinePropertyQueryResultARM queryResult{property};
+    auto result = vkDevice.getDataGraphPipelinePropertiesARM(&info, 1, &queryResult);
+    EXPECT_EQ(result, vk::Result::eSuccess);
+    if (queryResult.dataSize == 0) {
+        return {};
+    }
+
+    std::vector<char> data(queryResult.dataSize);
+    queryResult.pData = data.data();
+    queryResult.dataSize = data.size();
+    result = vkDevice.getDataGraphPipelinePropertiesARM(&info, 1, &queryResult);
+    EXPECT_EQ(result, vk::Result::eSuccess);
+    EXPECT_EQ(queryResult.isText, VK_TRUE);
+    return std::string{data.data(), queryResult.dataSize};
+}
+
+std::optional<vk::DataGraphPipelinePropertyARM> getProfilingProperty(const std::shared_ptr<Device> &device,
+                                                                     VkPipeline pipeline) {
+    const auto &vkDevice = &(*device);
+    const vk::DataGraphPipelineInfoARM info{pipeline};
+    const auto properties = vkDevice.getDataGraphPipelineAvailablePropertiesARM(info);
+    const auto it = std::find_if(properties.begin(), properties.end(), [](const auto property) {
+        return property != vk::DataGraphPipelinePropertyARM::eCreationLog;
+    });
+    if (it == properties.end()) {
+        return std::nullopt;
+    }
+    return *it;
+}
+
+void expectProfilePropertyContains(const std::string &json, const std::vector<std::string> &needles) {
+    for (const auto &needle : needles) {
+        EXPECT_NE(json.find(needle), std::string::npos) << needle;
+    }
 }
 
 struct ImageResource {
@@ -250,7 +296,8 @@ class OpticalFlow {
         vkDevice_.updateDescriptorSets(descriptorWrites, {});
     }
 
-    void dispatchSubmit(const std::vector<vk::Image> &images) {
+    void dispatchSubmit(const std::vector<vk::Image> &images,
+                        VkDataGraphOpticalFlowExecuteFlagsARM opticalFlowFlags = 0, uint32_t meanFlowL1NormHint = 0) {
         const vk::CommandPoolCreateInfo commandPoolCreateInfo{{},
                                                               device_->getPhysicalDevice()->getComputeFamilyIndex()};
         vk::raii::CommandPool commandPool{&(*device_), commandPoolCreateInfo};
@@ -285,7 +332,19 @@ class OpticalFlow {
         const VkDescriptorSet vkDescriptorSet = *descriptorSets_[0];
         vkDevice_.getDispatcher()->vkCmdBindDescriptorSets(*commandBuffer, VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM,
                                                            *pipelineLayout_, 0, 1, &vkDescriptorSet, 0, nullptr);
-        vkDevice_.getDispatcher()->vkCmdDispatchDataGraphARM(*commandBuffer, session_, nullptr);
+
+        VkDataGraphPipelineOpticalFlowDispatchInfoARM opticalFlowDispatchInfo{};
+        opticalFlowDispatchInfo.sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_OPTICAL_FLOW_DISPATCH_INFO_ARM;
+        opticalFlowDispatchInfo.flags = opticalFlowFlags;
+        opticalFlowDispatchInfo.meanFlowL1NormHint = meanFlowL1NormHint;
+
+        VkDataGraphPipelineDispatchInfoARM dispatchInfo{};
+        dispatchInfo.sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_DISPATCH_INFO_ARM;
+        dispatchInfo.pNext = &opticalFlowDispatchInfo;
+
+        const VkDataGraphPipelineDispatchInfoARM *pDispatchInfo =
+            (opticalFlowFlags == 0 && meanFlowL1NormHint == 0) ? nullptr : &dispatchInfo;
+        vkDevice_.getDispatcher()->vkCmdDispatchDataGraphARM(*commandBuffer, session_, pDispatchInfo);
         commandBuffer.end();
 
         vk::raii::Queue queue(&(*device_), device_->getPhysicalDevice()->getComputeFamilyIndex(), 0);
@@ -297,6 +356,8 @@ class OpticalFlow {
             throw std::runtime_error("Failed waiting for optical flow dispatch completion");
         }
     }
+
+    VkPipeline pipeline() const { return pipeline_; }
 
   private:
     void allocateAndBindSessionMemory() {
@@ -531,7 +592,9 @@ uint32_t granularityFromGrid(VkDataGraphOpticalFlowGridSizeFlagsARM gridSize) {
 }
 
 void runOpticalFlowAndExpectOutputChange(const std::shared_ptr<Device> &device, const OpticalFlow::Config &cfg,
-                                         std::string_view contextName) {
+                                         std::string_view contextName,
+                                         VkDataGraphOpticalFlowExecuteFlagsARM secondDispatchFlags = 0,
+                                         std::string *profileJson = nullptr) {
     constexpr uint32_t width = 64;
     constexpr uint32_t height = 64;
     const uint32_t granularity = granularityFromGrid(cfg.outputGridSize);
@@ -584,11 +647,20 @@ void runOpticalFlowAndExpectOutputChange(const std::shared_ptr<Device> &device, 
     }
 
     opticalFlow.dispatchSubmit(images);
+    if (secondDispatchFlags != 0) {
+        opticalFlow.dispatchSubmit(images, secondDispatchFlags);
+    }
 
     const auto flowOutput = readFlowImage(device, *dstFlow.image, flowWidth, flowHeight);
     ASSERT_FALSE(flowOutput.empty()) << contextName;
     ASSERT_TRUE(std::any_of(flowOutput.begin(), flowOutput.end(), [](uint8_t value) { return value != 0xFF; }))
         << contextName;
+
+    if (profileJson != nullptr) {
+        const auto property = getProfilingProperty(device, opticalFlow.pipeline());
+        ASSERT_TRUE(property.has_value());
+        *profileJson = queryPipelineTextProperty(device, opticalFlow.pipeline(), *property);
+    }
 }
 
 TEST(MLEmulationLayerOpticalFlowForVulkan, RGBToY_Smoke_Grid4x4) { // cppcheck-suppress syntaxError
@@ -644,6 +716,39 @@ TEST(MLEmulationLayerOpticalFlowForVulkan, BlockMatch_CostEnabled) {
     OpticalFlow::Config cfg;
     cfg.enableCost = true;
     runOpticalFlowAndExpectOutputChange(device, cfg, "BlockMatch class path");
+}
+
+TEST(MLEmulationLayerOpticalFlowForVulkan, ProfilingPropertyIncludesOpticalFlowStages) {
+    ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
+
+    const auto device = createDevice();
+    OpticalFlow::Config cfg;
+    cfg.enableHint = true;
+    cfg.enableCost = true;
+
+    constexpr VkDataGraphOpticalFlowExecuteFlagsARM unchangedFlags =
+        VK_DATA_GRAPH_OPTICAL_FLOW_EXECUTE_INPUT_UNCHANGED_BIT_ARM |
+        VK_DATA_GRAPH_OPTICAL_FLOW_EXECUTE_REFERENCE_UNCHANGED_BIT_ARM;
+    std::string json;
+    runOpticalFlowAndExpectOutputChange(device, cfg, "Optical flow profiling", unchangedFlags, &json);
+
+    expectProfilePropertyContains(json, {
+                                            "\"samples\"",
+                                            "\"by_operator\"",
+                                            "\"pipeline_kind\": \"optical_flow\"",
+                                            "\"operator_name\": \"RGBtoY_L0\"",
+                                            "\"operator_name\": \"Downsample_L1\"",
+                                            "\"operator_name\": \"MVProcessAndWarp_L4\"",
+                                            "\"operator_name\": \"DenseWarp_L2\"",
+                                            "\"operator_name\": \"MedianFilter_L2\"",
+                                            "\"operator_name\": \"BilateralFilter_L2\"",
+                                            "\"operator_name\": \"SubpixelME_L2\"",
+                                            "\"operator_name\": \"MVReplace_L2\"",
+                                            "\"operator_name\": \"BlockMatch_L2\"",
+                                            "\"cycle_count_before\"",
+                                            "\"cycle_count_after\"",
+                                            "\"time_ms\"",
+                                        });
 }
 
 } // namespace
