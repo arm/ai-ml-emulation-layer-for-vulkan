@@ -6,6 +6,9 @@ plugins {
     id("com.android.application")
 }
 
+def packageVersion = providers.gradleProperty("packageVersion").orElse("").get()
+def packageVersionPart = packageVersion ? "-${packageVersion}" : ""
+
 android {
     namespace "com.arm.ai_ml_emulation_layer_for_vulkan"
     compileSdk 34
@@ -13,5 +16,13 @@ android {
     defaultConfig {
         minSdk 21
         targetSdk 34
+    }
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.outputs.each { output ->
+            output.outputFileName.set("ai-ml-emulation-layer-for-vulkan${packageVersionPart}.apk")
+        }
     }
 }

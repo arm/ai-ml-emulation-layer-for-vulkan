@@ -330,6 +330,15 @@ class Builder:
             if self.package_source_zip:
                 self.generate_cmake_package("ZIP", True)
 
+            package_version = ""
+            if self.package_pip or self.package_apk:
+                if self.package_version:
+                    package_version = self.package_version
+                else:
+                    package_version = (
+                        "" if self.package_release_pip else get_package_version()
+                    )
+
             if self.package_pip:
                 os.makedirs("pip_package/emulation_layer/deploy/", exist_ok=True)
                 shutil.copytree(
@@ -338,14 +347,6 @@ class Builder:
                     dirs_exist_ok=True,
                 )
                 shutil.copyfile("README.md", "pip_package/README.md")
-
-                package_version = ""
-                if self.package_version:
-                    package_version = self.package_version
-                else:
-                    package_version = (
-                        "" if self.package_release_pip else get_package_version()
-                    )
 
                 os.environ[
                     "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_AI_ML_EMULATION_LAYER_FOR_VULKAN"
@@ -395,7 +396,12 @@ class Builder:
                     "build-tools;34.0.0 and platforms;android-34 or compatible versions."
                 )
                 # Generate the APK using Gradle
-                gradle_cmd = ["gradle", "assembleDebug", "--stacktrace"]
+                gradle_cmd = [
+                    "gradle",
+                    "assembleDebug",
+                    "--stacktrace",
+                    f"-PpackageVersion={package_version}",
+                ]
                 result = subprocess.Popen(
                     gradle_cmd,
                     cwd=package_dir,
@@ -505,7 +511,7 @@ def parse_arguments():
     )
     parser.add_argument(
         "--package-version",
-        help="Manually specify pip package version number",
+        help="Manually specify package version number",
         default="",
     )
     parser.add_argument(
