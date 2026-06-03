@@ -876,7 +876,7 @@ void GraphPassTosaSpv100::handleReshape(const Instruction *opExtInst, const std:
 
     const auto &resultId = opExtInst->result_id();
     const auto &inputId = opExtInst->GetInOperand(2);
-    const auto &shape = getConstVector(opExtInst->GetInOperand(3));
+    const auto &shape = getConstVector<uint32_t>(opExtInst->GetInOperand(3));
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input=%" << inputId.AsId()
                              << ", shape=" << shape << std::endl;
@@ -968,8 +968,8 @@ void GraphPassTosaSpv100::handleSlice(const Instruction *opExtInst, const std::s
 
     const auto &resultId = opExtInst->result_id();
     const auto &inputId = opExtInst->GetInOperand(2);
-    const auto &start = getConstVector(opExtInst->GetInOperand(3));
-    const auto &size = getConstVector(opExtInst->GetInOperand(4));
+    const auto &start = getConstVector<uint32_t>(opExtInst->GetInOperand(3));
+    const auto &size = getConstVector<uint32_t>(opExtInst->GetInOperand(4));
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << " , input=%" << inputId.AsId()
                              << ", start=" << start << ", size=" << size << std::endl;
@@ -997,7 +997,7 @@ void GraphPassTosaSpv100::handleTile(const Instruction *opExtInst, const std::st
 
     const auto &resultId = opExtInst->result_id();
     const auto &inputId = opExtInst->GetInOperand(2);
-    const auto &multiples = getConstVector(opExtInst->GetInOperand(3));
+    const auto &multiples = getConstVector<uint32_t>(opExtInst->GetInOperand(3));
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input=%" << inputId.AsId()
                              << ", multiples=" << multiples << std::endl;
@@ -1010,7 +1010,7 @@ void GraphPassTosaSpv100::handleTranspose(const Instruction *opExtInst, const st
     assert(opExtInst->NumInOperands() == 4);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &perms = getConstVector(opExtInst->GetInOperand(2));
+    const auto &perms = getConstVector<uint32_t>(opExtInst->GetInOperand(2));
     const auto &inputId = opExtInst->GetInOperand(3);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", perms=" << perms
@@ -1051,12 +1051,12 @@ void GraphPassTosaSpv100::handleMinSad(const Instruction *opExtInst, const std::
     assert(opExtInst->NumInOperands() == 11);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &kernelSizes = getConstVector(opExtInst->GetInOperand(2));
-    const auto &searchWindowSizes = getConstVector(opExtInst->GetInOperand(3));
-    const auto &inputStrides = getConstVector(opExtInst->GetInOperand(4));
-    const auto &windowStrides = getConstVector(opExtInst->GetInOperand(5));
-    const auto &windowOffsets = getConstVector(opExtInst->GetInOperand(6));
-    const auto &padding = getConstVector(opExtInst->GetInOperand(7));
+    const auto &kernelSizes = getConstVector<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &searchWindowSizes = getConstVector<uint32_t>(opExtInst->GetInOperand(3));
+    const auto &inputStrides = getConstVector<uint32_t>(opExtInst->GetInOperand(4));
+    const auto &windowStrides = getConstVector<uint32_t>(opExtInst->GetInOperand(5));
+    const auto &windowOffsets = getConstVector<uint32_t>(opExtInst->GetInOperand(6));
+    const auto &padding = getConstVector<uint32_t>(opExtInst->GetInOperand(7));
     const auto &searchPattern = getConstScalar<uint32_t>(opExtInst->GetInOperand(8));
     const auto &input0Id = opExtInst->GetInOperand(9);
     const auto &input1Id = opExtInst->GetInOperand(10);
@@ -1078,12 +1078,12 @@ void GraphPassTosaSpv100::handleMinSadCost(const Instruction *opExtInst, const s
     assert(opExtInst->NumInOperands() == 11);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &kernelSizes = getConstVector(opExtInst->GetInOperand(2));
-    const auto &searchWindowSizes = getConstVector(opExtInst->GetInOperand(3));
-    const auto &inputStrides = getConstVector(opExtInst->GetInOperand(4));
-    const auto &windowStrides = getConstVector(opExtInst->GetInOperand(5));
-    const auto &windowOffsets = getConstVector(opExtInst->GetInOperand(6));
-    const auto &padding = getConstVector(opExtInst->GetInOperand(7));
+    const auto &kernelSizes = getConstVector<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &searchWindowSizes = getConstVector<uint32_t>(opExtInst->GetInOperand(3));
+    const auto &inputStrides = getConstVector<uint32_t>(opExtInst->GetInOperand(4));
+    const auto &windowStrides = getConstVector<uint32_t>(opExtInst->GetInOperand(5));
+    const auto &windowOffsets = getConstVector<uint32_t>(opExtInst->GetInOperand(6));
+    const auto &padding = getConstVector<uint32_t>(opExtInst->GetInOperand(7));
     const auto &searchPattern = getConstScalar<uint32_t>(opExtInst->GetInOperand(8));
     const auto &input0Id = opExtInst->GetInOperand(9);
     const auto &input1Id = opExtInst->GetInOperand(10);
@@ -1105,12 +1105,12 @@ void GraphPassTosaSpv100::handleRawSad(const Instruction *opExtInst, const std::
     assert(opExtInst->NumInOperands() == 10);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &kernelSizes = getConstVector(opExtInst->GetInOperand(2));
-    const auto &searchWindowSizes = getConstVector(opExtInst->GetInOperand(3));
-    const auto &inputStrides = getConstVector(opExtInst->GetInOperand(4));
-    const auto &windowStrides = getConstVector(opExtInst->GetInOperand(5));
-    const auto &windowOffsets = getConstVector(opExtInst->GetInOperand(6));
-    const auto &padding = getConstVector(opExtInst->GetInOperand(7));
+    const auto &kernelSizes = getConstVector<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &searchWindowSizes = getConstVector<uint32_t>(opExtInst->GetInOperand(3));
+    const auto &inputStrides = getConstVector<uint32_t>(opExtInst->GetInOperand(4));
+    const auto &windowStrides = getConstVector<uint32_t>(opExtInst->GetInOperand(5));
+    const auto &windowOffsets = getConstVector<uint32_t>(opExtInst->GetInOperand(6));
+    const auto &padding = getConstVector<uint32_t>(opExtInst->GetInOperand(7));
     const auto &input0Id = opExtInst->GetInOperand(8);
     const auto &input1Id = opExtInst->GetInOperand(9);
 

@@ -125,7 +125,7 @@ void GraphPassBase::handleInputsAndOutputs(const Instruction &opGraphEntryPoint)
         const auto resultId = opGraphInputARM->result_id();
 
         // External id from the graph entry point
-        const auto inputIndex = getConstScalar(opGraphInputARM->GetOperand(2));
+        const auto inputIndex = getConstScalar<int64_t>(opGraphInputARM->GetOperand(2));
         const uint32_t arrayIndex =
             opGraphInputARM->NumOperands() > 3 ? getConstScalar<uint32_t>(opGraphInputARM->GetOperand(3)) : 0;
         auto inputTensor = getTensor(inputs[inputIndex], arrayIndex);
@@ -147,7 +147,7 @@ void GraphPassBase::handleInputsAndOutputs(const Instruction &opGraphEntryPoint)
         const auto *instruction = get_def_use_mgr()->GetDef(opGraphSetOutputARM->GetOperand(0).AsId());
 
         // The external tensor id from the graph entry point
-        const auto outputIndex = getConstScalar(opGraphSetOutputARM->GetOperand(1));
+        const auto outputIndex = getConstScalar<int64_t>(opGraphSetOutputARM->GetOperand(1));
         const uint32_t arrayIndex =
             opGraphSetOutputARM->NumOperands() > 2 ? getConstScalar<uint32_t>(opGraphSetOutputARM->GetOperand(2)) : 0;
         auto outputTensor = getTensor(outputs[outputIndex], arrayIndex);

@@ -66,11 +66,11 @@ class GraphPassBase : public Pass {
     // Temp implementation until debug info is truly available
     std::string extractDebugInfoFromSPV(const Instruction *, const std::string &defaultname) { return defaultname; }
 
-    template <typename T = uint32_t> std::vector<T> getConstVector(const Operand &operand) const {
+    template <typename T> std::vector<T> getConstVector(const Operand &operand) const {
         return getConstVector<T>(operand.AsId());
     }
 
-    template <typename T = uint32_t>
+    template <typename T>
     void getFlattenedCompositeConstant(const spvtools::opt::analysis::CompositeConstant *composite,
                                        std::vector<T> &kernel) const {
         const auto &components = composite->GetComponents();
@@ -108,8 +108,7 @@ class GraphPassBase : public Pass {
         }
     }
 
-    template <typename T = uint32_t>
-    void appendConstantVectorFromInstruction(uint32_t id, std::vector<T> &kernel) const {
+    template <typename T> void appendConstantVectorFromInstruction(uint32_t id, std::vector<T> &kernel) const {
         const auto *instruction = context()->get_def_use_mgr()->GetDef(id);
         if (!instruction) {
             throw std::runtime_error("Missing definition for constant id: " + std::to_string(id));
@@ -143,7 +142,7 @@ class GraphPassBase : public Pass {
         }
     }
 
-    template <typename T = uint32_t> std::vector<T> getTensorConstantVectorFromInstruction(uint32_t id) const {
+    template <typename T> std::vector<T> getTensorConstantVectorFromInstruction(uint32_t id) const {
         const auto *instruction = context()->get_def_use_mgr()->GetDef(id);
         if (!instruction) {
             throw std::runtime_error("Missing definition for constant id: " + std::to_string(id));
@@ -163,7 +162,7 @@ class GraphPassBase : public Pass {
         return kernel;
     }
 
-    template <typename T = uint32_t> std::vector<T> getConstVector(const uint32_t id) const {
+    template <typename T> std::vector<T> getConstVector(const uint32_t id) const {
         const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(id);
         std::vector<T> kernel;
 
@@ -206,11 +205,11 @@ class GraphPassBase : public Pass {
         return kernel;
     }
 
-    template <typename T = int64_t> T getConstScalar(const Operand &operand) const {
+    template <typename T> T getConstScalar(const Operand &operand) const {
         return getConstScalar<T>(context()->get_constant_mgr()->FindDeclaredConstant(operand.AsId()));
     }
 
-    template <typename T = int64_t> T getConstScalar(const analysis::Constant *constant) const {
+    template <typename T> T getConstScalar(const analysis::Constant *constant) const {
         const auto *intConstant = constant->AsIntConstant();
         if (intConstant) {
             const auto *type = intConstant->type()->AsInteger();
