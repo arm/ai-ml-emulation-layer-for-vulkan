@@ -277,9 +277,9 @@ RGBToY::SpecConstants RGBToY::makeSpecConstants(float downsampleScale) const {
     VkBool32 isLumaInput = srcImage_->componentCount() == 1;
     VkBool32 isImageStore = true;
     if (outputDS_) {
-        isImageStore = dstYDownsampled_->isImageStore() == true;
+        isImageStore = dstYDownsampled_->isImageStore();
     } else if (outputFull_) {
-        isImageStore = dstYFull_->isImageStore() == true;
+        isImageStore = dstYFull_->isImageStore();
     }
     assert((outputDS_ & outputFull_) ? dstYFull_->isImageStore() == dstYDownsampled_->isImageStore() : true);
 
@@ -666,9 +666,9 @@ BlockMatch::BlockMatch(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispa
       searchRangeLimit_(maxSearchRange), specConstants_{makeSpecConstants()},
       nearestSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER)} {
     // MIN_SAD* assumes maxSearchRange > 0
-    assert(!(searchType_ != SearchType::RAW_SAD && maxSearchRange_ == 0));
+    assert(searchType_ == SearchType::RAW_SAD || maxSearchRange_ != 0);
     // RAW_SAD supports only in case maxSearchRange = 0
-    assert(!(searchType_ == SearchType::RAW_SAD && maxSearchRange_ != 0));
+    assert(searchType_ != SearchType::RAW_SAD || maxSearchRange_ == 0);
 }
 
 BlockMatch::SpecConstants BlockMatch::makeSpecConstants() const {

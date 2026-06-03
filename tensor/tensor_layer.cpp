@@ -582,7 +582,8 @@ class TensorLayer : public VulkanLayerImpl {
 
         if (tensorDependencyInfo == nullptr && tensorBarrier == nullptr &&
             pDependencyInfo->pImageMemoryBarriers == nullptr) {
-            return handle->loader->vkCmdPipelineBarrier2(commandBuffer, pDependencyInfo);
+            handle->loader->vkCmdPipelineBarrier2(commandBuffer, pDependencyInfo);
+            return;
         }
 
         // replace tensor/image aliasing flag
@@ -663,9 +664,10 @@ class TensorLayer : public VulkanLayerImpl {
         auto handle = VulkanLayerImpl::getHandle(commandBuffer);
 
         if (pImageMemoryBarriers == nullptr) {
-            return handle->loader->vkCmdPipelineBarrier(
-                commandBuffer, srcStageMask, dstStageMask, dependencyFlags, memoryBarrierCount, pMemoryBarriers,
-                bufferMemoryBarrierCount, pBufferMemoryBarriers, imageMemoryBarrierCount, pImageMemoryBarriers);
+            handle->loader->vkCmdPipelineBarrier(commandBuffer, srcStageMask, dstStageMask, dependencyFlags,
+                                                 memoryBarrierCount, pMemoryBarriers, bufferMemoryBarrierCount,
+                                                 pBufferMemoryBarriers, imageMemoryBarrierCount, pImageMemoryBarriers);
+            return;
         }
 
         // Replace any `VK_IMAGE_LAYOUT_TENSOR_ALIASING_ARM` flags
@@ -777,7 +779,7 @@ class TensorLayer : public VulkanLayerImpl {
             memoryAliasing.removeAliasingMemory(memory);
         }
         auto handle = VulkanLayerImpl::getHandle(device);
-        return handle->loader->vkFreeMemory(device, memory, pAllocator);
+        handle->loader->vkFreeMemory(device, memory, pAllocator);
     }
 
     static void VKAPI_CALL vkGetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice, VkFormat format,

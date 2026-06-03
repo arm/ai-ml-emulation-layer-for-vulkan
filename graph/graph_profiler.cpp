@@ -18,6 +18,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <iterator>
+#include <limits>
 
 using namespace mlsdk::el::compute::graph_op;
 using namespace mlsdk::el::log;
@@ -58,6 +59,51 @@ std::string profilingPipelineKindToString(ProfilingPipelineKind pipelineKind) {
 
 } // namespace
 
+struct SampleInfo {
+    uint32_t pipelineIndex{};
+    uint32_t beforeQuery{};
+    uint32_t afterQuery{};
+    std::string pipelineKind;
+    std::string operatorName;
+};
+
+struct GraphProfiler::QueryPoolRecord {
+    VkQueryPool queryPool{};
+    VkCommandBuffer commandBuffer{};
+    VkPipeline dataGraphPipeline{};
+    uint64_t graphDispatchIndex{};
+    std::vector<SampleInfo> samples;
+};
+
+struct GraphProfiler::Sample {
+    uint64_t submissionIndex{};
+    uint64_t graphDispatchIndex{};
+    VkCommandBuffer commandBuffer{};
+    VkPipeline dataGraphPipeline{};
+    uint32_t pipelineIndex{};
+    std::string pipelineKind;
+    std::string operatorName;
+    uint64_t before{};
+    uint64_t after{};
+    uint64_t delta{};
+    double milliseconds{};
+};
+
+struct GraphProfiler::Aggregate {
+    uint64_t count{};
+    double totalMilliseconds{};
+    double minMilliseconds{std::numeric_limits<double>::max()};
+    double maxMilliseconds{};
+};
+
+struct GraphProfiler::SubmitRecord {
+    uint64_t submissionIndex{};
+    VkQueue queue{};
+    VkFence fence{};
+    std::vector<VkCommandBuffer> commandBuffers;
+    std::vector<std::shared_ptr<QueryPoolRecord>> queryRecords;
+};
+
 bool GraphProfiler::isEnabled() { return isTruthyEnvironmentValue(std::getenv("VMEL_GRAPH_PROFILING")); }
 
 GraphProfiler::GraphProfiler(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader,
@@ -82,13 +128,11 @@ GraphProfiler::GraphProfiler(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail:
 
 GraphProfiler::~GraphProfiler() { clearAllCommandBuffers(); }
 
-ComputePipelineDispatchDecorator GraphProfiler::makeDispatchDecorator(VkPipeline dataGraphPipeline,
-                                                                      VkCommandBuffer commandBuffer,
-                                                                      uint32_t queueFamilyIndex, uint32_t pipelineCount,
-                                                                      ProfilingPipelineKind pipelineKind) {
-    auto pipelineKindString = profilingPipelineKindToString(pipelineKind);
+VkQueryPool GraphProfiler::getQueryPool(uint32_t queueFamilyIndex, uint32_t pipelineCount) const {
     if (pipelineCount == 0 || !supportsTimestampQueries(queueFamilyIndex)) {
-        return {};
+        graphLog(Severity::Error) << "Invalid input, pipelineCount: " << pipelineCount
+                                  << " and queueFamilyIndex: " << queueFamilyIndex << std::endl;
+        return VK_NULL_HANDLE;
     }
 
     const auto queryCount = pipelineCount * 2;
@@ -105,14 +149,27 @@ ComputePipelineDispatchDecorator GraphProfiler::makeDispatchDecorator(VkPipeline
     const VkResult res = loader->vkCreateQueryPool(device, &queryPoolCreateInfo, nullptr, &queryPool);
     if (res != VK_SUCCESS) {
         graphLog(Severity::Error) << "Failed to create graph profiling query pool" << std::endl;
+        return VK_NULL_HANDLE;
+    }
+    return queryPool;
+}
+
+ComputePipelineDispatchDecorator GraphProfiler::makeDispatchDecorator(VkPipeline dataGraphPipeline,
+                                                                      VkCommandBuffer commandBuffer,
+                                                                      uint32_t queueFamilyIndex, uint32_t pipelineCount,
+                                                                      ProfilingPipelineKind pipelineKind) {
+    auto *queryPool = getQueryPool(queueFamilyIndex, pipelineCount);
+    if (queryPool == VK_NULL_HANDLE) {
         return {};
     }
 
+    const auto queryCount = pipelineCount * 2;
     auto record = makeRecord(queryPool, commandBuffer, dataGraphPipeline);
     loader->vkCmdResetQueryPool(commandBuffer, queryPool, 0, queryCount);
     state.addCommandBufferRecord(commandBuffer, record);
 
-    return [this, record, queryPool, pipelineCount, pipelineKind = std::move(pipelineKindString)](
+    auto pipelineKindString = profilingPipelineKindToString(pipelineKind);
+    return [this, record, queryPool, pipelineCount, pipelineKindStr = std::move(pipelineKindString)](
                VkCommandBuffer cmdBuffer, ComputePipelineBase &pipeline,
                const ComputeDescriptorSetMap &descriptorSetMap, uint32_t pipelineIndex) {
         const auto sampleIndex = static_cast<uint32_t>(record->samples.size());
@@ -125,7 +182,7 @@ ComputePipelineDispatchDecorator GraphProfiler::makeDispatchDecorator(VkPipeline
         const uint32_t beforeQuery = sampleIndex * 2;
         const uint32_t afterQuery = beforeQuery + 1;
         auto operatorName = normalizeOperatorName(pipeline.getDebugName());
-        record->samples.push_back({pipelineIndex, beforeQuery, afterQuery, pipelineKind, std::move(operatorName)});
+        record->samples.push_back({pipelineIndex, beforeQuery, afterQuery, pipelineKindStr, std::move(operatorName)});
 
         loader->vkCmdWriteTimestamp2(cmdBuffer, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, queryPool, beforeQuery);
         pipeline.cmdBindAndDispatch(cmdBuffer, descriptorSetMap);
@@ -136,27 +193,12 @@ ComputePipelineDispatchDecorator GraphProfiler::makeDispatchDecorator(VkPipeline
 mlsdk::el::compute::optical_flow::ComputePipelineDispatchDecorator
 GraphProfiler::makeOpticalFlowDispatchDecorator(VkPipeline dataGraphPipeline, VkCommandBuffer commandBuffer,
                                                 uint32_t queueFamilyIndex, uint32_t pipelineCount) {
-    if (pipelineCount == 0 || !supportsTimestampQueries(queueFamilyIndex)) {
+    auto *queryPool = getQueryPool(queueFamilyIndex, pipelineCount);
+    if (queryPool == VK_NULL_HANDLE) {
         return {};
     }
 
     const auto queryCount = pipelineCount * 2;
-    VkQueryPoolCreateInfo queryPoolCreateInfo{
-        VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO, // sType
-        nullptr,                                  // pNext
-        0,                                        // flags
-        VK_QUERY_TYPE_TIMESTAMP,                  // queryType
-        queryCount,                               // queryCount
-        0,                                        // pipelineStatistics
-    };
-
-    VkQueryPool queryPool = VK_NULL_HANDLE;
-    const VkResult res = loader->vkCreateQueryPool(device, &queryPoolCreateInfo, nullptr, &queryPool);
-    if (res != VK_SUCCESS) {
-        graphLog(Severity::Error) << "Failed to create optical-flow profiling query pool" << std::endl;
-        return {};
-    }
-
     auto record = makeRecord(queryPool, commandBuffer, dataGraphPipeline);
     loader->vkCmdResetQueryPool(commandBuffer, queryPool, 0, queryCount);
     state.addCommandBufferRecord(commandBuffer, record);
@@ -232,6 +274,7 @@ bool GraphProfiler::collectSubmission(const std::shared_ptr<SubmitRecord> &submi
             return false;
         }
 
+        newSamples.reserve(newSamples.size() + record->samples.size());
         for (const auto &sampleInfo : record->samples) {
             const auto before = timestamps[sampleInfo.beforeQuery];
             const auto after = timestamps[sampleInfo.afterQuery];
@@ -473,14 +516,15 @@ nlohmann::ordered_json GraphProfiler::toJson(const Sample &sample) {
 
 nlohmann::ordered_json GraphProfiler::toJson(const Aggregate &aggregate, const std::string &pipelineKind,
                                              const std::string &operatorName) {
-    const auto average = aggregate.count == 0 ? 0.0 : aggregate.totalMilliseconds / aggregate.count;
+    const bool hasSamples = aggregate.count != 0;
+    const auto average = hasSamples ? aggregate.totalMilliseconds / aggregate.count : 0.0;
     return {{"pipeline_kind", pipelineKind},
             {"operator_name", operatorName},
             {"dispatch_count", aggregate.count},
             {"total_time_ms", aggregate.totalMilliseconds},
             {"average_time_ms", average},
-            {"min_time_ms", aggregate.count == 0 ? 0.0 : aggregate.minMilliseconds},
-            {"max_time_ms", aggregate.maxMilliseconds}};
+            {"min_time_ms", hasSamples ? aggregate.minMilliseconds : 0.0},
+            {"max_time_ms", hasSamples ? aggregate.maxMilliseconds : 0.0}};
 }
 
 std::string GraphProfiler::makeJson() const { return makeJson(state.getSamples()); }
@@ -503,11 +547,13 @@ std::string GraphProfiler::makeJson(const std::vector<Sample> &profileSamples) c
     using Json = nlohmann::ordered_json;
 
     Json sampleJson = Json::array();
+    sampleJson.get_ref<Json::array_t &>().reserve(profileSamples.size());
     for (const auto &sample : profileSamples) {
         sampleJson.push_back(toJson(sample));
     }
 
     Json aggregateJson = Json::array();
+    aggregateJson.get_ref<Json::array_t &>().reserve(aggregates.size());
     for (const auto &[key, aggregate] : aggregates) {
         const auto &[pipelineKind, operatorName] = key;
         aggregateJson.push_back(toJson(aggregate, pipelineKind, operatorName));

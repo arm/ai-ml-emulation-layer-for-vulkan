@@ -2058,7 +2058,8 @@ class GraphLayer : public VulkanLayerImpl {
             findType<VkTensorDependencyInfoARM>(pDependencyInfo->pNext, VK_STRUCTURE_TYPE_TENSOR_DEPENDENCY_INFO_ARM);
         if (tensorDependencyInfo == nullptr && pDependencyInfo->pMemoryBarriers == nullptr &&
             pDependencyInfo->pImageMemoryBarriers == nullptr && pDependencyInfo->pBufferMemoryBarriers == nullptr) {
-            return handle->loader->vkCmdPipelineBarrier2(commandBuffer, pDependencyInfo);
+            handle->loader->vkCmdPipelineBarrier2(commandBuffer, pDependencyInfo);
+            return;
         }
 
         auto replaceAccessFlag = [](const auto flag) {

@@ -43,8 +43,8 @@ void OpticalFlow::init(const Config &config) {
     assert(isSupported(config.levelOfLastEstimation, Spec::supportedLevelOfLastEstimation));
     assert(config.width >= Spec::minWidth && config.width <= Spec::maxWidth);
     assert(config.height >= Spec::minHeight && config.height <= Spec::maxHeight);
-    assert(!(config.useMvInput && !Spec::hintSupported));
-    assert(!(config.outputCost && !Spec::costSupported));
+    assert(!config.useMvInput || Spec::hintSupported);
+    assert(!config.outputCost || Spec::costSupported);
 
     config_ = config;
     const auto inputUsage = Image::Usage::NoStoreImageSample;
@@ -445,9 +445,7 @@ void OpticalFlow::cmdBindAndDispatch(VkCommandBuffer cmdBuf, VkDataGraphOpticalF
 
     const bool disableTemporalHints = (flags & VK_DATA_GRAPH_OPTICAL_FLOW_EXECUTE_DISABLE_TEMPORAL_HINTS_BIT_ARM) != 0;
     const VkDataGraphOpticalFlowExecuteFlagsARM effectiveFlags =
-        disableTemporalHints ? static_cast<VkDataGraphOpticalFlowExecuteFlagsARM>(
-                                   flags & static_cast<VkDataGraphOpticalFlowExecuteFlagsARM>(~temporalHintFlags))
-                             : flags;
+        disableTemporalHints ? flags & ~temporalHintFlags : flags;
 
     // Indicates that the previous template image is the current search image or vice-versa
     if (effectiveFlags & (VK_DATA_GRAPH_OPTICAL_FLOW_EXECUTE_INPUT_IS_PREVIOUS_REFERENCE_BIT_ARM |
