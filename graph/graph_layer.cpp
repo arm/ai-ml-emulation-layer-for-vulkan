@@ -964,6 +964,7 @@ class GraphLayer : public VulkanLayerImpl {
                 // Create constants descriptor sets
                 pipeline->makeConstantsDescriptorSets();
             } else if (pipeline->isOpticalFlow()) {
+                assert(opticalFlowCreateInfo);
                 graphLog(Severity::Debug) << "Creating Optical Flow pipeline" << std::endl;
                 // Initialise OpticalFlow
                 const auto &opticalFlowPipeline = pipeline->opticalFlow;
