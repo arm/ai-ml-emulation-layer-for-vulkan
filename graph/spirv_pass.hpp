@@ -84,99 +84,12 @@ class GraphPassBase : public Pass {
         }
     }
 
-    bool shouldDecodeTensorConstantFromInstruction(const Instruction *instruction,
-                                                   const analysis::Constant *constant) const {
-        if (!instruction) {
-            return false;
-        }
-
-        const auto *type = context()->get_type_mgr()->GetType(instruction->type_id());
-        if (!type || !type->AsTensorARM()) {
-            return false;
-        }
-
-        switch (instruction->opcode()) {
-        case spv::Op::OpConstantComposite:
-        case spv::Op::OpSpecConstantComposite:
-        case spv::Op::OpConstantCompositeReplicateEXT:
-        case spv::Op::OpSpecConstantCompositeReplicateEXT:
-            return true;
-        case spv::Op::OpConstantNull:
-            return constant == nullptr;
-        default:
-            return false;
-        }
-    }
-
-    template <typename T> void appendConstantVectorFromInstruction(uint32_t id, std::vector<T> &kernel) const {
-        const auto *instruction = context()->get_def_use_mgr()->GetDef(id);
-        if (!instruction) {
-            throw std::runtime_error("Missing definition for constant id: " + std::to_string(id));
-        }
-
-        switch (instruction->opcode()) {
-        case spv::Op::OpConstantComposite:
-        case spv::Op::OpSpecConstantComposite:
-        case spv::Op::OpConstantCompositeReplicateEXT:
-        case spv::Op::OpSpecConstantCompositeReplicateEXT:
-            for (uint32_t i = 0; i < instruction->NumInOperands(); ++i) {
-                appendConstantVectorFromInstruction<T>(instruction->GetInOperand(i).AsId(), kernel);
-            }
-            return;
-        case spv::Op::OpConstantNull: {
-            const auto *type = context()->get_type_mgr()->GetType(instruction->type_id());
-            if (const auto *tensorType = type ? type->AsTensorARM() : nullptr) {
-                kernel.resize(kernel.size() + getElementCount(tensorType->shape_id()), 0);
-            } else {
-                kernel.push_back(0);
-            }
-            return;
-        }
-        default:
-            if (const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(id)) {
-                kernel.push_back(getConstScalar<T>(constant));
-                return;
-            }
-            throw std::runtime_error("Unsupported constant definition opcode for id " + std::to_string(id) + ": " +
-                                     std::to_string(static_cast<uint32_t>(instruction->opcode())));
-        }
-    }
-
-    template <typename T> std::vector<T> getTensorConstantVectorFromInstruction(uint32_t id) const {
-        const auto *instruction = context()->get_def_use_mgr()->GetDef(id);
-        if (!instruction) {
-            throw std::runtime_error("Missing definition for constant id: " + std::to_string(id));
-        }
-
-        std::vector<T> kernel;
-        const bool isSplat = isCompositeReplicateConstantOpcode(instruction->opcode());
-        appendConstantVectorFromInstruction<T>(id, kernel);
-
-        if (isSplat) {
-            assert(kernel.size() == 1);
-            const auto *tensorType = getTensorType(id);
-            const auto elemCount = getElementCount(tensorType->shape_id());
-            kernel.resize(elemCount, kernel.front());
-        }
-
-        return kernel;
-    }
-
     template <typename T> std::vector<T> getConstVector(const uint32_t id) const {
         const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(id);
         std::vector<T> kernel;
 
-        {
-            // TODO: Remove this fallback once our SPIRV-Tools dependency includes a
-            // ConstantManager fix for TensorARM OpConstantCompositeReplicateEXT and
-            // OpSpecConstantCompositeReplicateEXT constants.
-            const auto *instruction = context()->get_def_use_mgr()->GetDef(id);
-            if (shouldDecodeTensorConstantFromInstruction(instruction, constant)) {
-                return getTensorConstantVectorFromInstruction<T>(id);
-            }
-            if (!constant) {
-                throw std::runtime_error("Missing declared constant for id: " + std::to_string(id));
-            }
+        if (!constant) {
+            throw std::runtime_error("Missing declared constant for id: " + std::to_string(id));
         }
 
         if (const auto *composite = constant->AsCompositeConstant()) {
@@ -185,10 +98,12 @@ class GraphPassBase : public Pass {
             getFlattenedCompositeConstant(composite, kernel);
 
             if (isSplat) {
-                assert(kernel.size() == 1);
                 const auto *tensorType = getTensorType(id);
                 const auto elemCount = getElementCount(tensorType->shape_id());
-                kernel.resize(elemCount, kernel.front());
+                if (kernel.size() != elemCount) {
+                    throw std::runtime_error("Unexpected replicated constant element count for id: " +
+                                             std::to_string(id));
+                }
             }
         } else if (const auto *null = constant->AsNullConstant(); null != nullptr) {
             if (const auto *tensor = constant->type()->AsTensorARM()) {
