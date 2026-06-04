@@ -113,12 +113,12 @@ ComputePipelineDispatchDecorator GraphProfiler::makeDispatchDecorator(VkPipeline
     state.addCommandBufferRecord(commandBuffer, record);
 
     return [this, record, queryPool, pipelineCount, pipelineKind = std::move(pipelineKindString)](
-               VkCommandBuffer commandBuffer, ComputePipelineBase &pipeline,
+               VkCommandBuffer cmdBuffer, ComputePipelineBase &pipeline,
                const ComputeDescriptorSetMap &descriptorSetMap, uint32_t pipelineIndex) {
         const auto sampleIndex = static_cast<uint32_t>(record->samples.size());
         if (sampleIndex >= pipelineCount) {
             graphLog(Severity::Error) << "Graph profiling query pool is too small for recorded dispatches" << std::endl;
-            pipeline.cmdBindAndDispatch(commandBuffer, descriptorSetMap);
+            pipeline.cmdBindAndDispatch(cmdBuffer, descriptorSetMap);
             return;
         }
 
@@ -127,9 +127,9 @@ ComputePipelineDispatchDecorator GraphProfiler::makeDispatchDecorator(VkPipeline
         auto operatorName = normalizeOperatorName(pipeline.getDebugName());
         record->samples.push_back({pipelineIndex, beforeQuery, afterQuery, pipelineKind, std::move(operatorName)});
 
-        loader->vkCmdWriteTimestamp2(commandBuffer, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, queryPool, beforeQuery);
-        pipeline.cmdBindAndDispatch(commandBuffer, descriptorSetMap);
-        loader->vkCmdWriteTimestamp2(commandBuffer, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, queryPool, afterQuery);
+        loader->vkCmdWriteTimestamp2(cmdBuffer, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, queryPool, beforeQuery);
+        pipeline.cmdBindAndDispatch(cmdBuffer, descriptorSetMap);
+        loader->vkCmdWriteTimestamp2(cmdBuffer, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, queryPool, afterQuery);
     };
 }
 
@@ -161,14 +161,14 @@ GraphProfiler::makeOpticalFlowDispatchDecorator(VkPipeline dataGraphPipeline, Vk
     loader->vkCmdResetQueryPool(commandBuffer, queryPool, 0, queryCount);
     state.addCommandBufferRecord(commandBuffer, record);
 
-    return [this, record, queryPool, pipelineCount](VkCommandBuffer commandBuffer,
+    return [this, record, queryPool, pipelineCount](VkCommandBuffer cmdBuffer,
                                                     mlsdk::el::compute::optical_flow::ComputePipeline &pipeline,
                                                     uint32_t pipelineIndex) {
         const auto sampleIndex = static_cast<uint32_t>(record->samples.size());
         if (sampleIndex >= pipelineCount) {
             graphLog(Severity::Error) << "Optical-flow profiling query pool is too small for recorded dispatches"
                                       << std::endl;
-            pipeline.bindAndDispatch(commandBuffer);
+            pipeline.bindAndDispatch(cmdBuffer);
             return;
         }
 
@@ -177,9 +177,9 @@ GraphProfiler::makeOpticalFlowDispatchDecorator(VkPipeline dataGraphPipeline, Vk
         auto operatorName = normalizeOperatorName(pipeline.getDebugName());
         record->samples.push_back({pipelineIndex, beforeQuery, afterQuery, "optical_flow", std::move(operatorName)});
 
-        loader->vkCmdWriteTimestamp2(commandBuffer, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, queryPool, beforeQuery);
-        pipeline.bindAndDispatch(commandBuffer);
-        loader->vkCmdWriteTimestamp2(commandBuffer, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, queryPool, afterQuery);
+        loader->vkCmdWriteTimestamp2(cmdBuffer, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, queryPool, beforeQuery);
+        pipeline.bindAndDispatch(cmdBuffer);
+        loader->vkCmdWriteTimestamp2(cmdBuffer, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, queryPool, afterQuery);
     };
 }
 
