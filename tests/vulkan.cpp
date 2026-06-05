@@ -51,7 +51,7 @@ namespace {
 
 class MLEmulationLayerForVulkan : public ::testing::Test {
   public:
-    ~MLEmulationLayerForVulkan() override {}
+    ~MLEmulationLayerForVulkan() override = default;
 
     // Override this to define how to tear down the environment.
     void TearDown() override {}

@@ -376,13 +376,9 @@ bool BestFitMemoryPlanner::isSafeToReuse(const std::shared_ptr<Tensors> &occupat
                                          const std::shared_ptr<TensorDescriptor> &tensor,
                                          const SafeToReuseMap &safeToReuse) const {
     const auto &safeTensors = safeToReuse.at(tensor);
-    for (const auto &allocatedTensor : *occupationList) {
-        if (safeTensors.find(allocatedTensor) == safeTensors.end()) {
-            return false;
-        }
-    }
-
-    return true;
+    return std::all_of(occupationList->begin(), occupationList->end(), [&safeTensors](const auto &allocatedTensor) {
+        return safeTensors.find(allocatedTensor) != safeTensors.end();
+    });
 }
 
 } // namespace mlsdk::el::compute::graph_op

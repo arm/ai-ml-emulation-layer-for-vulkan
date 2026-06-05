@@ -16,7 +16,6 @@
 #include <nlohmann/json.hpp>
 #include <vulkan/vulkan.hpp>
 
-#include <limits>
 #include <map>
 #include <mutex>
 #include <string>
@@ -65,50 +64,10 @@ class GraphProfiler {
     std::string getPipelineJson(VkPipeline dataGraphPipeline);
 
   private:
-    struct SampleInfo {
-        uint32_t pipelineIndex{};
-        uint32_t beforeQuery{};
-        uint32_t afterQuery{};
-        std::string pipelineKind;
-        std::string operatorName;
-    };
-
-    struct QueryPoolRecord {
-        VkQueryPool queryPool{};
-        VkCommandBuffer commandBuffer{};
-        VkPipeline dataGraphPipeline{};
-        uint64_t graphDispatchIndex{};
-        std::vector<SampleInfo> samples;
-    };
-
-    struct Sample {
-        uint64_t submissionIndex{};
-        uint64_t graphDispatchIndex{};
-        VkCommandBuffer commandBuffer{};
-        VkPipeline dataGraphPipeline{};
-        uint32_t pipelineIndex{};
-        std::string pipelineKind;
-        std::string operatorName;
-        uint64_t before{};
-        uint64_t after{};
-        uint64_t delta{};
-        double milliseconds{};
-    };
-
-    struct Aggregate {
-        uint64_t count{};
-        double totalMilliseconds{};
-        double minMilliseconds{std::numeric_limits<double>::max()};
-        double maxMilliseconds{};
-    };
-
-    struct SubmitRecord {
-        uint64_t submissionIndex{};
-        VkQueue queue{};
-        VkFence fence{};
-        std::vector<VkCommandBuffer> commandBuffers;
-        std::vector<std::shared_ptr<QueryPoolRecord>> queryRecords;
-    };
+    struct QueryPoolRecord;
+    struct Sample;
+    struct Aggregate;
+    struct SubmitRecord;
     using Submissions = std::vector<std::shared_ptr<SubmitRecord>>;
     using CompletedSubmissions = std::vector<std::pair<std::shared_ptr<SubmitRecord>, std::vector<Sample>>>;
 
@@ -142,6 +101,8 @@ class GraphProfiler {
         Submissions submissions;
         std::vector<Sample> samples;
     };
+
+    VkQueryPool getQueryPool(uint32_t queueFamilyIndex, uint32_t pipelineCount) const;
 
     std::shared_ptr<QueryPoolRecord> makeRecord(VkQueryPool queryPool, VkCommandBuffer commandBuffer,
                                                 VkPipeline dataGraphPipeline);

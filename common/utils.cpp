@@ -222,7 +222,7 @@ void setDebugUtilsObjectName(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail:
     if (loader->vkSetDebugUtilsObjectNameEXT) {
         VkDebugUtilsObjectNameInfoEXT nameInfo{};
         nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
-        nameInfo.objectType = static_cast<VkObjectType>(type);
+        nameInfo.objectType = type;
         nameInfo.objectHandle = handle;
         nameInfo.pObjectName = name.c_str();
 

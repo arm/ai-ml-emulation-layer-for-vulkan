@@ -151,11 +151,10 @@ template <class T> static void loadVkStructureList(T *list, const std::vector<co
 }
 
 template <typename DispatchableType> void checkDispatchable(DispatchableType) {
-    static_assert(
-        std::is_same<DispatchableType, VkInstance>::value || std::is_same<DispatchableType, VkPhysicalDevice>::value ||
-            std::is_same<DispatchableType, VkDevice>::value || std::is_same<DispatchableType, VkQueue>::value ||
-            std::is_same<DispatchableType, VkCommandBuffer>::value,
-        "unrecognized dispatchable type");
+    static_assert(std::is_same_v<DispatchableType, VkInstance> || std::is_same_v<DispatchableType, VkPhysicalDevice> ||
+                      std::is_same_v<DispatchableType, VkDevice> || std::is_same_v<DispatchableType, VkQueue> ||
+                      std::is_same_v<DispatchableType, VkCommandBuffer>,
+                  "unrecognized dispatchable type");
 }
 
 template <typename DispatchableType> void setDispatchTableKey(DispatchableType dispatchable, void *data) {
@@ -174,7 +173,7 @@ template <typename DispatchableType> void *getDispatchTableKey(DispatchableType 
 
 class Loader {
   public:
-    Loader(const Loader &_loader) : loader{_loader.loader} {}
+    Loader(const Loader &_loader) = default;
 
     explicit Loader(std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader) : loader{_loader} {}
 
@@ -183,7 +182,7 @@ class Loader {
                  [=](VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic *toDelete) {
                      destroyObject(_callbacks, toDelete);
                  }} {
-        loader->vkGetInstanceProcAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(_gipr);
+        loader->vkGetInstanceProcAddr = _gipr;
 
         // Manually resolve the *few* instance functions you actually use
         loader->vkEnumeratePhysicalDevices =
