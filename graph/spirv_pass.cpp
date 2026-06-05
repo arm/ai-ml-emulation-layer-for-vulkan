@@ -499,16 +499,27 @@ bool GraphPassBase::isCompositeReplicateConstantOpcode(const spv::Op opcode) {
 template <typename T, spv::FPEncoding fpEncoding>
 std::vector<T> GraphPassBase::getConstVector(const spvtools::opt::Instruction *instruction,
                                              const std::vector<int64_t> &dimensions) const {
+    if (!instruction) {
+        throw std::runtime_error("Missing definition for encoded float composite constant");
+    }
+
     std::vector<T> values;
     const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(instruction->result_id());
+    if (constant == nullptr) {
+        throw std::runtime_error("Missing declared encoded float constant for id: " +
+                                 std::to_string(instruction->result_id()));
+    }
+
     if (const auto *composite = constant->AsCompositeConstant()) {
         const bool isSplat = isCompositeReplicateConstantOpcode(instruction->opcode());
         flattenFloatComposite<T, fpEncoding>(composite, values);
 
         if (isSplat) {
-            assert(values.size() == 1);
             const auto compositeCount = mlsdk::el::utils::getElementCount(dimensions);
-            values.resize(compositeCount, values.front());
+            if (values.size() != compositeCount) {
+                throw std::runtime_error("Unexpected replicated encoded float constant element count for id: " +
+                                         std::to_string(instruction->result_id()));
+            }
         }
     } else if (constant->AsNullConstant()) {
         const auto compositeCount = mlsdk::el::utils::getElementCount(dimensions);

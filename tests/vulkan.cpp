@@ -1167,6 +1167,37 @@ TEST_F(MLEmulationLayerForVulkan, Conv3DLargeStridePadRegression) {
         << "Output mismatch";
 }
 
+void expectConv3DInlineEncodedConstantPipelineCreates(const std::string &shaderFile, vk::Format format) {
+    auto device = createDevice();
+
+    auto inputTensor = std::make_shared<Tensor>(device, Shape{format, std::vector<int64_t>{1, 1, 1, 1, 1}});
+    auto outputTensor = std::make_shared<Tensor>(device, Shape{format, std::vector<int64_t>{1, 1, 1, 1, 1}});
+
+    const GraphPipeline::DescriptorMap descriptorMap = {{
+        {0, {inputTensor}},
+        {1, {outputTensor}},
+    }};
+
+    const auto spirv = assembleSpirv(fileToString(shaderFile));
+    auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, GraphConstants{}, spirv);
+    ASSERT_NE(graphPipeline, nullptr);
+}
+
+TEST_F(MLEmulationLayerForVulkan, Conv3DInlineBFloat16ConstantRegression) {
+    expectConv3DInlineEncodedConstantPipelineCreates("conv3d_inline_bf16_constant.spvasm",
+                                                     vk::Format::eR16SfloatFpencodingBfloat16ARM);
+}
+
+TEST_F(MLEmulationLayerForVulkan, Conv3DInlineFloat8E5M2ConstantRegression) {
+    expectConv3DInlineEncodedConstantPipelineCreates("conv3d_inline_fp8e5m2_constant.spvasm",
+                                                     vk::Format::eR8SfloatFpencodingFloat8E5M2ARM);
+}
+
+TEST_F(MLEmulationLayerForVulkan, Conv3DInlineFloat8E4M3ConstantRegression) {
+    expectConv3DInlineEncodedConstantPipelineCreates("conv3d_inline_fp8e4m3_constant.spvasm",
+                                                     vk::Format::eR8SfloatFpencodingFloat8E4M3ARM);
+}
+
 TEST_F(MLEmulationLayerForVulkan, Concat) {
     auto device = createDevice();
 
