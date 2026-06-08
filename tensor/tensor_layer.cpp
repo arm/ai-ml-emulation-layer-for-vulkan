@@ -46,10 +46,10 @@ class TensorDevice : public Device {
 /*******************************************************************************
  * Hash calculation
  *******************************************************************************/
-inline std::size_t spirvHash(const std::vector<uint32_t> &spirv) {
-    std::size_t hash = spirv.size();
-    for (const auto &i : spirv) {
-        hash ^= std::hash<uint32_t>()(i) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+std::size_t spirvHash(const uint32_t *spirvCode, std::size_t spirvSize) {
+    std::size_t hash = spirvSize;
+    for (std::size_t i = 0; i < spirvSize; ++i) {
+        hash ^= std::hash<uint32_t>()(spirvCode[i]) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
     }
     return hash;
 }
@@ -344,9 +344,9 @@ class TensorLayer : public VulkanLayerImpl {
                                                     VkShaderModule *pShaderModule) {
         auto handle = VulkanLayerImpl::getHandle(device);
         if (pCreateInfo != nullptr && pCreateInfo->pCode != nullptr && pCreateInfo->codeSize > 0) {
-            std::vector<uint32_t> spirvSource = {pCreateInfo->pCode,
-                                                 pCreateInfo->pCode + pCreateInfo->codeSize / sizeof(uint32_t)};
-            const std::size_t hashCode = spirvHash(spirvSource);
+            const uint32_t *spirvCode = pCreateInfo->pCode;
+            const std::size_t spirvSize = pCreateInfo->codeSize / sizeof(uint32_t);
+            const std::size_t hashCode = spirvHash(spirvCode, spirvSize);
             bool hasCacheEntry;
             std::size_t shaderModuleCodeSize = 0;
             const uint32_t *shaderModulepCode = nullptr;
@@ -362,7 +362,8 @@ class TensorLayer : public VulkanLayerImpl {
             }
 
             if (!hasCacheEntry) {
-                TensorProcessor tensorProcessor(spirvSource);
+                std::vector<uint32_t> spirvSource = {spirvCode, spirvCode + spirvSize};
+                const TensorProcessor tensorProcessor(std::move(spirvSource));
                 if (!tensorProcessor.isValidShader()) {
                     return VK_ERROR_UNKNOWN;
                 }
@@ -423,9 +424,10 @@ class TensorLayer : public VulkanLayerImpl {
                 continue;
             }
             // Check if the shader uses tensors
-            std::vector<uint32_t> spirvSource = {
-                pShaderCreateInfo->pCode, pShaderCreateInfo->pCode + pShaderCreateInfo->codeSize / sizeof(uint32_t)};
-            TensorProcessor tensorProcessor(spirvSource);
+            const uint32_t *spirvCode = pShaderCreateInfo->pCode;
+            const std::size_t spirvSize = pShaderCreateInfo->codeSize / sizeof(uint32_t);
+            std::vector<uint32_t> spirvSource = {spirvCode, spirvCode + spirvSize};
+            const TensorProcessor tensorProcessor(std::move(spirvSource));
             if (!tensorProcessor.isValidShader()) {
                 return VK_ERROR_UNKNOWN;
             }
@@ -441,7 +443,7 @@ class TensorLayer : public VulkanLayerImpl {
             // Replace tensors with buffers in shader
             {
                 scopedMutex l(globalMutex);
-                std::size_t hashCode = spirvHash(spirvSource);
+                std::size_t hashCode = spirvHash(spirvCode, spirvSize);
                 auto &spirvSourceNew = spirvCache[hashCode];
                 if (spirvSourceNew.empty()) {
                     spirvSourceNew = tensorProcessor.getNewSpirv();

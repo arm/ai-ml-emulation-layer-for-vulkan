@@ -19,7 +19,7 @@ using namespace mlsdk::el::log;
 
 namespace mlsdk::el::layer {
 
-TensorProcessor::TensorProcessor(const std::vector<uint32_t> &spirv_) : m_spirv{spirv_} {
+TensorProcessor::TensorProcessor(std::vector<uint32_t> spirv_) : m_spirv{std::move(spirv_)} {
     try {
         m_spirvCompiler = std::make_unique<CompilerTensorAsBuffer>(m_spirv);
         bool hasTensor = m_spirvCompiler->hasTensors();
