@@ -1173,6 +1173,11 @@ void expectConv3DInlineEncodedConstantPipelineCreates(const std::string &shaderF
     auto inputTensor = std::make_shared<Tensor>(device, Shape{format, std::vector<int64_t>{1, 1, 1, 1, 1}});
     auto outputTensor = std::make_shared<Tensor>(device, Shape{format, std::vector<int64_t>{1, 1, 1, 1, 1}});
 
+    if (format == vk::Format::eR16SfloatFpencodingBfloat16ARM) {
+        const uint16_t inputValue = 0x3f80;
+        std::memcpy(inputTensor->data(), &inputValue, sizeof(inputValue));
+    }
+
     const GraphPipeline::DescriptorMap descriptorMap = {{
         {0, {inputTensor}},
         {1, {outputTensor}},
@@ -1181,6 +1186,7 @@ void expectConv3DInlineEncodedConstantPipelineCreates(const std::string &shaderF
     const auto spirv = assembleSpirv(fileToString(shaderFile));
     auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, GraphConstants{}, spirv);
     ASSERT_NE(graphPipeline, nullptr);
+    ASSERT_NO_THROW(graphPipeline->dispatchSubmit());
 }
 
 TEST_F(MLEmulationLayerForVulkan, Conv3DInlineBFloat16ConstantRegression) {

@@ -36,6 +36,7 @@ if(NOT APPLE)
         SOURCES
             optical_flow_tests.cpp
             common_tests.cpp
+            spirv_pass_tests.cpp
             test_utils.cpp
             vulkan.cpp
         DEFINITIONS
@@ -57,6 +58,7 @@ else()
         TARGET mlel_unit_tests
         SOURCES
             common_tests.cpp
+            spirv_pass_tests.cpp
             test_utils.cpp
             vulkan.cpp
         DEFINITIONS

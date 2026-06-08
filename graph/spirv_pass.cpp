@@ -516,9 +516,10 @@ std::vector<T> GraphPassBase::getConstVector(const spvtools::opt::Instruction *i
 
         if (isSplat) {
             const auto compositeCount = mlsdk::el::utils::getElementCount(dimensions);
-            if (values.size() != compositeCount) {
+            if (!tryExpandReplicatedPattern(values, compositeCount)) {
                 throw std::runtime_error("Unexpected replicated encoded float constant element count for id: " +
-                                         std::to_string(instruction->result_id()));
+                                         std::to_string(instruction->result_id()) + ", expected " +
+                                         std::to_string(compositeCount) + ", found " + std::to_string(values.size()));
             }
         }
     } else if (constant->AsNullConstant()) {

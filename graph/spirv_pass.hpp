@@ -28,6 +28,31 @@ namespace spvtools {
 
 namespace opt {
 
+// Helper function to expand a splat pattern in-place, if the provided values represent a replicated constant pattern.
+// Normally values contain one value that is replicated to the total element count of a composite constant, but in some
+// cases it contains a pattern that needs to be replicated (for example a vector of 2 elements [x, y] that needs to be
+// expanded to [x, y, x, y]).
+template <typename T> bool tryExpandReplicatedPattern(std::vector<T> &values, const size_t elementCount) {
+    if (values.size() == elementCount) {
+        return true;
+    }
+
+    // Verify that expansion is possible: values must not be empty and elementCount must be divisible by values.size()
+    if (values.empty() || elementCount % values.size() != 0) {
+        return false;
+    }
+
+    // This also covers the case where values.size() == 1, which is the common splat pattern with a single value to
+    // replicate.
+    const auto pattern = values;
+    values.reserve(elementCount);
+    while (values.size() < elementCount) {
+        values.insert(values.end(), pattern.begin(), pattern.end());
+    }
+
+    return true;
+}
+
 enum RoundingMode {
     SingleRound = 1,
     InexactRound = 2,
@@ -100,9 +125,10 @@ class GraphPassBase : public Pass {
             if (isSplat) {
                 const auto *tensorType = getTensorType(id);
                 const auto elemCount = getElementCount(tensorType->shape_id());
-                if (kernel.size() != elemCount) {
-                    throw std::runtime_error("Unexpected replicated constant element count for id: " +
-                                             std::to_string(id));
+                if (!tryExpandReplicatedPattern(kernel, elemCount)) {
+                    throw std::runtime_error(
+                        "Unexpected replicated constant element count for id: " + std::to_string(id) + ", expected " +
+                        std::to_string(elemCount) + ", found " + std::to_string(kernel.size()));
                 }
             }
         } else if (const auto *null = constant->AsNullConstant(); null != nullptr) {
