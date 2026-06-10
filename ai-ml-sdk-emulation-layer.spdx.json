@@ -117,6 +117,39 @@
             "versionInfo": "v1.17.0"
         },
         {
+            "SPDXID": "SPDXRef-package-9d624f94-c22a-485b-bd11-5150107799af",
+            "downloadLocation": "NOASSERTION",
+            "externalRefs": [
+                {
+                    "referenceCategory": "OTHER",
+                    "referenceLocator": "bfdf1503-05f4-4154-8c47-2772a09b7f06",
+                    "referenceType": "BlackDuck-ComponentOrigin"
+                },
+                {
+                    "referenceCategory": "OTHER",
+                    "referenceLocator": "9d624f94-c22a-485b-bd11-5150107799af",
+                    "referenceType": "BlackDuck-ComponentVersion"
+                },
+                {
+                    "referenceCategory": "PACKAGE-MANAGER",
+                    "referenceLocator": "pkg:github/nlohmann/json@v3.11.3",
+                    "referenceType": "purl"
+                },
+                {
+                    "referenceCategory": "OTHER",
+                    "referenceLocator": "7355d1e8-3e81-447c-a726-fa23a3541ac2",
+                    "referenceType": "BlackDuck-Component"
+                }
+            ],
+            "filesAnalyzed": false,
+            "licenseConcluded": "MIT",
+            "licenseDeclared": "MIT",
+            "name": "JSON for Modern Cpp",
+            "supplier": "Organization: nlohmann",
+            "copyrightText": "Copyright (c) 2013-2022 Niels Lohmann",
+            "versionInfo": "3.11.3"
+        },
+        {
             "SPDXID": "SPDXRef-package-6d4aae9c-8e1e-4352-8946-d3c07e8fa910",
             "downloadLocation": "NOASSERTION",
             "externalRefs": [
@@ -297,6 +330,11 @@
             "spdxElementId": "SPDXRef-package-8675b9d3-95f3-4db2-b3e5-8a7599691306",
             "relationshipType": "DYNAMIC_LINK",
             "relatedSpdxElement": "SPDXRef-package-a22316c0-1153-40f0-94e4-b7cf02232d85"
+        },
+        {
+            "spdxElementId": "SPDXRef-package-8675b9d3-95f3-4db2-b3e5-8a7599691306",
+            "relationshipType": "DYNAMIC_LINK",
+            "relatedSpdxElement": "SPDXRef-package-9d624f94-c22a-485b-bd11-5150107799af"
         },
         {
             "spdxElementId": "SPDXRef-package-8675b9d3-95f3-4db2-b3e5-8a7599691306",
