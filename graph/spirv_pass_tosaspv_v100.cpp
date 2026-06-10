@@ -733,23 +733,31 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
     real_t padConst = 0.0;
     int32_t padConstInt = 0;
 
+    const auto vkFormat = output->getFormat();
     // Reduced-float constants are stored as raw payload bits.
-    if (output->getFormat() == VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM ||
-        output->getFormat() == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM ||
-        output->getFormat() == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM) {
+    if (vkFormat == VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM ||
+        vkFormat == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM ||
+        vkFormat == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM) {
         const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(opExtInst->GetInOperand(4).AsId());
         const auto *scalar = constant;
 
-        if (const auto *composite = constant->AsCompositeConstant()) {
+        const auto *composite = constant->AsCompositeConstant();
+        if (composite != nullptr) {
             assert(composite->GetComponents().size() == 1);
             scalar = composite->GetComponents()[0];
         }
 
         const auto *floatConstant = scalar->AsFloatConstant();
-        const auto *floatType = floatConstant == nullptr ? nullptr : floatConstant->type()->AsFloat();
-        if (output->getFormat() == VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM) {
+        if (floatConstant == nullptr) {
+            throw std::runtime_error(
+                "Unsupported PAD constant encoding, expected scalar or composite constant. Format: " +
+                std::to_string(vkFormat) + ", is composite: " + (composite != nullptr ? "true" : "false"));
+        }
+        const auto *floatType = floatConstant->type()->AsFloat();
+        if (vkFormat == VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM) {
             if (!GraphPassBase::isBFloat16(floatType)) {
-                throw std::runtime_error("Unsupported BF16 PAD constant encoding");
+                throw std::runtime_error("Unsupported BF16 PAD constant encoding, floatType: " +
+                                         std::string(floatType->str()));
             }
 
             const auto bf16 = uint16_t(floatConstant->words()[0]);
@@ -757,24 +765,26 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
             float fp32Value = 0.0f;
             std::memcpy(&fp32Value, &fp32Bits, sizeof(fp32Bits));
             padConst = real_t(fp32Value);
-        } else if (output->getFormat() == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM) {
+        } else if (vkFormat == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM) {
             if (!GraphPassBase::isFloat8E5M2(floatType)) {
-                throw std::runtime_error("Unsupported FLOAT8E5M2 PAD constant encoding");
+                throw std::runtime_error("Unsupported FLOAT8E5M2 PAD constant encoding, floatType: " +
+                                         std::string(floatType->str()));
             }
 
             const auto f8 = uint8_t(floatConstant->words()[0]);
             const auto &fp = reinterpret_cast<const float8_e5m2 &>(f8);
             padConst = real_t(fp);
-        } else if (output->getFormat() == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM) {
+        } else if (vkFormat == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM) {
             if (!GraphPassBase::isFloat8E4M3(floatType)) {
-                throw std::runtime_error("Unsupported FLOAT8E4M3 PAD constant encoding");
+                throw std::runtime_error("Unsupported FLOAT8E4M3 PAD constant encoding, floatType: " +
+                                         std::string(floatType->str()));
             }
 
             const auto f8 = uint8_t(floatConstant->words()[0]);
             const auto &fp = reinterpret_cast<const float8_e4m3 &>(f8);
             padConst = real_t(fp);
         }
-    } else if (output->getFormat() == VK_FORMAT_R32_SINT) {
+    } else if (vkFormat == VK_FORMAT_R32_SINT) {
         const auto &padConstVector = getConstVector<int32_t>(opExtInst->GetInOperand(4));
         padConstInt = padConstVector[0];
         padConst = real_t(padConstInt);
