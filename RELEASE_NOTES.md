@@ -2,6 +2,48 @@
 
 ---
 
+## Version 0.10.0 – *Optical Flow, Graph Profiling & Runtime Refinement*
+
+### Optical Flow Task API
+
+- Added support for `VK_ARM_data_graph_optical_flow`.
+- Added optical-flow compute pipeline and shader execution support.
+- Added optical-flow session memory and cache handling.
+- Added runtime validation for optical-flow configuration and dispatch.
+
+### Tensor & Graph API coverage
+
+- Exposed `VK_ARM_data_graph_instruction_set_tosa` in the Emulation Layer.
+- Added sparse external descriptor set/binding mapping support.
+- Added specialization constant handling in graph lowering.
+- Reused composite constant tensors during graph lowering.
+- Updated descriptor set handling and runtime diagnostics.
+- Added per-op graph-layer GPU timestamp profiling for compute pipeline
+  dispatches, including serialized per-layer timing reports.
+
+### Shader & SPIR-V™ Handling
+
+- Improved SPIR-V™ code handling and graph/tensor-layer runtime paths.
+- Added handling for floating-point constants in SPIR-V™ passes.
+
+### Build, Packaging & Developer Experience
+
+- Added an APK packaging script.
+- Split binary and documentation build flows.
+- Added detailed Emulation Layer implementation documentation and refreshed
+  README coverage for ML extensions and instruction sets.
+- Updated packaging and build tooling.
+
+### Bug Fixes
+
+- Refactored runtime paths to improve execution performance.
+- Reduced memory usage in `MemoryPlanner`.
+- Fixed graph lowering traversal to iterate backwards with the correct index.
+- Fixed `conv3d`, `transpose_conv2d`, `int32 pad`, and signed-integer
+  attribute handling.
+- Fixed Darwin/MoltenVK-specific runtime behavior.
+- Gated update-after-bind on uniform buffer feature support.
+
 ## Version 0.9.0 – *Datatype Support & API Coverage*
 
 ### New Datatypes
