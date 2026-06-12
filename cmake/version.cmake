@@ -18,8 +18,14 @@ function(mlsdk_get_git_revision SRCDIR RETURN_GIT_REVISION)
         return()
     endif()
 
+    # Refresh cached stat metadata before describe so clean checkouts do not
+    # get a false -dirty suffix. Real local changes still report as dirty.
     execute_process(
-        COMMAND ${GIT_EXECUTABLE} describe --dirty --always --tag --broken
+        COMMAND ${GIT_EXECUTABLE} update-index -q --refresh
+        WORKING_DIRECTORY ${SRCDIR})
+
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} describe --dirty --always --tag --broken --long
         WORKING_DIRECTORY ${SRCDIR}
         RESULT_VARIABLE GIT_RETURN_CODE
         OUTPUT_VARIABLE GIT_OUTPUT
@@ -57,7 +63,7 @@ function(mlsdk_generate_version_header)
         set(depVersionVar "${dep}_VERSION")
         set(depVersion "unknown")
 
-        if(${depVersionVar})
+        if(DEFINED ${depVersionVar})
             set(depVersion "${${depVersionVar}}")
         else()
             message(WARNING "Unable to get version for ${dep}: ${depVersionVar} is not set")
