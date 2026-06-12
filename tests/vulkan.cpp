@@ -10,6 +10,8 @@
 
 #include <gtest/gtest.h>
 
+#include <nlohmann/json.hpp>
+
 #include "test_utils.hpp"
 
 #include "mlel/device.hpp"
@@ -412,6 +414,38 @@ void submitGraphWithoutFence(const std::shared_ptr<Device> &device, const Profil
     }
 }
 
+void submitGraphCommandBufferTwiceWithoutIntermediateWait(const std::shared_ptr<Device> &device,
+                                                          const ProfilingGraph &graph) {
+    auto [descriptorPool, descriptorSets] = graph.pipeline->createDescriptorSets(graph.descriptorMap);
+    auto commandBuffer = graph.pipeline->createCommandBuffer();
+
+    const vk::CommandBufferBeginInfo commandBufferBeginInfo{
+        vk::CommandBufferUsageFlagBits::eSimultaneousUse,
+    };
+    commandBuffer.begin(commandBufferBeginInfo);
+    graph.pipeline->dispatch(commandBuffer, descriptorSets);
+    commandBuffer.end();
+
+    vk::raii::Queue queue(&(*device), device->getPhysicalDevice()->getComputeFamilyIndex(), 0);
+    const VkCommandBuffer vkCommandBuffer = *commandBuffer;
+    const VkSubmitInfo submitInfo{
+        VK_STRUCTURE_TYPE_SUBMIT_INFO, // sType
+        nullptr,                       // pNext
+        0,                             // waitSemaphoreCount
+        nullptr,                       // pWaitSemaphores
+        nullptr,                       // pWaitDstStageMask
+        1,                             // commandBufferCount
+        &vkCommandBuffer,              // pCommandBuffers
+        0,                             // signalSemaphoreCount
+        nullptr,                       // pSignalSemaphores
+    };
+
+    const auto &vkDevice = &(*device);
+    ASSERT_EQ(vkDevice.getDispatcher()->vkQueueSubmit(*queue, 1, &submitInfo, VK_NULL_HANDLE), VK_SUCCESS);
+    ASSERT_EQ(vkDevice.getDispatcher()->vkQueueSubmit(*queue, 1, &submitInfo, VK_NULL_HANDLE), VK_SUCCESS);
+    ASSERT_EQ(vkDevice.getDispatcher()->vkQueueWaitIdle(*queue), VK_SUCCESS);
+}
+
 std::string queryPipelineTextProperty(const std::shared_ptr<Device> &device, vk::Pipeline pipeline,
                                       vk::DataGraphPipelinePropertyARM property) {
     const auto &vkDevice = &(*device);
@@ -663,6 +697,28 @@ TEST_F(MLEmulationLayerForVulkan, GraphProfilingCollectsFenceLessSubmitOnDeviceW
     submitGraphWithoutFence(device, graph, true);
 
     expectMaxPoolProfileProperty(device, graph);
+}
+
+TEST_F(MLEmulationLayerForVulkan, GraphProfilingCollectsReusedCommandBufferSubmits) {
+    ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
+
+    auto device = createDevice();
+    auto graph = makeMaxPoolProfilingGraph(device);
+    submitGraphCommandBufferTwiceWithoutIntermediateWait(device, graph);
+
+    const auto property = getProfilingProperty(device, *graph.pipeline->getPipeline());
+    ASSERT_TRUE(property.has_value());
+    const auto json = queryPipelineTextProperty(device, *graph.pipeline->getPipeline(), *property);
+    const auto parsed = nlohmann::json::parse(std::string{json.c_str()});
+    const auto &samples = parsed.at("samples");
+    ASSERT_EQ(samples.size(), 2);
+
+    EXPECT_EQ(samples.at(0).at("submission"), 0);
+    EXPECT_EQ(samples.at(1).at("submission"), 1);
+    EXPECT_NE(samples.at(0).at("cycle_count_before"), samples.at(1).at("cycle_count_before"));
+    EXPECT_NE(samples.at(0).at("cycle_count_after"), samples.at(1).at("cycle_count_after"));
+    ASSERT_EQ(parsed.at("by_operator").size(), 1);
+    EXPECT_EQ(parsed.at("by_operator").at(0).at("dispatch_count"), 2);
 }
 
 TEST_F(MLEmulationLayerForVulkan, GraphProfilingIncludesMotionEngineGraphOps) {

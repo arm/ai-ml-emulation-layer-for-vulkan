@@ -666,6 +666,9 @@ class GraphLayer : public VulkanLayerImpl {
         auto handle = VulkanLayerImpl::getHandle(queue);
         const auto commandBuffers = getCommandBuffers(submitCount, pSubmits);
         const bool shouldProfile = handle->profiler && handle->profiler->hasProfiledCommandBuffers(commandBuffers);
+        if (shouldProfile) {
+            handle->profiler->prepareCommandBuffersForSubmit(commandBuffers);
+        }
 
         const auto result = handle->loader->vkQueueSubmit(queue, submitCount, pSubmits, fence);
         if (result == VK_SUCCESS && shouldProfile) {
@@ -680,6 +683,9 @@ class GraphLayer : public VulkanLayerImpl {
         auto handle = VulkanLayerImpl::getHandle(queue);
         const auto commandBuffers = getCommandBuffers(submitCount, pSubmits);
         const bool shouldProfile = handle->profiler && handle->profiler->hasProfiledCommandBuffers(commandBuffers);
+        if (shouldProfile) {
+            handle->profiler->prepareCommandBuffersForSubmit(commandBuffers);
+        }
 
         const auto result = handle->loader->vkQueueSubmit2(queue, submitCount, pSubmits, fence);
         if (result == VK_SUCCESS && shouldProfile) {
@@ -694,6 +700,9 @@ class GraphLayer : public VulkanLayerImpl {
         auto handle = VulkanLayerImpl::getHandle(queue);
         const auto commandBuffers = getCommandBuffers(submitCount, pSubmits);
         const bool shouldProfile = handle->profiler && handle->profiler->hasProfiledCommandBuffers(commandBuffers);
+        if (shouldProfile) {
+            handle->profiler->prepareCommandBuffersForSubmit(commandBuffers);
+        }
 
         const auto submit =
             handle->loader->vkQueueSubmit2KHR ? handle->loader->vkQueueSubmit2KHR : handle->loader->vkQueueSubmit2;
