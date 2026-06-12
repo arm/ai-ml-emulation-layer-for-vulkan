@@ -13,6 +13,7 @@
 #include "compute_graph_op.hpp"
 #include "graph_log.hpp"
 #include "graph_profiler.hpp"
+#include "interval_memory_planner.hpp"
 #include "memory_planner.hpp"
 #include "optical_flow.hpp"
 #include "pipeline_cache.hpp"
@@ -287,8 +288,13 @@ class DataGraphPipelineSessionARM : public Loader {
             return std::make_shared<LinearMemoryPlanner>(pipeline->graphPipeline);
         }
 
-        graphLog(Severity::Info) << "Using best-fit memory planner" << std::endl;
-        return std::make_shared<BestFitMemoryPlanner>(pipeline->graphPipeline);
+        if (envMemoryPlanner && std::string(envMemoryPlanner) == "BestFit") {
+            graphLog(Severity::Info) << "Using best-fit memory planner" << std::endl;
+            return std::make_shared<BestFitMemoryPlanner>(pipeline->graphPipeline);
+        }
+
+        graphLog(Severity::Info) << "Using interval memory planner" << std::endl;
+        return std::make_shared<IntervalMemoryPlanner>(pipeline->graphPipeline);
     }
 };
 
