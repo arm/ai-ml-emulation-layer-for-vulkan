@@ -11,6 +11,11 @@ name = "ai_ml_emulation_layer_for_vulkan"
 description = "ML Emulation Layer for Vulkan"
 readme = "README.md"
 dynamic = ["version"]
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Arm Limited" }
+]
+requires-python = ">=3.8"
 
 [project.scripts]
 emulation_layer = "emulation_layer.cli:main"
