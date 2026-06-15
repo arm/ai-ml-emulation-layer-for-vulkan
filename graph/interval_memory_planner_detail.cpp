@@ -95,10 +95,9 @@ AllocationPlan allocateIntervals(std::vector<LiveInterval> intervals, const std:
 
     for (const auto &interval : intervals) {
         while (!activeAllocations.empty() && activeAllocations.top().last < interval.first) {
-            const auto expired = activeAllocations.top();
-            activeAllocations.pop();
-
+            const auto &expired = activeAllocations.top();
             freeBlocks.insert({expired.offset, expired.size, freeBlockOrder++});
+            activeAllocations.pop();
         }
 
         auto offset = allocateFromFreeBlocks(freeBlocks, interval.size);
