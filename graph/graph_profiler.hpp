@@ -54,6 +54,7 @@ class GraphProfiler {
     makeOpticalFlowDispatchDecorator(VkPipeline dataGraphPipeline, VkCommandBuffer commandBuffer,
                                      uint32_t queueFamilyIndex, uint32_t pipelineCount);
     bool hasProfiledCommandBuffers(const std::vector<VkCommandBuffer> &commandBuffers) const;
+    void prepareCommandBuffersForSubmit(const std::vector<VkCommandBuffer> &commandBuffers);
     void registerSubmit(VkQueue queue, const std::vector<VkCommandBuffer> &commandBuffers, VkFence fence);
     void registerExecuteCommands(VkCommandBuffer commandBuffer, uint32_t commandBufferCount,
                                  const VkCommandBuffer *pCommandBuffers);
@@ -82,6 +83,7 @@ class GraphProfiler {
         Submissions getSubmissionsForFence(VkFence fence) const;
         Submissions getSubmissionsForQueue(VkQueue queue) const;
         Submissions getSubmissionsForDevice() const;
+        Submissions getSubmissionsForCommandBuffers(const std::vector<VkCommandBuffer> &commandBuffers) const;
         Submissions getSubmissionsForCommandBuffer(VkCommandBuffer commandBuffer) const;
         void completeSubmissions(const CompletedSubmissions &completedSubmissions);
         void clearCommandBuffer(VkCommandBuffer commandBuffer);

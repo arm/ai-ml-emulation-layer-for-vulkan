@@ -30,52 +30,44 @@ function(mlel_add_test)
 
 endfunction()
 
+set(MLEL_UNIT_TEST_SOURCES
+    common_tests.cpp
+    spirv_pass_tests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../graph/interval_memory_planner_detail.cpp
+    interval_memory_planner_tests.cpp
+    test_utils.cpp
+    vulkan.cpp)
 if(NOT APPLE)
-    mlel_add_test(
-        TARGET mlel_unit_tests
-        SOURCES
-            optical_flow_tests.cpp
-            common_tests.cpp
-            spirv_pass_tests.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/../graph/interval_memory_planner_detail.cpp
-            interval_memory_planner_tests.cpp
-            test_utils.cpp
-            vulkan.cpp
-        DEFINITIONS
-            SHADER_SOURCE_DIR=${SHADER_SOURCE_DIR}
-        INCLUDE_DIRECTORIES
-            ${CMAKE_CURRENT_SOURCE_DIR}/../graph
-        LIBRARIES
-            mlelutilities
-            VkLayer_Common
-        PROPERTIES
-            ENVIRONMENT_MODIFICATION VK_LAYER_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Graph>
-            ENVIRONMENT_MODIFICATION LD_LIBRARY_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Graph>
-
-            ENVIRONMENT_MODIFICATION VK_LAYER_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Tensor>
-            ENVIRONMENT_MODIFICATION LD_LIBRARY_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Tensor>
-
-            ENVIRONMENT_MODIFICATION VK_LAYER_PATH=path_list_append:/usr/share/vulkan/explicit_layer.d
-    )
-else()
-    mlel_add_test(
-        TARGET mlel_unit_tests
-        SOURCES
-            common_tests.cpp
-            spirv_pass_tests.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/../graph/interval_memory_planner_detail.cpp
-            interval_memory_planner_tests.cpp
-            test_utils.cpp
-            vulkan.cpp
-        DEFINITIONS
-            SHADER_SOURCE_DIR=${SHADER_SOURCE_DIR}
-        INCLUDE_DIRECTORIES
-            ${CMAKE_CURRENT_SOURCE_DIR}/../graph
-        LIBRARIES
-            mlelutilities
-            VkLayer_Common
-        PROPERTIES
-            ENVIRONMENT_MODIFICATION VK_LAYER_PATH=path_list_append:$ENV{VK_LAYER_PATH}
-            ENVIRONMENT_MODIFICATION DYLD_LIBRARY_PATH=path_list_append:$ENV{DYLD_LIBRARY_PATH}
-    )
+    list(PREPEND MLEL_UNIT_TEST_SOURCES optical_flow_tests.cpp)
 endif()
+
+
+
+if(APPLE)
+    set(MLEL_UNIT_TEST_PROPERTIES
+        ENVIRONMENT_MODIFICATION VK_LAYER_PATH=path_list_append:$ENV{VK_LAYER_PATH}
+        ENVIRONMENT_MODIFICATION DYLD_LIBRARY_PATH=path_list_append:$ENV{DYLD_LIBRARY_PATH})
+else()
+    set(MLEL_UNIT_TEST_PROPERTIES
+        ENVIRONMENT_MODIFICATION VK_LAYER_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Graph>
+        ENVIRONMENT_MODIFICATION LD_LIBRARY_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Graph>
+        ENVIRONMENT_MODIFICATION VK_LAYER_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Tensor>
+        ENVIRONMENT_MODIFICATION LD_LIBRARY_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Tensor>
+        ENVIRONMENT_MODIFICATION VK_LAYER_PATH=path_list_append:/usr/share/vulkan/explicit_layer.d)
+endif()
+
+mlel_add_test(
+    TARGET mlel_unit_tests
+    SOURCES
+        ${MLEL_UNIT_TEST_SOURCES}
+    DEFINITIONS
+        SHADER_SOURCE_DIR=${SHADER_SOURCE_DIR}
+    INCLUDE_DIRECTORIES
+        ${CMAKE_CURRENT_SOURCE_DIR}/../graph
+    LIBRARIES
+        mlelutilities
+        nlohmann_json::nlohmann_json
+        VkLayer_Common
+    PROPERTIES
+        ${MLEL_UNIT_TEST_PROPERTIES}
+)

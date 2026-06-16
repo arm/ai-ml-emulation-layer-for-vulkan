@@ -229,6 +229,39 @@ bool GraphProfiler::hasProfiledCommandBuffers(const std::vector<VkCommandBuffer>
     return state.hasProfiledCommandBuffers(commandBuffers);
 }
 
+void GraphProfiler::prepareCommandBuffersForSubmit(const std::vector<VkCommandBuffer> &commandBuffers) {
+    auto submissions = state.getSubmissionsForCommandBuffers(commandBuffers);
+    if (submissions.empty()) {
+        return;
+    }
+
+    // Simple design: reused command buffers execute the same recorded query slots again.
+    // Block until earlier submissions finish, then collect them before those slots are overwritten.
+    collectSubmissions(submissions);
+    submissions = state.getSubmissionsForCommandBuffers(commandBuffers);
+    if (submissions.empty()) {
+        return;
+    }
+
+    std::vector<VkQueue> queues;
+    queues.reserve(submissions.size());
+    for (const auto &submission : submissions) {
+        if (std::find(queues.begin(), queues.end(), submission->queue) == queues.end()) {
+            queues.push_back(submission->queue);
+        }
+    }
+
+    for (auto *const queue : queues) {
+        const VkResult waitResult = loader->vkQueueWaitIdle(queue);
+        if (waitResult == VK_SUCCESS) {
+            collectQueue(queue);
+        } else {
+            graphLog(Severity::Error) << "Failed waiting for graph profiling queue idle before command buffer reuse"
+                                      << std::endl;
+        }
+    }
+}
+
 void GraphProfiler::registerSubmit(VkQueue queue, const std::vector<VkCommandBuffer> &commandBuffers, VkFence fence) {
     state.registerSubmit(queue, commandBuffers, fence);
 }
@@ -428,6 +461,27 @@ GraphProfiler::Submissions GraphProfiler::LockedState::getSubmissionsForQueue(Vk
 }
 
 GraphProfiler::Submissions GraphProfiler::LockedState::getSubmissionsForDevice() const { return submissions; }
+
+GraphProfiler::Submissions
+GraphProfiler::LockedState::getSubmissionsForCommandBuffers(const std::vector<VkCommandBuffer> &commandBuffers) const {
+    std::lock_guard lock(mutex);
+    const auto records = getRecordsForCommandBuffersLocked(commandBuffers);
+    if (records.empty()) {
+        return {};
+    }
+
+    Submissions submitRecords;
+    for (const auto &submission : submissions) {
+        const auto hasQueryRecord = std::any_of(
+            submission->queryRecords.begin(), submission->queryRecords.end(), [&records](const auto &submissionRecord) {
+                return std::find(records.begin(), records.end(), submissionRecord) != records.end();
+            });
+        if (hasQueryRecord) {
+            submitRecords.push_back(submission);
+        }
+    }
+    return submitRecords;
+}
 
 GraphProfiler::Submissions
 GraphProfiler::LockedState::getSubmissionsForCommandBuffer(VkCommandBuffer commandBuffer) const {
