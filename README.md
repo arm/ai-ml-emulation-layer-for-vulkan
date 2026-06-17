@@ -503,6 +503,8 @@ pip install ai-ml-emulation-layer-for-vulkan
 - Resources created with `VK_IMAGE_TILING_OPTIMAL` and
   `VK_TENSOR_TILING_OPTIMAL_ARM` flags cannot be used with memory aliasing.
 - Data graph pipeline creation without a shader module is not supported.
+- Accuracy of MATMUL computation might be incorrect for mixed reduce float types
+  such as fp8e5m2xfp8e4m3 and fp8e4m3xfp8e5m2.
 - Usage of the 'shaderFloat64' feature requires support from the underlying ICD.
   This relates to high-precision types. Support of it can be checked with:
 
