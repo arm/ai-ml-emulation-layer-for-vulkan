@@ -200,6 +200,9 @@ class Builder:
         if self.doc:
             cmake_setup_cmd.append("-DVMEL_BUILD_DOCS=ON")
 
+        if self.package_version:
+            cmake_setup_cmd.append(f"-DML_SDK_PACKAGE_VERSION={self.package_version}")
+
         if self.enable_sanitizers:
             if self.target_platform != "host":
                 print(
