@@ -1,5 +1,5 @@
 #
-# SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-FileCopyrightText: Copyright 2024-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -17,24 +17,34 @@ macro(mlsdk_package)
     set(CPACK_PACKAGE_VERSION "none")
     set(GIT_UNTRACKED_FILES "")
 
-    find_package(Git)
+    if(DEFINED ML_SDK_PACKAGE_VERSION AND NOT "${ML_SDK_PACKAGE_VERSION}" STREQUAL "")
+        if(NOT "${ML_SDK_PACKAGE_VERSION}" MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)")
+            message(FATAL_ERROR "ML_SDK_PACKAGE_VERSION must start with major.minor.patch, got '${ML_SDK_PACKAGE_VERSION}'")
+        endif()
+        set(CPACK_PACKAGE_VERSION "${ML_SDK_PACKAGE_VERSION}")
+        set(CPACK_PACKAGE_VERSION_MAJOR ${CMAKE_MATCH_1})
+        set(CPACK_PACKAGE_VERSION_MINOR ${CMAKE_MATCH_2})
+        set(CPACK_PACKAGE_VERSION_PATCH ${CMAKE_MATCH_3})
+    else()
+        find_package(Git)
 
-    if(Git_FOUND)
-        execute_process(
-            COMMAND ${GIT_EXECUTABLE} describe --long --match=[0-9][0-9].[0-9][0-9]
-            WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
-            RESULT_VARIABLE RESULT
-            OUTPUT_VARIABLE GIT_DESCRIBE
-            ERROR_QUIET
-            OUTPUT_STRIP_TRAILING_WHITESPACE)
+        if(Git_FOUND)
+            execute_process(
+                COMMAND ${GIT_EXECUTABLE} describe --long --match=[0-9][0-9].[0-9][0-9]
+                WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
+                RESULT_VARIABLE RESULT
+                OUTPUT_VARIABLE GIT_DESCRIBE
+                ERROR_QUIET
+                OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-        if(RESULT EQUAL "0")
-            # Transform output from 24.08-16-g00d8931 to 24.08.16.g00d8931
-            string(REGEX MATCH "^([0-9]+).([0-9]+)-([0-9]+)-([a-z0-9]+)" TMP ${GIT_DESCRIBE})
-            set(CPACK_PACKAGE_VERSION_MAJOR ${CMAKE_MATCH_1})
-            set(CPACK_PACKAGE_VERSION_MINOR ${CMAKE_MATCH_2})
-            set(CPACK_PACKAGE_VERSION_PATCH "${CMAKE_MATCH_3}.${CMAKE_MATCH_4}")
-            set(CPACK_PACKAGE_VERSION "${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}")
+            if(RESULT EQUAL "0")
+                # Transform output from 24.08-16-g00d8931 to 24.08.16.g00d8931
+                string(REGEX MATCH "^([0-9]+).([0-9]+)-([0-9]+)-([a-z0-9]+)" TMP ${GIT_DESCRIBE})
+                set(CPACK_PACKAGE_VERSION_MAJOR ${CMAKE_MATCH_1})
+                set(CPACK_PACKAGE_VERSION_MINOR ${CMAKE_MATCH_2})
+                set(CPACK_PACKAGE_VERSION_PATCH "${CMAKE_MATCH_3}.${CMAKE_MATCH_4}")
+                set(CPACK_PACKAGE_VERSION "${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}")
+            endif()
         endif()
     endif()
 
