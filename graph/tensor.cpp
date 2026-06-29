@@ -338,19 +338,12 @@ Log &operator<<(Log &os, const TensorDescriptor &tensor) {
  * VirtualTensor
  *******************************************************************************/
 
-VirtualTensor::VirtualTensor(const std::shared_ptr<TensorDescriptor> &_tensor, ComputePipelineBase *_parent,
-                             ComputePipelineBase *_descendant)
-    : tensor{_tensor}, parent{_parent}, descendant{_descendant} {
+VirtualTensor::VirtualTensor(const std::shared_ptr<TensorDescriptor> &_tensor, ComputePipelineBase *_descendant)
+    : tensor{_tensor}, descendant{_descendant} {
     tensor->incrementReferenceCounter();
 }
 
-bool VirtualTensor::getVisited() const { return visited; }
-
-void VirtualTensor::setVisited(const bool _visited) { visited = _visited; }
-
 const std::shared_ptr<TensorDescriptor> &VirtualTensor::getTensor() const { return tensor; }
-
-ComputePipelineBase *VirtualTensor::getParentPipeline() const { return parent; }
 
 ComputePipelineBase *VirtualTensor::getDescendantPipeline() const { return descendant; }
 

@@ -121,21 +121,14 @@ mlsdk::el::log::Log &operator<<(mlsdk::el::log::Log &os, const TensorDescriptor 
 
 class VirtualTensor {
   public:
-    VirtualTensor(const std::shared_ptr<TensorDescriptor> &_tensor, ComputePipelineBase *_parent,
-                  ComputePipelineBase *_descendant);
-
-    bool getVisited() const;
-    void setVisited(bool _visited);
+    VirtualTensor(const std::shared_ptr<TensorDescriptor> &_tensor, ComputePipelineBase *_descendant);
 
     const std::shared_ptr<TensorDescriptor> &getTensor() const;
-    ComputePipelineBase *getParentPipeline() const;
     ComputePipelineBase *getDescendantPipeline() const;
 
   private:
     std::shared_ptr<TensorDescriptor> tensor;
-    ComputePipelineBase *parent;
     ComputePipelineBase *descendant;
-    bool visited{false};
 };
 
 } // namespace mlsdk::el::compute
