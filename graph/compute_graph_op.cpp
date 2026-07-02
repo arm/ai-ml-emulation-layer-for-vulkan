@@ -25,7 +25,7 @@ namespace {
 void makeAndConnectVirtualTensor(const std::shared_ptr<TensorDescriptor> &tensor,
                                  graph_op::ComputePipelineBase *descendant) {
     auto *parent = tensor->getPipeline();
-    auto virtualTensor = std::make_shared<VirtualTensor>(tensor, parent, descendant);
+    auto virtualTensor = std::make_shared<VirtualTensor>(tensor, descendant);
 
     if (parent != nullptr) {
         parent->pushDescendant(virtualTensor);
