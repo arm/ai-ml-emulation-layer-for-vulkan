@@ -2,6 +2,11 @@
 
 ---
 
+## Unreleased
+
+### Build, Packaging & Developer Experience
+ - Updated Emulation Layer `--version` output to report the package version and include git revision and dependency revision information
+
 ## Version 0.10.0 – *Optical Flow, Graph Profiling & Runtime Refinement*
 
 ### Optical Flow Task API
