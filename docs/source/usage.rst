@@ -35,6 +35,8 @@ Vulkan® Layer Documentation
     :start-after: ## Vulkan® Layer Documentation
     :end-before: ## Troubleshooting
 
+.. include:: graph_profiling.inc
+
 Troubleshooting
 ---------------
 
