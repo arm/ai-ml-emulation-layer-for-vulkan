@@ -149,6 +149,92 @@ For more command line options, see the help output:
 python3 $SDK_PATH/sw/emulation-layer/scripts/build.py --help
 ```
 
+## Usage
+
+The ML Emulation Layer for Vulkan® is loaded as two explicit Vulkan® layers.
+The platform-specific sections below show the exact commands for each
+operating system, but the same setup sequence applies on all platforms:
+
+1. Make the Vulkan® loader discover the layer manifest files.
+2. Make the platform dynamic loader discover the graph and tensor layer
+   libraries.
+3. Enable the graph layer before the tensor layer, either during Vulkan®
+   instance creation or with `VK_INSTANCE_LAYERS`.
+4. Configure any optional logging or profiling environment variables before
+   starting the application.
+
+The layer names are:
+
+- `VK_LAYER_ML_Graph_Emulation`
+- `VK_LAYER_ML_Tensor_Emulation`
+
+The manifest files are:
+
+- `VkLayer_Graph.json`
+- `VkLayer_Tensor.json`
+
+For more information about using explicit Vulkan® layers, see the
+[Vulkan® Layer Documentation](https://github.com/KhronosGroup/Vulkan-Loader/blob/main/docs/LoaderLayerInterface.md).
+
+### Logging
+
+You can enable logging using environment variables. Logging must be set before
+the application is started. Logging severity can be one of `error`, `warning`,
+`info`, or `debug`. Logging severity is set independently for the graph and
+tensor layer.
+
+Using **shell**:
+
+```shell
+export VMEL_GRAPH_SEVERITY=debug
+export VMEL_TENSOR_SEVERITY=info
+```
+
+Using **PowerShell**:
+
+```powershell
+$env:VMEL_GRAPH_SEVERITY="debug"
+$env:VMEL_TENSOR_SEVERITY="info"
+```
+
+Common severity for both layers can be set using the following variable:
+
+```shell
+export VMEL_COMMON_SEVERITY=debug
+```
+
+```powershell
+$env:VMEL_COMMON_SEVERITY="debug"
+```
+
+### Graph Profiling
+
+You can enable per-pipeline graph profiling with Vulkan® timestamp queries
+using environment variables before starting the application. Profiling covers
+TOSA graph operators, MotionEngine graph operators, and optical-flow compute
+pipelines. Profiling is disabled by default. When enabled, graph command-buffer
+submits remain asynchronous. Timestamp results are collected when the application
+waits on fences, waits for a queue or device to become idle, or when the
+profiling property is queried. Profiling results are saved only as a queryable
+data graph pipeline property.
+
+Using **shell**:
+
+```shell
+export VMEL_GRAPH_PROFILING=1
+```
+
+Using **PowerShell**:
+
+```powershell
+$env:VMEL_GRAPH_PROFILING="1"
+```
+
+The profiling property returns JSON with a `samples` array containing one entry
+per profiled internal compute dispatch, including `pipeline_kind`,
+`operator_name`, raw cycle counts, and `time_ms`, plus a `by_operator` summary
+with total, average, minimum, and maximum time per profiled pipeline.
+
 ## Usage on Linux
 
 You can enable the graph and tensor layers using environment variables only,
@@ -170,22 +256,6 @@ following environment variables to enable the layers:
 export LD_LIBRARY_PATH=$PWD/deploy/lib:$LD_LIBRARY_PATH
 export VK_ADD_LAYER_PATH=$PWD/deploy/share/vulkan/explicit_layer.d
 export VK_INSTANCE_LAYERS=VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation
-```
-
-You can also enable logging using environment variables. Logging must be set
-before the application is started. Logging severity can be one of `error`,
-`warning`, `info`, or `debug`. Logging severity is set independently for the
-graph and tensor layer using the following commands:
-
-```shell
-export VMEL_GRAPH_SEVERITY=debug
-export VMEL_TENSOR_SEVERITY=info
-```
-
-Common severity for both layers can be set using the following command:
-
-```shell
-export VMEL_COMMON_SEVERITY=debug
 ```
 
 ## Usage on Windows®
@@ -224,29 +294,6 @@ If running a Windows® terminal with elevated permissions, `VK_ADD_LAYER_PATH` i
 for security reasons. However, if `VK_ADD_LAYER_PATH` is set and not ignored, then Vulkan
 skips searching the registry keys for manifest files.
 ```
-
-You can also enable logging using environment variables. Logging must be set
-before the application is started. Logging severity can be one of `error`,
-`warning`, `info`, or `debug`. Logging severity is set independently for the
-graph and tensor layer using the following commands:
-
-```powershell
-$env:VMEL_GRAPH_SEVERITY="debug"
-$env:VMEL_TENSOR_SEVERITY="info"
-```
-
-You can enable per-pipeline graph profiling with Vulkan® timestamp queries using
-environment variables before starting the application. Timestamp results are
-collected at application synchronization points and when the profiling property
-is queried:
-
-```powershell
-$env:VMEL_GRAPH_PROFILING="1"
-```
-
-The profiling property returns JSON with a `samples` array containing one entry
-per profiled internal compute dispatch, including `pipeline_kind`,
-`operator_name`, raw cycle counts, and `time_ms`, plus a `by_operator` summary.
 
 ## Building for Android™ (Experimental)
 
@@ -426,11 +473,6 @@ cmake -B build \
 
 cmake --build build
 ```
-
-## Vulkan® Layer Documentation
-
-For more information about using layers, see the
-[Vulkan® Layer Documentation](https://github.com/KhronosGroup/Vulkan-Loader/blob/main/docs/LoaderLayerInterface.md).
 
 ## Troubleshooting
 
