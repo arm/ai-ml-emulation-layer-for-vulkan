@@ -37,6 +37,7 @@ set(MLEL_UNIT_TEST_SOURCES
     common/common_tests.cpp
     graph/spirv_pass_tests.cpp
     graph/interval_memory_planner_tests.cpp
+    tensor/tensor_arm_tests.cpp
     test_utils.cpp
     vulkan.cpp)
 if(NOT APPLE)
@@ -67,6 +68,7 @@ mlel_add_test(
     INCLUDE_DIRECTORIES
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/../graph
+        ${CMAKE_CURRENT_SOURCE_DIR}/../tensor
     LIBRARIES
         mlelutilities
         nlohmann_json::nlohmann_json

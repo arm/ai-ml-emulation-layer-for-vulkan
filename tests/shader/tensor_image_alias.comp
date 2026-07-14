@@ -1,0 +1,24 @@
+/*
+ * SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+#version 460
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+#extension GL_EXT_shader_8bit_storage : require
+#extension GL_ARM_tensors : require
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform tensorARM<uint8_t, 3> imageTensor;
+
+void main() {
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+    if (x >= tensorSizeARM(imageTensor, 1) || y >= tensorSizeARM(imageTensor, 0)) {
+        return;
+    }
+
+    uint coords[3] = uint[](y, x, 0u);
+    uint8_t value = uint8_t((y + 1u) * 16u + x);
+    tensorWriteARM(imageTensor, coords, value);
+}

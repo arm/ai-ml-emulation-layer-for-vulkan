@@ -5,6 +5,8 @@
  */
 #include "tensor_arm.hpp"
 
+#include "tensor_arm_detail.hpp"
+
 #include "mlel/utils.hpp"
 
 #include <numeric>
@@ -52,8 +54,7 @@ TensorARM::TensorInfo::TensorInfo(const VkTensorCreateInfoARM &createInfo) {
         throw std::runtime_error(std::string("Tensor dimension count not supported: ") +
                                  std::to_string(desc.dimensionCount));
     }
-    isOptimalTilingAliasing =
-        (desc.usage & VK_TENSOR_USAGE_IMAGE_ALIASING_BIT_ARM) && desc.tiling == VK_TENSOR_TILING_OPTIMAL_ARM;
+    usesImageAliasing = tensor_arm_detail::usesImageAliasing(desc);
 
     usage = convertToBufferUsageFlags(desc.usage);
     flags = convertToBufferCreateFlags(createInfo.flags);
@@ -143,7 +144,7 @@ void TensorARM::updateAliasedTensorInfo(const Device &dev, VkImage image) {
         throw std::runtime_error("Tensor rank should be 2, 3 or 4 to alias with image.");
     }
 
-    if (m_info.isOptimalTilingAliasing) {
+    if (m_info.usesImageAliasing) {
         const VkImageSubresource imageSubresource = {
             VK_IMAGE_ASPECT_COLOR_BIT,
             0,
@@ -151,14 +152,7 @@ void TensorARM::updateAliasedTensorInfo(const Device &dev, VkImage image) {
         };
         VkSubresourceLayout imageSubresourceLayout{};
         dev.loader->vkGetImageSubresourceLayout(dev.device, image, &imageSubresource, &imageSubresourceLayout);
-        if (rank == 4) {
-            // alias to 3D image
-            m_info.strides[0] = static_cast<int64_t>(imageSubresourceLayout.depthPitch);
-            m_info.strides[1] = static_cast<int64_t>(imageSubresourceLayout.rowPitch);
-        } else if (rank == 3) {
-            // alias to 2D image
-            m_info.strides[0] = static_cast<int64_t>(imageSubresourceLayout.rowPitch);
-        }
+        tensor_arm_detail::updateAliasedStrides(rank, m_info.strides, imageSubresourceLayout);
     }
 }
 
