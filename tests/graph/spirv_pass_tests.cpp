@@ -6,7 +6,7 @@
 
 #include <gtest/gtest.h>
 
-#include "../graph/spirv_pass.hpp"
+#include "spirv_pass.hpp"
 
 #include <cstdint>
 #include <vector>

@@ -31,14 +31,16 @@ function(mlel_add_test)
 endfunction()
 
 set(MLEL_UNIT_TEST_SOURCES
-    common_tests.cpp
-    spirv_pass_tests.cpp
+    # Source files
     ${CMAKE_CURRENT_SOURCE_DIR}/../graph/interval_memory_planner_detail.cpp
-    interval_memory_planner_tests.cpp
+    # Test files
+    common/common_tests.cpp
+    graph/spirv_pass_tests.cpp
+    graph/interval_memory_planner_tests.cpp
     test_utils.cpp
     vulkan.cpp)
 if(NOT APPLE)
-    list(PREPEND MLEL_UNIT_TEST_SOURCES optical_flow_tests.cpp)
+    list(PREPEND MLEL_UNIT_TEST_SOURCES graph/optical_flow_tests.cpp)
 endif()
 
 
@@ -63,6 +65,7 @@ mlel_add_test(
     DEFINITIONS
         SHADER_SOURCE_DIR=${SHADER_SOURCE_DIR}
     INCLUDE_DIRECTORIES
+        ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/../graph
     LIBRARIES
         mlelutilities
