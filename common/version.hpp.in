@@ -10,7 +10,8 @@
 namespace mlsdk::el::details {
 
 constexpr std::string_view version{R""""({
-  "version": "@GIT_REVISION@",
+  "version": "@RUNTIME_VERSION@",
+  "revision": "@GIT_REVISION@",
   "dependencies": [
     @DEP_GIT_REVISIONS@
   ]

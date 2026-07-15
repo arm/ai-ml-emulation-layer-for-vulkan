@@ -78,6 +78,12 @@ function(mlsdk_generate_version_header)
 
     string(JOIN ",\n    " DEP_GIT_REVISIONS ${DEP_GIT_REVISIONS})
 
+    if(DEFINED ML_SDK_PACKAGE_VERSION AND NOT "${ML_SDK_PACKAGE_VERSION}" STREQUAL "")
+        set(RUNTIME_VERSION "${ML_SDK_PACKAGE_VERSION}")
+    else()
+        set(RUNTIME_VERSION "unknown")
+    endif()
+
     configure_file("${ARGS_SOURCE}" "${ARGS_DESTINATION}")
     get_filename_component(GEN_DIR_PATH "${ARGS_DESTINATION}" DIRECTORY)
 
