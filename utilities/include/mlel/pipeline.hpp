@@ -160,6 +160,7 @@ class TensorComputePipeline : public PipelineBase {
                           const std::vector<uint32_t> &_spirv);
 
     void dispatchSubmit(uint32_t _x, uint32_t _y, uint32_t _z);
+    void dispatchSubmit(const vk::raii::DescriptorSets &descriptorSets, uint32_t _x, uint32_t _y, uint32_t _z);
 
   private:
     vk::raii::Pipeline createPipeline() const;

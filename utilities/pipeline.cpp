@@ -510,6 +510,12 @@ TensorComputePipeline::TensorComputePipeline(std::shared_ptr<Device> &_device, c
 void TensorComputePipeline::dispatchSubmit(uint32_t _x, uint32_t _y, uint32_t _z) {
     [[maybe_unused]] auto [_, descriptorSets] = createDescriptorSets(descriptorMap);
 
+    dispatchSubmit(descriptorSets, _x, _y, _z);
+}
+
+void TensorComputePipeline::dispatchSubmit(const vk::raii::DescriptorSets &descriptorSets, uint32_t _x, uint32_t _y,
+                                           uint32_t _z) {
+
     auto commandBuffer = createCommandBuffer();
 
     const vk::CommandBufferBeginInfo commandBufferBeginInfo{

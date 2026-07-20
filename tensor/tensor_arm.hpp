@@ -31,7 +31,7 @@ class TensorARM {
         VkBufferUsageFlags usage = 0;
         VkBufferCreateFlags flags = 0;
         VkFormat format = VK_FORMAT_UNDEFINED;
-        bool isOptimalTilingAliasing = false;
+        bool usesImageAliasing = false;
 
         static VkBufferCreateFlags convertToBufferCreateFlags(VkTensorCreateFlagsARM flags);
         static VkBufferUsageFlags convertToBufferUsageFlags(VkTensorUsageFlagsARM usage);

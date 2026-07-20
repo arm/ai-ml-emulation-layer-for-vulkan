@@ -1862,6 +1862,103 @@ TEST_F(MLEmulationLayerForVulkan, CreateTensorComputePipeline) {
 }
 #endif
 
+TEST_F(MLEmulationLayerForVulkan, LinearTensorImageAliasingUsesImageRowPitch) {
+    constexpr uint32_t width = 7;
+    constexpr uint32_t height = 4;
+    const std::vector<int64_t> dimensions{height, width, 1};
+
+    auto device = createDevice();
+    vk::raii::DeviceMemory aliasedMemory{nullptr};
+
+    const vk::TensorDescriptionARM tensorDescription{
+        vk::TensorTilingARM::eLinear,
+        vk::Format::eR8Uint,
+        static_cast<uint32_t>(dimensions.size()),
+        dimensions.data(),
+        nullptr,
+        vk::TensorUsageFlagBitsARM::eShader | vk::TensorUsageFlagBitsARM::eImageAliasing,
+    };
+    const vk::TensorCreateInfoARM tensorCreateInfo{
+        {}, &tensorDescription, vk::SharingMode::eExclusive, 0, nullptr,
+    };
+    vk::raii::TensorARM destinationTensor{&(*device), tensorCreateInfo};
+
+    vk::ImageCreateInfo imageCreateInfo{};
+    imageCreateInfo.setImageType(vk::ImageType::e2D)
+        .setFormat(vk::Format::eR8Uint)
+        .setExtent(vk::Extent3D{width, height, 1})
+        .setMipLevels(1)
+        .setArrayLayers(1)
+        .setSamples(vk::SampleCountFlagBits::e1)
+        .setTiling(vk::ImageTiling::eLinear)
+        .setUsage(vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTensorAliasingARM)
+        .setSharingMode(vk::SharingMode::eExclusive)
+        .setInitialLayout(vk::ImageLayout::eUndefined);
+    vk::raii::Image image{&(*device), imageCreateInfo};
+
+    const vk::TensorMemoryRequirementsInfoARM tensorRequirementsInfo{*destinationTensor};
+    const auto tensorRequirements = (&(*device)).getTensorMemoryRequirementsARM(tensorRequirementsInfo);
+    const auto imageRequirements = image.getMemoryRequirements();
+    const auto memoryTypeBits = tensorRequirements.memoryRequirements.memoryTypeBits & imageRequirements.memoryTypeBits;
+    const auto memoryTypeIndices = device->getPhysicalDevice()->getMemoryTypeIndices(
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, memoryTypeBits);
+    ASSERT_FALSE(memoryTypeIndices.empty());
+
+    const vk::MemoryAllocateFlagsInfo allocateFlags{vk::MemoryAllocateFlagBits::eDeviceAddress};
+    const vk::MemoryAllocateInfo allocateInfo{
+        std::max(tensorRequirements.memoryRequirements.size, imageRequirements.size),
+        memoryTypeIndices.front(),
+        &allocateFlags,
+    };
+    aliasedMemory = vk::raii::DeviceMemory{&(*device), allocateInfo};
+    image.bindMemory(*aliasedMemory, 0);
+    const vk::BindTensorMemoryInfoARM bindTensorInfo{*destinationTensor, *aliasedMemory, 0};
+    (&(*device)).bindTensorMemoryARM(bindTensorInfo);
+
+    const vk::ImageSubresource subresource{vk::ImageAspectFlagBits::eColor, 0, 0};
+    const auto imageLayout = image.getSubresourceLayout(subresource);
+    if (imageLayout.rowPitch == width) {
+        GTEST_SKIP() << "The Vulkan driver did not pad the linear image row pitch";
+    }
+
+    auto *mappedMemory = static_cast<uint8_t *>(aliasedMemory.mapMemory(0, VK_WHOLE_SIZE));
+    std::fill(mappedMemory, mappedMemory + allocateInfo.allocationSize, uint8_t{0});
+    aliasedMemory.unmapMemory();
+
+    const vk::TensorViewCreateInfoARM tensorViewCreateInfo{
+        {},
+        *destinationTensor,
+        vk::Format::eR8Uint,
+    };
+    vk::raii::TensorViewARM tensorView{&(*device), tensorViewCreateInfo};
+
+    auto placeholderTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Uint, dimensions});
+    const TensorComputePipeline::DescriptorMap descriptorMap = {{{0, {placeholderTensor}}}};
+    const auto spirv = mlsdk::el::utils::glslToSpirv(fileToString("tensor_image_alias.comp"));
+    TensorComputePipeline computePipeline{device, descriptorMap, spirv};
+    auto [descriptorPool, descriptorSets] = computePipeline.createDescriptorSets(descriptorMap);
+
+    const vk::WriteDescriptorSetTensorARM tensorWriteInfo{
+        1,
+        &(*tensorView),
+    };
+    const vk::WriteDescriptorSet descriptorWrite{
+        *descriptorSets.front(), 0, 0, 1, vk::DescriptorType::eTensorARM, nullptr, nullptr, nullptr, &tensorWriteInfo,
+    };
+    (&(*device)).updateDescriptorSets({descriptorWrite}, {});
+    computePipeline.dispatchSubmit(descriptorSets, width, height, 1);
+
+    mappedMemory = static_cast<uint8_t *>(aliasedMemory.mapMemory(0, VK_WHOLE_SIZE));
+    for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+            const auto expected = static_cast<uint8_t>((y + 1) * 16 + x);
+            EXPECT_EQ(mappedMemory[imageLayout.offset + y * imageLayout.rowPitch + x], expected)
+                << "Mismatch at image coordinate (" << x << ", " << y << ")";
+        }
+    }
+    aliasedMemory.unmapMemory();
+}
+
 TEST_F(MLEmulationLayerForVulkan, ShapeGetElementOffsetNonPacked) {
     const Shape shape{vk::Format::eR64Sint, {2, 3, 4}, {160, 40, 8}};
 
