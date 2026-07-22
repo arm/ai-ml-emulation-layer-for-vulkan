@@ -21,6 +21,7 @@
 
 #include <spirv-tools/libspirv.hpp>
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_beta.h>
 
 #include <algorithm>
 #include <array>
@@ -68,11 +69,12 @@ vk::raii::Instance createInstance(vk::raii::Context &ctx, std::vector<const char
         VK_MAKE_API_VERSION(1, 3, 0, 0), // engine version
         VK_API_VERSION_1_3,              // api version
     };
-    vk::InstanceCreateFlags flags;
-#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
-    enabledExtensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
-    flags = vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR;
-#endif
+    vk::InstanceCreateFlags flags{};
+    const auto extensionProperties = ctx.enumerateInstanceExtensionProperties();
+    if (mlsdk::el::utils::hasExtension(extensionProperties, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)) {
+        enabledExtensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+        flags = vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR;
+    }
 
     const vk::InstanceCreateInfo instanceCreateInfo{
         flags,                                           // flags
@@ -89,17 +91,9 @@ vk::raii::Instance createInstance(vk::raii::Context &ctx, std::vector<const char
 bool hasExtensionProperties(const vk::raii::PhysicalDevice &physicalDevice,
                             const std::vector<const char *> &extensions) {
     const auto extensionProperties = physicalDevice.enumerateDeviceExtensionProperties();
-
-    for (const auto &extension : extensions) {
-        auto it = std::find_if(extensionProperties.begin(), extensionProperties.end(), [&](const auto &property) {
-            return std::strcmp(property.extensionName, extension) == 0;
-        });
-        if (it == extensionProperties.end()) {
-            return false;
-        }
-    }
-
-    return true;
+    return std::all_of(extensions.begin(), extensions.end(), [&](const auto &extension) {
+        return mlsdk::el::utils::hasExtension(extensionProperties, extension);
+    });
 }
 
 std::array<const float, 16> queuePriorities = {1.0f};
@@ -125,31 +119,34 @@ std::vector<vk::DeviceQueueCreateInfo> getQueueCreateInfo(const vk::raii::Physic
     return queueCreateInfo;
 }
 
-std::tuple<vk::raii::Device, vk::raii::PhysicalDevice> createDevice(vk::raii::Instance &instance,
-                                                                    std::vector<const char *> enabledLayers = {},
-                                                                    std::vector<const char *> enabledExtensions = {}) {
+std::tuple<vk::raii::Device, vk::raii::PhysicalDevice>
+createDevice(vk::raii::Instance &instance, std::vector<const char *> enabledLayers = {},
+             const std::vector<const char *> &enabledExtensions = {}) {
     for (const auto &physicalDevice : vk::raii::PhysicalDevices{instance}) {
         // Verify that device supports compute queues
         const auto queueCreateInfo = getQueueCreateInfo(physicalDevice, vk::QueueFlagBits::eCompute);
         if (queueCreateInfo.empty()) {
             continue;
         }
-#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
-        enabledExtensions.push_back("VK_KHR_portability_subset");
-#endif
+        auto deviceExtensions = enabledExtensions;
+        const auto extensionProperties = physicalDevice.enumerateDeviceExtensionProperties();
+        if (mlsdk::el::utils::hasExtension(extensionProperties, VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)) {
+            deviceExtensions.push_back(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+        }
+
         // Verify that device supports all enabled extensions
-        if (!hasExtensionProperties(physicalDevice, enabledExtensions)) {
+        if (!hasExtensionProperties(physicalDevice, deviceExtensions)) {
             continue;
         }
 
         const vk::DeviceCreateInfo deviceCreateInfo{
-            {},                                              // flags
-            static_cast<uint32_t>(queueCreateInfo.size()),   // queue create info count
-            queueCreateInfo.data(),                          // queue create infos
-            static_cast<uint32_t>(enabledLayers.size()),     // enabled layer count
-            enabledLayers.data(),                            // enabled layers
-            static_cast<uint32_t>(enabledExtensions.size()), // enabled extension count
-            enabledExtensions.data(),                        // enabled extensions
+            {},                                             // flags
+            static_cast<uint32_t>(queueCreateInfo.size()),  // queue create info count
+            queueCreateInfo.data(),                         // queue create infos
+            static_cast<uint32_t>(enabledLayers.size()),    // enabled layer count
+            enabledLayers.data(),                           // enabled layers
+            static_cast<uint32_t>(deviceExtensions.size()), // enabled extension count
+            deviceExtensions.data(),                        // enabled extensions
         };
 
         return {vk::raii::Device{physicalDevice, deviceCreateInfo}, physicalDevice};

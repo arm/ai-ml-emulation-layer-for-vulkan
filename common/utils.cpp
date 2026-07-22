@@ -11,6 +11,7 @@
 #include "mlel/utils.hpp"
 #include "mlel/log.hpp"
 
+#include <algorithm>
 #include <functional>
 #include <numeric>
 
@@ -24,6 +25,12 @@ namespace mlsdk::el::utils {
 namespace {
 Log layerLog("VMEL_COMMON_SEVERITY", "Layer");
 } // namespace
+
+bool hasExtension(const std::vector<vk::ExtensionProperties> &extensionProperties, std::string_view extension) {
+    return std::any_of(extensionProperties.begin(), extensionProperties.end(), [&](const auto &property) {
+        return std::string_view{property.extensionName.data()} == extension;
+    });
+}
 
 size_t getElementCount(const std::vector<int64_t> &dimensions) {
     auto result = std::accumulate(dimensions.begin(), dimensions.end(), int64_t(1), std::multiplies<int64_t>());
