@@ -52,6 +52,14 @@ std::shared_ptr<Device> createDevice() {
     return std::make_shared<Device>(physicalDevice, extensions, &features2);
 }
 
+bool computeQueueSupportsTimestampQueries(const std::shared_ptr<Device> &device) {
+    const auto &physicalDevice = device->getPhysicalDevice();
+    const auto queueFamilyIndex = physicalDevice->getComputeFamilyIndex();
+    const auto queueFamilyProperties = (&(*physicalDevice)).getQueueFamilyProperties();
+    return queueFamilyIndex < queueFamilyProperties.size() &&
+           queueFamilyProperties[queueFamilyIndex].timestampValidBits != 0;
+}
+
 std::string queryPipelineTextProperty(const std::shared_ptr<Device> &device, VkPipeline pipeline,
                                       vk::DataGraphPipelinePropertyARM property) {
     const auto &vkDevice = &(*device);
@@ -722,6 +730,9 @@ TEST(MLEmulationLayerOpticalFlowForVulkan, ProfilingPropertyIncludesOpticalFlowS
     ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
 
     const auto device = createDevice();
+    if (!computeQueueSupportsTimestampQueries(device)) {
+        GTEST_SKIP() << "Compute queue family does not support timestamp queries";
+    }
     OpticalFlow::Config cfg;
     cfg.enableHint = true;
     cfg.enableCost = true;

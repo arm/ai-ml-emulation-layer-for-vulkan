@@ -329,6 +329,14 @@ std::shared_ptr<Device> createDevice() {
     return std::make_shared<Device>(physicalDevice, extensions, &features2);
 }
 
+bool computeQueueSupportsTimestampQueries(const std::shared_ptr<Device> &device) {
+    const auto &physicalDevice = device->getPhysicalDevice();
+    const auto queueFamilyIndex = physicalDevice->getComputeFamilyIndex();
+    const auto queueFamilyProperties = (&(*physicalDevice)).getQueueFamilyProperties();
+    return queueFamilyIndex < queueFamilyProperties.size() &&
+           queueFamilyProperties[queueFamilyIndex].timestampValidBits != 0;
+}
+
 struct ProfilingGraph {
     GraphPipeline::DescriptorMap descriptorMap;
     std::shared_ptr<GraphPipeline> pipeline;
@@ -673,6 +681,9 @@ TEST_F(MLEmulationLayerForVulkan, GraphProfilingQueryableProperty) {
     ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
 
     auto device = createDevice();
+    if (!computeQueueSupportsTimestampQueries(device)) {
+        GTEST_SKIP() << "Compute queue family does not support timestamp queries";
+    }
     auto graph = makeMaxPoolProfilingGraph(device);
     graph.pipeline->dispatchSubmit();
 
@@ -683,6 +694,9 @@ TEST_F(MLEmulationLayerForVulkan, GraphProfilingCollectsFenceLessSubmitOnQueueWa
     ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
 
     auto device = createDevice();
+    if (!computeQueueSupportsTimestampQueries(device)) {
+        GTEST_SKIP() << "Compute queue family does not support timestamp queries";
+    }
     auto graph = makeMaxPoolProfilingGraph(device);
     submitGraphWithoutFence(device, graph, false);
 
@@ -693,6 +707,9 @@ TEST_F(MLEmulationLayerForVulkan, GraphProfilingCollectsFenceLessSubmitOnDeviceW
     ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
 
     auto device = createDevice();
+    if (!computeQueueSupportsTimestampQueries(device)) {
+        GTEST_SKIP() << "Compute queue family does not support timestamp queries";
+    }
     auto graph = makeMaxPoolProfilingGraph(device);
     submitGraphWithoutFence(device, graph, true);
 
@@ -703,6 +720,9 @@ TEST_F(MLEmulationLayerForVulkan, GraphProfilingCollectsReusedCommandBufferSubmi
     ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
 
     auto device = createDevice();
+    if (!computeQueueSupportsTimestampQueries(device)) {
+        GTEST_SKIP() << "Compute queue family does not support timestamp queries";
+    }
     auto graph = makeMaxPoolProfilingGraph(device);
     submitGraphCommandBufferTwiceWithoutIntermediateWait(device, graph);
 
@@ -725,6 +745,9 @@ TEST_F(MLEmulationLayerForVulkan, GraphProfilingIncludesMotionEngineGraphOps) {
     ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
 
     auto device = createDevice();
+    if (!computeQueueSupportsTimestampQueries(device)) {
+        GTEST_SKIP() << "Compute queue family does not support timestamp queries";
+    }
     auto graph = makeRawSadProfilingGraph(device);
     graph.pipeline->dispatchSubmit();
 
