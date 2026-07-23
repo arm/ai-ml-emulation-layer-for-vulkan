@@ -2,6 +2,37 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+###############################################################################
+# MLELTensor core algorithms and utilities
+###############################################################################
+
+add_library(MLELTensor STATIC)
+
+add_library(${ML_SDK_EL_NAMESPACE}::MLELTensor ALIAS MLELTensor)
+
+target_compile_options(MLELTensor PRIVATE ${VMEL_COMPILE_OPTIONS})
+
+target_sources(MLELTensor PRIVATE
+    tensor_processor.cpp
+    tensor_arm.cpp
+    tensor_log.cpp
+    tensor_view.cpp
+    tensor_descriptor.cpp
+    spirv_glsl_tensor_buffer.cpp)
+
+target_link_libraries(MLELTensor PUBLIC
+    VkLayer_Common
+    spirv-cross-core
+    spirv-cross-glsl)
+
+target_include_directories(MLELTensor PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+
+###############################################################################
+# VkLayer_Tensor Vulkan layer
+###############################################################################
+
 add_library(VkLayer_Tensor SHARED)
 
 add_library(${ML_SDK_EL_NAMESPACE}::VkLayer_Tensor ALIAS VkLayer_Tensor)
@@ -11,18 +42,10 @@ target_set_vulkan_exports(VkLayer_Tensor)
 target_compile_options(VkLayer_Tensor PRIVATE ${VMEL_COMPILE_OPTIONS})
 
 target_sources(VkLayer_Tensor PRIVATE
-    tensor_layer.cpp
-    tensor_processor.cpp
-    tensor_arm.cpp
-    tensor_log.cpp
-    tensor_view.cpp
-    tensor_descriptor.cpp
-    spirv_glsl_tensor_buffer.cpp)
+    tensor_layer.cpp)
 
 target_link_libraries(VkLayer_Tensor PRIVATE
-    VkLayer_Common
-    spirv-cross-core
-    spirv-cross-glsl)
+    MLELTensor)
 
 install(TARGETS VkLayer_Tensor EXPORT ${ML_SDK_EL_PACKAGE_NAME}Config)
 
