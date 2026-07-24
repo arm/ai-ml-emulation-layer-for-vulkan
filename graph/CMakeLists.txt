@@ -3,24 +3,21 @@
 #
 
 ###############################################################################
-# Graph layer
+# MLELGraph core algorithms and utilities
 ###############################################################################
 
 add_subdirectory(shaders)
 
-add_library(VkLayer_Graph SHARED)
+add_library(MLELGraph STATIC)
 
-add_library(${ML_SDK_EL_NAMESPACE}::VkLayer_Graph ALIAS VkLayer_Graph)
+add_library(${ML_SDK_EL_NAMESPACE}::MLELGraph ALIAS MLELGraph)
 
-target_set_vulkan_exports(VkLayer_Graph)
+target_compile_options(MLELGraph PRIVATE ${VMEL_COMPILE_OPTIONS})
 
-target_compile_options(VkLayer_Graph PRIVATE ${VMEL_COMPILE_OPTIONS})
-
-target_sources(VkLayer_Graph PRIVATE
+target_sources(MLELGraph PRIVATE
     compute_graph_op.cpp
     compute_optical_flow.cpp
     compute_pipeline_common.cpp
-    graph_layer.cpp
     graph_log.cpp
     graph_profiler.cpp
     image.cpp
@@ -33,17 +30,39 @@ target_sources(VkLayer_Graph PRIVATE
     spirv_pass_tosaspv_v100.cpp
     tensor.cpp)
 
-# Generated GLSL shaders
-add_dependencies(VkLayer_Graph
+# Generated GLSL shaders dependency
+add_dependencies(MLELGraph
     mlel_generate_glsl_header)
 
-# Pre compiled SPIR-V modules
-add_dependencies(VkLayer_Graph
+# Pre-compiled SPIR-V modules dependency
+add_dependencies(MLELGraph
     mlel_generate_spv_header)
 
-target_link_libraries(VkLayer_Graph PRIVATE
+target_link_libraries(MLELGraph PUBLIC
     VkLayer_Common
     nlohmann_json::nlohmann_json)
+
+target_include_directories(MLELGraph PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+
+###############################################################################
+# VkLayer_Graph Vulkan layer
+###############################################################################
+
+add_library(VkLayer_Graph SHARED)
+
+add_library(${ML_SDK_EL_NAMESPACE}::VkLayer_Graph ALIAS VkLayer_Graph)
+
+target_set_vulkan_exports(VkLayer_Graph)
+
+target_compile_options(VkLayer_Graph PRIVATE ${VMEL_COMPILE_OPTIONS})
+
+target_sources(VkLayer_Graph PRIVATE
+    graph_layer.cpp)
+
+target_link_libraries(VkLayer_Graph PRIVATE
+    MLELGraph)
 
 target_include_directories(VkLayer_Graph PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR})

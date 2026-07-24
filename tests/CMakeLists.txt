@@ -31,9 +31,6 @@ function(mlel_add_test)
 endfunction()
 
 set(MLEL_UNIT_TEST_SOURCES
-    # Source files
-    ${CMAKE_CURRENT_SOURCE_DIR}/../graph/interval_memory_planner_detail.cpp
-    # Test files
     common/common_tests.cpp
     graph/spirv_pass_tests.cpp
     graph/interval_memory_planner_tests.cpp
@@ -67,12 +64,12 @@ mlel_add_test(
         SHADER_SOURCE_DIR=${SHADER_SOURCE_DIR}
     INCLUDE_DIRECTORIES
         ${CMAKE_CURRENT_SOURCE_DIR}
-        ${CMAKE_CURRENT_SOURCE_DIR}/../graph
-        ${CMAKE_CURRENT_SOURCE_DIR}/../tensor
     LIBRARIES
         mlelutilities
         nlohmann_json::nlohmann_json
         VkLayer_Common
+        MLELGraph
+        MLELTensor
     PROPERTIES
         ${MLEL_UNIT_TEST_PROPERTIES}
 )
