@@ -49,14 +49,6 @@ Building for Darwin
 .. include:: ../generated/README.md
     :parser: myst_parser.sphinx_
     :start-after: ## Building for Darwin (Experimental)
-    :end-before: ## Usage on Darwin (Experimental)
-
-Usage on Darwin
----------------
-
-.. include:: ../generated/README.md
-    :parser: myst_parser.sphinx_
-    :start-after: ## Usage on Darwin (Experimental)
     :end-before: ## Cross compilation for AArch64 on x86-64 (Experimental)
 
 Cross Compilation for AArch64
