@@ -22,7 +22,6 @@ target_sources(MLELGraph PRIVATE
     graph_profiler.cpp
     image.cpp
     interval_memory_planner.cpp
-    interval_memory_planner_detail.cpp
     memory_planner.cpp
     optical_flow.cpp
     pipeline_cache.cpp

@@ -9,9 +9,18 @@
 #include "mlel/vulkan_layer.hpp"
 
 #include <unordered_map>
+#include <vector>
+
 #include <vulkan/vulkan.hpp>
 
 namespace mlsdk::el::layer {
+namespace tensor_arm_detail {
+
+bool usesImageAliasing(const VkTensorDescriptionARM &description);
+
+void updateAliasedStrides(std::size_t rank, std::vector<int64_t> &strides, const VkSubresourceLayout &imageLayout);
+
+} // namespace tensor_arm_detail
 
 class TensorCopyPipeline;
 
