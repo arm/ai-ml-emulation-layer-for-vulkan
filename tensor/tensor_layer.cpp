@@ -511,23 +511,19 @@ class TensorLayer : public VulkanLayerImpl {
         const auto *bindingInfo = findType<VkDescriptorSetLayoutBindingFlagsCreateInfo>(
             pCreateInfo, VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO);
 
-        const auto bindings = descriptor_binding::substituteTensorBinding(
-            pCreateInfo->bindingCount, pCreateInfo->pBindings, bindingInfo, supportsBufferUpdateAfterBind);
+        const auto bindings =
+            descriptor_binding::substituteTensorBinding(pCreateInfo->bindingCount, pCreateInfo->pBindings);
 
-#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+        const bool substituteBindingFlags =
+            bindingInfo && std::any_of(pCreateInfo->pBindings, pCreateInfo->pBindings + pCreateInfo->bindingCount,
+                                       descriptor_binding::hasTensor<VkDescriptorSetLayoutBinding>);
         std::vector<VkDescriptorBindingFlags> bindingFlags;
-        if (bindingInfo) {
-            for (uint32_t i = 0; i < pCreateInfo->bindingCount; ++i) {
-                const VkDescriptorBindingFlags bindingFlag =
-                    bindingInfo->pBindingFlags ? bindingInfo->pBindingFlags[i] : 0;
-                bindingFlags.push_back(bindingFlag);
-                bindingFlags.push_back(bindingFlag);
-            }
-        } else {
-            bindingFlags.resize(bindings.size(), 0);
+        if (substituteBindingFlags) {
+            bindingFlags = descriptor_binding::substituteTensorBindingFlags(
+                pCreateInfo->bindingCount, pCreateInfo->pBindings, *bindingInfo, supportsBufferUpdateAfterBind);
         }
 
-        const void *pNext = bindingInfo ? bindingInfo->pNext : pCreateInfo->pNext;
+        const void *pNext = substituteBindingFlags ? bindingInfo->pNext : pCreateInfo->pNext;
         const VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsCreateInfo{
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
             pNext,
@@ -536,21 +532,12 @@ class TensorLayer : public VulkanLayerImpl {
         };
 
         const VkDescriptorSetLayoutCreateInfo newCreateInfo{
-            pCreateInfo->sType,        // type
-            &bindingFlagsCreateInfo,   // next
-            pCreateInfo->flags,        // flags
-            uint32_t(bindings.size()), // binding count
-            bindings.data(),           // bindings
+            pCreateInfo->sType,                                       // type
+            substituteBindingFlags ? &bindingFlagsCreateInfo : pNext, // next
+            pCreateInfo->flags,                                       // flags
+            uint32_t(bindings.size()),                                // binding count
+            bindings.data(),                                          // bindings
         };
-#else
-        const VkDescriptorSetLayoutCreateInfo newCreateInfo{
-            pCreateInfo->sType,        // type
-            pCreateInfo->pNext,        // next
-            pCreateInfo->flags,        // flags
-            uint32_t(bindings.size()), // binding count
-            bindings.data(),           // bindings
-        };
-#endif
 
         return handle->loader->vkCreateDescriptorSetLayout(device, &newCreateInfo, pAllocator, pSetLayout);
     }

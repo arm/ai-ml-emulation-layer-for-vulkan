@@ -34,6 +34,7 @@ set(MLEL_UNIT_TEST_SOURCES
     common/common_tests.cpp
     graph/spirv_pass_tests.cpp
     graph/interval_memory_planner_tests.cpp
+    tensor/descriptor_binding_tests.cpp
     tensor/tensor_arm_tests.cpp
     test_utils.cpp
     vulkan.cpp)

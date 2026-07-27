@@ -19,6 +19,8 @@
 ### Bug Fixes
 
 - Fixed linear tensor/image aliasing to honor padded image row and depth pitches.
+- Fixed optical-flow image/buffer alias alignment and tensor descriptor binding
+  flag substitution.
 
 ## Version 0.10.0 – *Optical Flow, Graph Profiling & Runtime Refinement*
 

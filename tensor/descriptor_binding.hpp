@@ -23,9 +23,7 @@ template <typename T> inline bool hasTensor(const T &obj) {
 inline bool hasTensor(const VkDescriptorPoolSize &obj) { return obj.type == VK_DESCRIPTOR_TYPE_TENSOR_ARM; }
 
 inline std::vector<VkDescriptorSetLayoutBinding>
-substituteTensorBinding(uint32_t bindingCount, const VkDescriptorSetLayoutBinding *pBindings,
-                        const VkDescriptorSetLayoutBindingFlagsCreateInfo *bindingInfo,
-                        const bool supportsBufferUpdateAfterBind) {
+substituteTensorBinding(uint32_t bindingCount, const VkDescriptorSetLayoutBinding *pBindings) {
     std::vector<VkDescriptorSetLayoutBinding> descriptorSetLayoutBindings{pBindings, pBindings + bindingCount};
 
     // Loop over bindings and replace tensors bindings with uniform buffer for tensor descriptor (plus a storage buffer
@@ -46,16 +44,40 @@ substituteTensorBinding(uint32_t bindingCount, const VkDescriptorSetLayoutBindin
                 nullptr                                                        // VkSampler
             });
 #endif
-
-            // Preserve UPDATE_AFTER_BIND only when rewritten buffer descriptors support it.
-            if (!supportsBufferUpdateAfterBind && bindingInfo && bindingInfo->pBindingFlags) {
-                const_cast<VkDescriptorBindingFlags *>(bindingInfo->pBindingFlags)[i] &=
-                    static_cast<VkDescriptorBindingFlags>(~VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT);
-            }
         }
     }
 
     return descriptorSetLayoutBindings;
+}
+
+inline std::vector<VkDescriptorBindingFlags>
+substituteTensorBindingFlags(uint32_t bindingCount, const VkDescriptorSetLayoutBinding *pBindings,
+                             const VkDescriptorSetLayoutBindingFlagsCreateInfo &bindingInfo,
+                             const bool supportsBufferUpdateAfterBind) {
+    std::vector<VkDescriptorBindingFlags> bindingFlags(bindingCount, 0);
+    if (bindingInfo.pBindingFlags) {
+        const auto flagCount = std::min(bindingCount, bindingInfo.bindingCount);
+        std::copy_n(bindingInfo.pBindingFlags, flagCount, bindingFlags.begin());
+    }
+    if (!supportsBufferUpdateAfterBind) {
+        for (uint32_t i = 0; i < bindingCount; ++i) {
+            if (hasTensor(pBindings[i])) {
+                bindingFlags[i] &= static_cast<VkDescriptorBindingFlags>(~VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT);
+            }
+        }
+    }
+
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+    // substituteTensorBinding appends each raw tensor storage-buffer binding after
+    // all original bindings, so append its flag in the same order.
+    for (uint32_t i = 0; i < bindingCount; ++i) {
+        if (hasTensor(pBindings[i])) {
+            bindingFlags.emplace_back(bindingFlags[i]);
+        }
+    }
+#endif
+
+    return bindingFlags;
 }
 
 inline std::tuple<std::vector<VkWriteDescriptorSet>, std::list<VkDescriptorBufferInfo>,
