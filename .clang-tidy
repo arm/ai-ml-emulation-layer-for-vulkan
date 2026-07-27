@@ -22,6 +22,7 @@ Checks: >
     misc-static-assert,
     misc-unused-*,
     misc-use-anonymous-namespace,
+    modernize-concat-nested-namespaces,
     modernize-deprecated-headers,
     modernize-make-unique,
     modernize-redundant-void-arg,
