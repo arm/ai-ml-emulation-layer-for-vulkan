@@ -41,6 +41,8 @@ inline void replaceAll(std::string &str, std::string_view pattern, std::string_v
     }
 }
 
+bool hasExtension(const std::vector<vk::ExtensionProperties> &extensionProperties, std::string_view extension);
+
 /// Gets the total number of elements in a tensor given its dimensions, throws if result is negative.
 size_t getElementCount(const std::vector<int64_t> &dimensions);
 

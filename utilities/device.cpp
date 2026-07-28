@@ -9,6 +9,9 @@
  *******************************************************************************/
 
 #include "mlel/device.hpp"
+#include "mlel/utils.hpp"
+
+#include <vulkan/vulkan_beta.h>
 
 #include <algorithm>
 #include <map>
@@ -35,11 +38,12 @@ vk::raii::Instance Instance::createInstance(const std::vector<const char *> &lay
         VK_MAKE_VERSION(1, 3, 0), // api version
     };
     std::vector<const char *> exts = extensions;
-    vk::InstanceCreateFlags flags;
-#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
-    exts.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
-    flags = vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR;
-#endif
+    vk::InstanceCreateFlags flags{};
+    const auto extensionProperties = context->enumerateInstanceExtensionProperties();
+    if (utils::hasExtension(extensionProperties, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)) {
+        exts.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+        flags = vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR;
+    }
     const vk::InstanceCreateInfo instanceCreateInfo{
         flags,                                // flags
         &applicationInfo,                     // application info
@@ -133,17 +137,8 @@ std::vector<uint32_t> PhysicalDevice::getMemoryTypeIndices(const vk::MemoryPrope
 bool PhysicalDevice::hasExtensionProperties(const vk::raii::PhysicalDevice &vkPhysicalDevice,
                                             const std::vector<const char *> &extensions) const {
     const auto extensionProperties = vkPhysicalDevice.enumerateDeviceExtensionProperties();
-
-    for (const auto &extension : extensions) {
-        auto it = std::find_if(extensionProperties.begin(), extensionProperties.end(), [&](const auto &property) {
-            return std::strcmp(property.extensionName, extension) == 0;
-        });
-        if (it == extensionProperties.end()) {
-            return false;
-        }
-    }
-
-    return true;
+    return std::all_of(extensions.begin(), extensions.end(),
+                       [&](const auto &extension) { return utils::hasExtension(extensionProperties, extension); });
 }
 
 std::vector<vk::raii::PhysicalDevice> PhysicalDevice::enumeratePhysicalDevices() const {
@@ -256,9 +251,12 @@ vk::raii::Device Device::createDevice(const std::vector<const char *> &layers,
                                       const std::vector<const char *> &extensions, const void *deviceFeatures) const {
     auto queueCreateInfo = physicalDevice->getQueueCreateInfo(vk::QueueFlagBits::eCompute);
     std::vector<const char *> exts = extensions;
-#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
-    exts.push_back("VK_KHR_portability_subset");
-#endif
+    const auto &vkPhysicalDevice = &(*physicalDevice);
+    const auto extensionProperties = vkPhysicalDevice.enumerateDeviceExtensionProperties();
+    if (utils::hasExtension(extensionProperties, VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)) {
+        exts.push_back(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+    }
+
     const vk::DeviceCreateInfo deviceCreateInfo{
         {},                                            // flags
         static_cast<uint32_t>(queueCreateInfo.size()), // queue create info count
@@ -270,7 +268,7 @@ vk::raii::Device Device::createDevice(const std::vector<const char *> &layers,
         nullptr,                                       // Don't set pEnabledFeatures here!
         deviceFeatures                                 // Attach deviceFeatures via pNext
     };
-    vk::raii::Device vkDevice(&(*physicalDevice), deviceCreateInfo);
+    vk::raii::Device vkDevice(vkPhysicalDevice, deviceCreateInfo);
 
     return vkDevice;
 }

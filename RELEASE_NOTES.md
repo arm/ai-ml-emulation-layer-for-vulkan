@@ -7,6 +7,7 @@
 ### Build, Packaging & Developer Experience
 
 - Updated Emulation Layer `--version` output to report the package version and include git revision and dependency revision information
+- Enabled KosmicKrisp compatibility automatically based on selected driver.
 
 ### Bug Fixes
 
