@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "mlel/device.hpp"
 #include <optional>
 #include <string>
 
@@ -28,5 +29,13 @@ class ScopedEnvironment {
     std::string name;
     std::optional<std::string> oldValue;
 };
+
+inline bool computeQueueSupportsTimestampQueries(const std::shared_ptr<mlsdk::el::utilities::Device> &device) {
+    const auto &physicalDevice = device->getPhysicalDevice();
+    const auto queueFamilyIndex = physicalDevice->getComputeFamilyIndex();
+    const auto queueFamilyProperties = (&(*physicalDevice)).getQueueFamilyProperties();
+    return queueFamilyIndex < queueFamilyProperties.size() &&
+           queueFamilyProperties[queueFamilyIndex].timestampValidBits != 0;
+}
 
 } // namespace mlsdk::el::tests
