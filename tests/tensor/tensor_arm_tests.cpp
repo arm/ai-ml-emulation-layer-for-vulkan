@@ -6,7 +6,7 @@
 
 #include <gtest/gtest.h>
 
-#include "tensor_arm_detail.hpp"
+#include "tensor_arm.hpp"
 
 #include <vector>
 

@@ -5,8 +5,6 @@
  */
 #include "tensor_arm.hpp"
 
-#include "tensor_arm_detail.hpp"
-
 #include "mlel/utils.hpp"
 
 #include <numeric>
@@ -15,6 +13,25 @@
 using namespace mlsdk::el::utils;
 
 namespace mlsdk::el::layer {
+namespace tensor_arm_detail {
+
+bool usesImageAliasing(const VkTensorDescriptionARM &description) {
+    return (description.usage & VK_TENSOR_USAGE_IMAGE_ALIASING_BIT_ARM) != 0;
+}
+
+void updateAliasedStrides(const std::size_t rank, std::vector<int64_t> &strides,
+                          const VkSubresourceLayout &imageLayout) {
+    if (rank == 4) {
+        // alias to 3D image
+        strides[0] = static_cast<int64_t>(imageLayout.depthPitch);
+        strides[1] = static_cast<int64_t>(imageLayout.rowPitch);
+    } else if (rank == 3) {
+        // alias to 2D image
+        strides[0] = static_cast<int64_t>(imageLayout.rowPitch);
+    }
+}
+
+} // namespace tensor_arm_detail
 
 VkBufferCreateFlags TensorARM::TensorInfo::convertToBufferCreateFlags(VkTensorCreateFlagsARM tensorFlags) {
     VkBufferCreateFlags bufferFlags = {};
