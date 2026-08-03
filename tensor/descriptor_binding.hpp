@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -14,9 +14,7 @@
 #include <set>
 #include <vulkan/vulkan.hpp>
 
-namespace mlsdk::el {
-namespace layer {
-namespace descriptor_binding {
+namespace mlsdk::el::layer::descriptor_binding {
 
 template <typename T> inline bool hasTensor(const T &obj) {
     return obj.descriptorType == VK_DESCRIPTOR_TYPE_TENSOR_ARM;
@@ -184,6 +182,4 @@ substituteTensorDescriptorPoolSizes(const std::vector<VkDescriptorPoolSize> &poo
     return descriptorPoolSizes;
 }
 
-} // namespace descriptor_binding
-} // namespace layer
-} // namespace mlsdk::el
+} // namespace mlsdk::el::layer::descriptor_binding
