@@ -22,6 +22,11 @@
 - Fixed optical-flow image/buffer alias alignment and tensor descriptor binding
   flag substitution.
 
+### Bug Fixes
+
+- Fixed interval memory planning to preserve tensor live ranges across multiple
+  graph dispatches.
+
 ## Version 0.10.0 – *Optical Flow, Graph Profiling & Runtime Refinement*
 
 ### Optical Flow Task API
