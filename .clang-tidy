@@ -99,6 +99,8 @@ CheckOptions:
     value: 'true'
   - key: bugprone-unsafe-functions.ReportMoreUnsafeFunctions
     value: 'true'
+  # Temporarily allowed until a portable bounds-checked replacement is available:
+  # ^memcpy$,memcpy_s,is considered unsafe;
   - key: bugprone-unsafe-functions.CustomFunctions
     value: >
       ^alloca$,malloc or new,is considered unsafe;
@@ -109,7 +111,61 @@ CheckOptions:
       ^lstrcpy$,strcpy_s,is considered unsafe;
       ^StrCpyN$,strncpy_s,is considered unsafe;
       ^StrNCpy$,strncpy_s,is considered unsafe;
-      ^lstrcpyn$,strncpy_s,is considered unsafe
+      ^lstrcpyn$,strncpy_s,is considered unsafe;
+      ^scanf$,fgets,is considered unsafe;
+      ^wscanf$,fgets,is considered unsafe;
+      ^sscanf$,fgets,is considered unsafe;
+      ^swscanf$,fgets,is considered unsafe;
+      ^strcpy$,strcpy_s or strncpy_s,is considered unsafe;
+      ^wcscpy$,strcpy_s or strncpy_s,is considered unsafe;
+      ^_tcscpy$,strcpy_s or strncpy_s,is considered unsafe;
+      ^_mbscpy$,strcpy_s or strncpy_s,is considered unsafe;
+      ^_tccpy$,strcpy_s or strncpy_s,is considered unsafe;
+      ^_mbccpy$,strcpy_s or strncpy_s,is considered unsafe;
+      ^_ftcscpy$,strcpy_s or strncpy_s,is considered unsafe;
+      ^strncpy$,strcpy_s or strncpy_s,is considered unsafe;
+      ^wcsncpy$,strcpy_s or strncpy_s,is considered unsafe;
+      ^_tcsncpy$,strcpy_s or strncpy_s,is considered unsafe;
+      ^_mbsncpy$,strcpy_s or strncpy_s,is considered unsafe;
+      ^_mbsnbcpy$,strcpy_s or strncpy_s,is considered unsafe;
+      ^strcat$,strcat_s or strncat_s,is considered unsafe;
+      ^wcscat$,strcat_s or strncat_s,is considered unsafe;
+      ^_tcscat$,strcat_s or strncat_s,is considered unsafe;
+      ^_mbscat$,strcat_s or strncat_s,is considered unsafe;
+      ^StrCat$,strcat_s or strncat_s,is considered unsafe;
+      ^lstrcat$,strcat_s or strncat_s,is considered unsafe;
+      ^lStrCatBuff$,strcat_s or strncat_s,is considered unsafe;
+      ^_tccat$,strcat_s or strncat_s,is considered unsafe;
+      ^_mbccat$,strcat_s or strncat_s,is considered unsafe;
+      ^_ftcscat$,strcat_s or strncat_s,is considered unsafe;
+      ^strncat$,strcat_s or strncat_s,is considered unsafe;
+      ^wcsncat$,strcat_s or strncat_s,is considered unsafe;
+      ^_tcsncat$,strcat_s or strncat_s,is considered unsafe;
+      ^_mbsncat$,strcat_s or strncat_s,is considered unsafe;
+      ^_mbsnbcat$,strcat_s or strncat_s,is considered unsafe;
+      ^StrCatN$,strcat_s or strncat_s,is considered unsafe;
+      ^StrNCat$,strcat_s or strncat_s,is considered unsafe;
+      ^lstrncat$,strcat_s or strncat_s,is considered unsafe;
+      ^lstrcatn$,strcat_s or strncat_s,is considered unsafe;
+      ^wsprintf$,snprintf or snprintf_s,is considered unsafe;
+      ^sprintf$,snprintf or snprintf_s,is considered unsafe;
+      ^swprintf$,snprintf or snprintf_s,is considered unsafe;
+      ^_stprintf$,snprintf or snprintf_s,is considered unsafe;
+      ^wvsprintf$,snprintf or snprintf_s,is considered unsafe;
+      ^vsprintf$,snprintf or snprintf_s,is considered unsafe;
+      ^_vstprintf$,snprintf or snprintf_s,is considered unsafe;
+      ^vswprintf$,snprintf or snprintf_s,is considered unsafe;
+      ^strtok$,strtok_s,is considered unsafe;
+      ^_tcstok$,strtok_s,is considered unsafe;
+      ^wcstok$,strtok_s,is considered unsafe;
+      ^_mbstok$,strtok_s,is considered unsafe;
+      ^gets$,fgets,is considered unsafe;
+      ^strlen$,strlen_s,is considered unsafe;
+      ^wcslen$,wcslen_s,is considered unsafe;
+      ^wmemcpy$,wmemcpy_s,is considered unsafe;
+      ^memmove$,memmove_s,is considered unsafe;
+      ^wmemmove$,wmemmove_s,is considered unsafe;
+      ^readdir_r$,readdir,is considered unsafe
   - key: readability-identifier-naming.ClassCase
     value: CamelCase
   - key: readability-identifier-naming.LocalVariableCase
