@@ -163,6 +163,7 @@ class OpticalFlow {
     OpticalFlow(const std::shared_ptr<Device> &device, uint32_t width, uint32_t height, const Config &config)
         : device_(device), vkDevice_(&(*device)), config_(config) {
         std::vector<vk::DescriptorSetLayoutBinding> bindings;
+        bindings.reserve(descriptorCount());
         for (uint32_t binding = 0; binding < descriptorCount(); binding++) {
             bindings.push_back(vk::DescriptorSetLayoutBinding{binding, vk::DescriptorType::eStorageImage, 1,
                                                               vk::ShaderStageFlagBits::eAll});
