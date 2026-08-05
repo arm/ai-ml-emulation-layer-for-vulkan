@@ -21,6 +21,7 @@
 #include <vector>
 
 using namespace mlsdk::el::utilities;
+using mlsdk::el::tests::computeQueueSupportsTimestampQueries;
 using mlsdk::el::tests::ScopedEnvironment;
 
 namespace {
@@ -50,14 +51,6 @@ std::shared_ptr<Device> createDevice() {
     auto physicalDevice = std::make_shared<PhysicalDevice>(instance, extensions);
 
     return std::make_shared<Device>(physicalDevice, extensions, &features2);
-}
-
-bool computeQueueSupportsTimestampQueries(const std::shared_ptr<Device> &device) {
-    const auto &physicalDevice = device->getPhysicalDevice();
-    const auto queueFamilyIndex = physicalDevice->getComputeFamilyIndex();
-    const auto queueFamilyProperties = (&(*physicalDevice)).getQueueFamilyProperties();
-    return queueFamilyIndex < queueFamilyProperties.size() &&
-           queueFamilyProperties[queueFamilyIndex].timestampValidBits != 0;
 }
 
 std::string queryPipelineTextProperty(const std::shared_ptr<Device> &device, VkPipeline pipeline,
