@@ -158,8 +158,7 @@ class OpticalFlow {
         std::vector<vk::DescriptorSetLayoutBinding> bindings;
         bindings.reserve(descriptorCount());
         for (uint32_t binding = 0; binding < descriptorCount(); binding++) {
-            bindings.push_back(vk::DescriptorSetLayoutBinding{binding, vk::DescriptorType::eStorageImage, 1,
-                                                              vk::ShaderStageFlagBits::eAll});
+            bindings.emplace_back(binding, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eAll);
         }
 
         const vk::DescriptorSetLayoutCreateInfo dsLayoutCI{{}, static_cast<uint32_t>(bindings.size()), bindings.data()};
@@ -170,10 +169,10 @@ class OpticalFlow {
         descriptorPool_ = vk::raii::DescriptorPool{&(*device), descriptorPoolCreateInfo};
 
         const vk::DescriptorSetLayout layouts[] = {*descriptorSetLayout_};
-        const vk::DescriptorSetAllocateInfo descriptorSetAllocateInfo{*descriptorPool_, 1, layouts};
+        const vk::DescriptorSetAllocateInfo descriptorSetAllocateInfo{*descriptorPool_, 1, &layouts[0]};
         descriptorSets_ = vk::raii::DescriptorSets{&(*device), descriptorSetAllocateInfo};
 
-        const vk::PipelineLayoutCreateInfo pipelineLayoutCI{{}, 1, layouts};
+        const vk::PipelineLayoutCreateInfo pipelineLayoutCI{{}, 1, &layouts[0]};
         pipelineLayout_ = vk::raii::PipelineLayout{&(*device), pipelineLayoutCI};
 
         std::vector<VkDataGraphPipelineResourceInfoImageLayoutARM> resourceLayouts(descriptorCount());
@@ -265,34 +264,38 @@ class OpticalFlow {
             vkDevice_.getDispatcher()->vkDestroyPipeline(*vkDevice_, pipeline_, nullptr);
         }
     }
+    OpticalFlow(const OpticalFlow &) = delete;
+    OpticalFlow &operator=(const OpticalFlow &) = delete;
+    OpticalFlow(OpticalFlow &&) = delete;
+    OpticalFlow &operator=(OpticalFlow &&) = delete;
 
     void bindImages(vk::ImageView inputView, vk::ImageView referenceView, vk::ImageView flowVectorView,
                     std::optional<vk::ImageView> hintView = std::nullopt,
                     std::optional<vk::ImageView> costView = std::nullopt) {
         std::vector<vk::DescriptorImageInfo> imageInfos;
         imageInfos.reserve(descriptorCount());
-        imageInfos.push_back(vk::DescriptorImageInfo{VK_NULL_HANDLE, inputView, vk::ImageLayout::eGeneral});
-        imageInfos.push_back(vk::DescriptorImageInfo{VK_NULL_HANDLE, referenceView, vk::ImageLayout::eGeneral});
-        imageInfos.push_back(vk::DescriptorImageInfo{VK_NULL_HANDLE, flowVectorView, vk::ImageLayout::eGeneral});
+        imageInfos.emplace_back(VK_NULL_HANDLE, inputView, vk::ImageLayout::eGeneral);
+        imageInfos.emplace_back(VK_NULL_HANDLE, referenceView, vk::ImageLayout::eGeneral);
+        imageInfos.emplace_back(VK_NULL_HANDLE, flowVectorView, vk::ImageLayout::eGeneral);
 
         if (config_.enableHint) {
             if (!hintView.has_value()) {
                 throw std::runtime_error("Hint image view is required when hint is enabled");
             }
-            imageInfos.push_back(vk::DescriptorImageInfo{VK_NULL_HANDLE, *hintView, vk::ImageLayout::eGeneral});
+            imageInfos.emplace_back(VK_NULL_HANDLE, *hintView, vk::ImageLayout::eGeneral);
         }
         if (config_.enableCost) {
             if (!costView.has_value()) {
                 throw std::runtime_error("Cost image view is required when cost output is enabled");
             }
-            imageInfos.push_back(vk::DescriptorImageInfo{VK_NULL_HANDLE, *costView, vk::ImageLayout::eGeneral});
+            imageInfos.emplace_back(VK_NULL_HANDLE, *costView, vk::ImageLayout::eGeneral);
         }
 
         std::vector<vk::WriteDescriptorSet> descriptorWrites;
         descriptorWrites.reserve(descriptorCount());
         for (uint32_t i = 0; i < descriptorCount(); i++) {
-            descriptorWrites.push_back(vk::WriteDescriptorSet{*descriptorSets_[0], i, 0, 1,
-                                                              vk::DescriptorType::eStorageImage, &imageInfos[i]});
+            descriptorWrites.emplace_back(*descriptorSets_[0], i, 0, 1, vk::DescriptorType::eStorageImage,
+                                          &imageInfos[i]);
         }
 
         vkDevice_.updateDescriptorSets(descriptorWrites, {});
@@ -665,47 +668,47 @@ void runOpticalFlowAndExpectOutputChange(const std::shared_ptr<Device> &device, 
     }
 }
 
-TEST(MLEmulationLayerOpticalFlowForVulkan, RGBToY_Smoke_Grid4x4) { // cppcheck-suppress syntaxError
+TEST(MLEmulationLayerOpticalFlowForVulkan, RGBToYSmokeGrid4x4) { // cppcheck-suppress syntaxError
     const auto device = createDevice();
     runOpticalFlowAndExpectOutputChange(device, OpticalFlow::Config{}, "RGBToY smoke");
 }
 
-TEST(MLEmulationLayerOpticalFlowForVulkan, RGBToY_Grid1x1) {
+TEST(MLEmulationLayerOpticalFlowForVulkan, RGBToYGrid1x1) {
     const auto device = createDevice();
     OpticalFlow::Config cfg;
     cfg.outputGridSize = VK_DATA_GRAPH_OPTICAL_FLOW_GRID_SIZE_1X1_BIT_ARM;
     runOpticalFlowAndExpectOutputChange(device, cfg, "RGBToY class path");
 }
 
-TEST(MLEmulationLayerOpticalFlowForVulkan, Downsample_Grid8x8) {
+TEST(MLEmulationLayerOpticalFlowForVulkan, DownsampleGrid8x8) {
     const auto device = createDevice();
     OpticalFlow::Config cfg;
     cfg.outputGridSize = VK_DATA_GRAPH_OPTICAL_FLOW_GRID_SIZE_8X8_BIT_ARM;
     runOpticalFlowAndExpectOutputChange(device, cfg, "Downsample class path");
 }
 
-TEST(MLEmulationLayerOpticalFlowForVulkan, DenseWarp_WithHint) {
+TEST(MLEmulationLayerOpticalFlowForVulkan, DenseWarpWithHint) {
     const auto device = createDevice();
     OpticalFlow::Config cfg;
     cfg.enableHint = true;
     runOpticalFlowAndExpectOutputChange(device, cfg, "DenseWarp class path");
 }
 
-TEST(MLEmulationLayerOpticalFlowForVulkan, MedianFilter_Fast) {
+TEST(MLEmulationLayerOpticalFlowForVulkan, MedianFilterFast) {
     const auto device = createDevice();
     OpticalFlow::Config cfg;
     cfg.performanceLevel = VK_DATA_GRAPH_OPTICAL_FLOW_PERFORMANCE_LEVEL_FAST_ARM;
     runOpticalFlowAndExpectOutputChange(device, cfg, "MedianFilter class path");
 }
 
-TEST(MLEmulationLayerOpticalFlowForVulkan, BilateralFilter_Medium) {
+TEST(MLEmulationLayerOpticalFlowForVulkan, BilateralFilterMedium) {
     const auto device = createDevice();
     OpticalFlow::Config cfg;
     cfg.performanceLevel = VK_DATA_GRAPH_OPTICAL_FLOW_PERFORMANCE_LEVEL_MEDIUM_ARM;
     runOpticalFlowAndExpectOutputChange(device, cfg, "BilateralFilter class path");
 }
 
-TEST(MLEmulationLayerOpticalFlowForVulkan, MVReplace_WithHintAndCost) {
+TEST(MLEmulationLayerOpticalFlowForVulkan, MVReplaceWithHintAndCost) {
     const auto device = createDevice();
     OpticalFlow::Config cfg;
     cfg.enableHint = true;
@@ -713,7 +716,7 @@ TEST(MLEmulationLayerOpticalFlowForVulkan, MVReplace_WithHintAndCost) {
     runOpticalFlowAndExpectOutputChange(device, cfg, "MVReplace class path");
 }
 
-TEST(MLEmulationLayerOpticalFlowForVulkan, BlockMatch_CostEnabled) {
+TEST(MLEmulationLayerOpticalFlowForVulkan, BlockMatchCostEnabled) {
     const auto device = createDevice();
     OpticalFlow::Config cfg;
     cfg.enableCost = true;

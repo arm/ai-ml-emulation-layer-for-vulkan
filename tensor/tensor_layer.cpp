@@ -28,6 +28,7 @@ using namespace mlsdk::el::log;
  *******************************************************************************/
 
 namespace mlsdk::el::layer {
+namespace {
 
 /*******************************************************************************
  * Device
@@ -970,6 +971,8 @@ class TensorLayer : public VulkanLayerImpl {
         return false;
     }
 };
+
+} // namespace
 } // namespace mlsdk::el::layer
 
 /*******************************************************************************

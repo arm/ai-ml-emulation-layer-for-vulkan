@@ -66,8 +66,8 @@ Image::~Image() {
 }
 
 void Image::makeBuffer() {
-    sizeInBytes_ = dim_.height * dim_.width * blockSize_;
     rowPitch_ = dim_.width * blockSize_;
+    sizeInBytes_ = dim_.height * rowPitch_;
 
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;

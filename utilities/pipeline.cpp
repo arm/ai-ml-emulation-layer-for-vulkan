@@ -76,11 +76,10 @@ std::vector<vk::DataGraphPipelineConstantARM> GraphConstants::getGraphPipelineCo
     graphPipelineConstants.reserve(constants.size());
 
     for (const auto &[id, constant] : constants) {
-        graphPipelineConstants.push_back({
-            id,                                       // id
-            constant->data(),                         // data
-            &constant->getConstantTensorDescription() // next
-        });
+        graphPipelineConstants.emplace_back(id,                                       // id
+                                            constant->data(),                         // data
+                                            &constant->getConstantTensorDescription() // next
+        );
     }
 
     return graphPipelineConstants;
@@ -184,12 +183,11 @@ std::vector<vk::raii::DescriptorSetLayout> PipelineBase::createDescriptorSetLayo
 
         descriptorSetLayoutBindings.reserve(bindingMap.size());
         for (const auto &[binding, tensors] : bindingMap) {
-            descriptorSetLayoutBindings.push_back(vk::DescriptorSetLayoutBinding{
-                binding,                        // binding
-                vk::DescriptorType::eTensorARM, // descriptor type
-                uint32_t(tensors.size()),       // descriptor count
-                vk::ShaderStageFlagBits::eAll,  // flags
-            });
+            descriptorSetLayoutBindings.emplace_back(binding,                        // binding
+                                                     vk::DescriptorType::eTensorARM, // descriptor type
+                                                     uint32_t(tensors.size()),       // descriptor count
+                                                     vk::ShaderStageFlagBits::eAll   // flags
+            );
         }
 
         std::vector<vk::DescriptorBindingFlags> descriptorBindingFlags(descriptorSetLayoutBindings.size(),
@@ -207,7 +205,7 @@ std::vector<vk::raii::DescriptorSetLayout> PipelineBase::createDescriptorSetLayo
             &descriptorSetBindingFlagsCreateInfo,                        // next
         };
 
-        vkDescriptorSetLayouts.push_back(vk::raii::DescriptorSetLayout(&(*device), descriptorSetLayoutCreateInfo));
+        vkDescriptorSetLayouts.emplace_back(&(*device), descriptorSetLayoutCreateInfo);
     }
 
     return vkDescriptorSetLayouts;
@@ -254,7 +252,7 @@ vk::raii::ShaderModule PipelineBase::createShaderModule(const std::vector<uint32
         code.data()                                            // code
     };
 
-    return vk::raii::ShaderModule(&(*device), info);
+    return {&(*device), info};
 }
 
 vk::raii::CommandPool PipelineBase::createCommandPool() const {
@@ -263,7 +261,7 @@ vk::raii::CommandPool PipelineBase::createCommandPool() const {
         device->getPhysicalDevice()->getComputeFamilyIndex() // queue family index
     };
 
-    return vk::raii::CommandPool(&(*device), commandPoolCreateInfo);
+    return {&(*device), commandPoolCreateInfo};
 }
 
 vk::raii::CommandBuffer PipelineBase::createCommandBuffer() const {
@@ -396,12 +394,11 @@ vk::raii::Pipeline GraphPipeline::createPipeline() const {
             for (uint32_t i = 0; i < tensors.size(); i++) {
                 const auto &tensor = tensors[i];
 
-                graphPipelineResourceInfos.push_back(vk::DataGraphPipelineResourceInfoARM{
-                    set,                            // descriptor set
-                    binding,                        // binding
-                    i,                              // array element
-                    &tensor->getTensorDescription() // next
-                });
+                graphPipelineResourceInfos.emplace_back(set,                            // descriptor set
+                                                        binding,                        // binding
+                                                        i,                              // array element
+                                                        &tensor->getTensorDescription() // next
+                );
             }
         }
         set++;

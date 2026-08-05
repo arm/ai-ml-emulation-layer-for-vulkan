@@ -346,9 +346,7 @@ void BestFitMemoryPlanner::allocate(const std::shared_ptr<TensorDescriptor> &ten
     tensorOffsets[tensor] = memoryAddress;
     VkDeviceSize tensorSize = tensor->getMemoryRequirementsSize();
 
-    if (memoryAddress + tensorSize > memorySize) {
-        memorySize = memoryAddress + tensorSize;
-    }
+    memorySize = std::max(memoryAddress + tensorSize, memorySize);
 }
 
 std::shared_ptr<TensorDescriptor> BestFitMemoryPlanner::findAlternativeTensor(

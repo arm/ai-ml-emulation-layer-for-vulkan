@@ -33,7 +33,7 @@ bool hasExtension(const std::vector<vk::ExtensionProperties> &extensionPropertie
 }
 
 size_t getElementCount(const std::vector<int64_t> &dimensions) {
-    auto result = std::accumulate(dimensions.begin(), dimensions.end(), int64_t(1), std::multiplies<int64_t>());
+    auto result = std::accumulate(dimensions.begin(), dimensions.end(), int64_t(1), std::multiplies<>());
     if (result < 0) {
         throw std::runtime_error("Tensor element count became negative: " + std::to_string(result));
     }
@@ -45,6 +45,10 @@ std::vector<uint32_t> glslToSpirv(const std::string &glsl) {
       public:
         explicit Finally(const std::function<void()> &_func) : func{_func} {}
         ~Finally() { func(); }
+        Finally(const Finally &) = delete;
+        Finally &operator=(const Finally &) = delete;
+        Finally(Finally &&) = delete;
+        Finally &operator=(Finally &&) = delete;
 
       private:
         std::function<void()> func;

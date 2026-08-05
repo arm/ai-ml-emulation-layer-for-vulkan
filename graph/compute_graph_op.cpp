@@ -2033,7 +2033,7 @@ Slice::Slice(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderD
 
 Slice::PushConstant Slice::createPushConstant(const std::vector<uint32_t> &start) const {
     PushConstant constant{};
-    std::copy(start.begin(), start.end(), constant.start);
+    std::copy(start.begin(), start.end(), &constant.start[0]);
     return constant;
 }
 
@@ -2154,7 +2154,7 @@ Transpose::Transpose(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispatc
 
 Transpose::PushConstant Transpose::createPushConstant(const std::vector<uint32_t> &perms) const {
     PushConstant constant{};
-    std::copy(perms.begin(), perms.end(), constant.perms);
+    std::copy(perms.begin(), perms.end(), &constant.perms[0]);
     return constant;
 }
 

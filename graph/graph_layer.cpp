@@ -48,7 +48,7 @@ using namespace mlsdk::el::log;
 
 namespace mlsdk::el::layer {
 namespace {
-constexpr char graphPipelineCreatedLog[] = "Graph pipeline created";
+constexpr std::string_view graphPipelineCreatedLog = "Graph pipeline created";
 
 bool isDigit(char value) { return value >= '0' && value <= '9'; }
 
@@ -112,7 +112,6 @@ constexpr std::array<VkDataGraphPipelinePropertyARM, 2> dataGraphPipelinePropert
     VK_DATA_GRAPH_PIPELINE_PROPERTY_CREATION_LOG_ARM,
     graphProfilingProperty,
 };
-} // namespace
 
 /**************************************************************************
  * DataGraphDescriptorSet
@@ -333,18 +332,13 @@ class GraphDevice : public Device {
 /*****************************************************************************
  * Layer
  *****************************************************************************/
-namespace {
 
 void sprivMessageConsumer(spv_message_level_t level, const char *, const spv_position_t &position,
                           const char *message) {
     Severity severity = Severity::Info;
     switch (level) {
     case SPV_MSG_FATAL:
-        severity = Severity::Error;
-        break;
     case SPV_MSG_INTERNAL_ERROR:
-        severity = Severity::Error;
-        break;
     case SPV_MSG_ERROR:
         severity = Severity::Error;
         break;
@@ -408,7 +402,6 @@ bool checkInstVersion(const uint32_t *spirvCode, const size_t spirvSize, Support
 
     return true;
 }
-} // namespace
 
 constexpr std::array<const VkExtensionProperties, 3> extensions{
     VkExtensionProperties{VK_ARM_DATA_GRAPH_EXTENSION_NAME, VK_ARM_DATA_GRAPH_SPEC_VERSION},
@@ -2277,6 +2270,7 @@ class GraphLayer : public VulkanLayerImpl {
     }
 };
 
+} // namespace
 } // namespace mlsdk::el::layer
 
 /*******************************************************************************
