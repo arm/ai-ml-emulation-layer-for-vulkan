@@ -116,6 +116,14 @@ constexpr VkLayerProperties layerProperties = {
 
 using VulkanLayerImpl = VulkanLayer<layerProperties, extensions, requiredExtensions, TensorDevice>;
 
+namespace {
+constexpr bool isSupportedShaderTensorFormat(VkFormat format) {
+    return format != VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM &&
+           format != VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM &&
+           format != VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM;
+}
+} // namespace
+
 class TensorLayer : public VulkanLayerImpl {
   public:
     static PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char *name) {
@@ -791,9 +799,12 @@ class TensorLayer : public VulkanLayerImpl {
             pFormatProperties->pNext, VK_STRUCTURE_TYPE_TENSOR_FORMAT_PROPERTIES_ARM);
         handle->loader->vkGetPhysicalDeviceFormatProperties2(physicalDevice, format, pFormatProperties);
         if (pTensorFormatProp) {
-            pTensorFormatProp->optimalTilingTensorFeatures =
-                VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT |
-                VK_FORMAT_FEATURE_2_TENSOR_SHADER_BIT_ARM | VK_FORMAT_FEATURE_2_TENSOR_DATA_GRAPH_BIT_ARM;
+            pTensorFormatProp->optimalTilingTensorFeatures = VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT |
+                                                             VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT |
+                                                             VK_FORMAT_FEATURE_2_TENSOR_DATA_GRAPH_BIT_ARM;
+            if (isSupportedShaderTensorFormat(format)) {
+                pTensorFormatProp->optimalTilingTensorFeatures |= VK_FORMAT_FEATURE_2_TENSOR_SHADER_BIT_ARM;
+            }
             pTensorFormatProp->linearTilingTensorFeatures = pTensorFormatProp->optimalTilingTensorFeatures;
         }
     }
