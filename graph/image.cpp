@@ -161,6 +161,25 @@ void Image::makeBufferAlias() {
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
+    VkMemoryRequirements2 bufferMrqs{};
+    bufferMrqs.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
+    const VkDeviceBufferMemoryRequirements memInfo = {
+        VK_STRUCTURE_TYPE_DEVICE_BUFFER_MEMORY_REQUIREMENTS,
+        nullptr,
+        &bufferInfo,
+    };
+    loader_->vkGetDeviceBufferMemoryRequirements(device_, &memInfo, &bufferMrqs);
+
+    // The image and its buffer alias are bound at the same offset. That offset and
+    // allocation must therefore satisfy the requirements of both resources.
+    const auto memoryTypeBits = memoryRequirements_.memoryTypeBits & bufferMrqs.memoryRequirements.memoryTypeBits;
+    if (memoryTypeBits == 0) {
+        throw std::runtime_error("Image and buffer alias have no compatible memory type");
+    }
+    memoryRequirements_.size = std::max(memoryRequirements_.size, bufferMrqs.memoryRequirements.size);
+    memoryRequirements_.alignment = std::lcm(memoryRequirements_.alignment, bufferMrqs.memoryRequirements.alignment);
+    memoryRequirements_.memoryTypeBits = memoryTypeBits;
+
     VkResult res = loader_->vkCreateBuffer(device_, &bufferInfo, VK_NULL_HANDLE, &buffer_);
     if (res != VK_SUCCESS) {
         throw std::runtime_error("Failed to create buffer alias");
