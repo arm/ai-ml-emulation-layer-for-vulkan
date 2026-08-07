@@ -9,6 +9,13 @@
 - Updated Emulation Layer `--version` output to report the package version and include git revision and dependency revision information
 - Enabled KosmicKrisp compatibility automatically based on selected driver.
 
+### Tensor Shader Support
+
+- Disabled advertising `VK_FORMAT_FEATURE_2_TENSOR_SHADER_BIT_ARM` for BF16,
+  E4M3, and E5M2 float formats because the tensor shader translator does not
+  yet fully lower BF16 and float8 values and conversions. Tensor copy/transfer and
+  data-graph support remains advertised.
+
 ### Bug Fixes
 
 - Fixed linear tensor/image aliasing to honor padded image row and depth pitches.
