@@ -94,7 +94,8 @@ the dependencies required by the ML Emulation Layer for Vulkan® in
 The build system must have:
 
 - CMake 3.25 or later.
-- C/C++ 17 compiler: GCC, or optionally Clang on Linux and MSVC on Windows®.
+- C/C++ 17 compiler: GCC or Clang on Linux, Clang on Darwin, or MSVC on
+  Windows®.
 - Ninja 1.10 or later.
 - Vulkan® SDK 1.4.328.1 or later.
 
@@ -234,6 +235,10 @@ The profiling property returns JSON with a `samples` array containing one entry
 per profiled internal compute dispatch, including `pipeline_kind`,
 `operator_name`, raw cycle counts, and `time_ms`, plus a `by_operator` summary
 with total, average, minimum, and maximum time per profiled pipeline.
+
+Graph profiling requires a queue family with non-zero `timestampValidBits`.
+When the selected Vulkan® driver does not expose timestamp queries, graph
+execution remains available but no timestamp samples can be collected.
 
 ## Usage on Linux
 
@@ -397,32 +402,19 @@ debug layer settings, and package visibility:
 
 ## Building for Darwin (Experimental)
 
-MoltenVK is required to build and run the ML Emulation Layer for Vulkan® for a Darwin
-device. The MoltenVK version must have Vulkan® API 1.3 support.
-In this example we install into a deploy folder and build using the script.
+Install the [LunarG Vulkan SDK](https://vulkan.lunarg.com/sdk/home#mac)
+to obtain the Vulkan® Loader. Recent SDK releases can also install KosmicKrisp as an opt-in technical preview; check that SDK release's host requirements before
+selecting it.
 
 To build the ML Emulation Layer for Vulkan®, run:
 
 ```shell
-python3 ${REPO}/sw/emulation-layer/scripts/build.py --install $SDK_PATH/deploy
+python3 "$SDK_PATH/sw/emulation-layer/scripts/build.py" \
+    --install "$SDK_PATH/deploy"
 ```
 
-Install MoltenVK by following the documentation:
-<https://vulkan.lunarg.com/doc/sdk/1.4.328.1/mac/getting_started.html>
-
-## Usage on Darwin (Experimental)
-
-We need to link to both the MoltenVK and the ML Emulation Layer for Vulkan® build output, when running on a Darwin device.
-On Darwin, `LD_LIBRARY_PATH` is instead `DYLD_LIBRARY_PATH`.
-
-```shell
-
-export PATH=${MOLTEN_VK_PATH}/macOS/bin:${PATH}
-export VK_ICD_FILENAMES=${MOLTEN_VK_PATH}/macOS/share/vulkan/icd.d/MoltenVK_icd.json
-export DYLD_LIBRARY_PATH=${MOLTEN_VK_PATH}/macOS/lib:${SDK_PATH}/deploy/lib
-export VK_LAYER_PATH=${REPO}/deploy/share/vulkan/explicit_layer.d
-export VK_INSTANCE_LAYERS=VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation
-```
+For Vulkan® SDK installation and driver requirements, see the
+[LunarG getting-started guide](https://vulkan.lunarg.com/doc/view/1.4.350.1/mac/getting_started.html).
 
 ## Cross compilation for AArch64 on x86-64 (Experimental)
 
@@ -541,11 +533,21 @@ pip install ai-ml-emulation-layer-for-vulkan
   the build script command to use 32-bit `float` instead of `double`.
   This behavior is automatically enabled on Darwin and Android™.
 
-MoltenVK currently does not have full Vulkan® coverage, some notable issues are:
+### Darwin driver limitations
+
+Optical-flow workloads are not currently supported on Darwin. MoltenVK and
+KosmicKrisp also expose different optional Vulkan® features, so a workload can
+be supported by one driver and rejected by the other. Check `vulkaninfo` and
+the selected driver's release notes when a required extension is unavailable.
+
+MoltenVK does not have full Vulkan® coverage. Some notable issues are:
 
 - Several Vulkan® extensions are not available in MoltenVK, e.g. [custom border color](https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_custom_border_color.html).
 - High-precision types in buffers/push constants is currently not supported, which forces lower precision to be used instead.
 - Passing Shader Storage Buffer Objects, SSBOs, to functions is currently not supported in MoltenVK.
+
+KosmicKrisp is a technical preview with stricter requirements. Timestamp-based graph profiling is unavailable when its
+selected queue reports `timestampValidBits` as zero.
 
 ## License
 
@@ -554,7 +556,7 @@ LICENSES directory.
 
 ## Trademark notice
 
-Arm® is a registered trademarks of Arm Limited (or its subsidiaries) in the US
+Arm® is a registered trademark of Arm Limited (or its subsidiaries) in the US
 and/or elsewhere.
 
 Khronos®, Vulkan® and SPIR-V™ are registered trademarks of the
