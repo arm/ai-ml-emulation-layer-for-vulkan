@@ -115,15 +115,13 @@ constexpr VkLayerProperties layerProperties = {
     "ML Tensor Emulation Layer",
 };
 
-using VulkanLayerImpl = VulkanLayer<layerProperties, extensions, requiredExtensions, TensorDevice>;
-
-namespace {
 constexpr bool isSupportedShaderTensorFormat(VkFormat format) {
     return format != VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM &&
            format != VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM &&
            format != VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM;
 }
-} // namespace
+
+using VulkanLayerImpl = VulkanLayer<layerProperties, extensions, requiredExtensions, TensorDevice>;
 
 class TensorLayer : public VulkanLayerImpl {
   public:
