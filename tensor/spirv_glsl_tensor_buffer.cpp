@@ -522,7 +522,7 @@ void CompilerTensorAsBuffer::createTensorInterface(uint32_t tensorVarId) {
         // SPIRV-Cross will now declare the original variable globally, without initialization.
         // We will manually initialize it inside the GLSL "main" function by overriding
         // `CompilerGLSL::emit_entry_point_declarations`.
-        tensorVariables.push_back({tensorVarId, tensorInterfaceVarId});
+        tensorVariables.emplace_back(tensorVarId, tensorInterfaceVarId);
     }
 }
 

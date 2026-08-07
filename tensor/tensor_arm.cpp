@@ -231,9 +231,9 @@ TensorCopyPipeline::PushConstant TensorCopyPipeline::createPushConstant(const Te
     const auto &dimensions = srcTensor.getTensorInfo().dimensions;
     const auto &srcStrides = srcTensor.getTensorInfo().strides;
     const auto &dstStrides = dstTensor.getTensorInfo().strides;
-    std::copy(dimensions.begin(), dimensions.end(), constant.dimensions);
-    std::copy(srcStrides.begin(), srcStrides.end(), constant.srcStrides);
-    std::copy(dstStrides.begin(), dstStrides.end(), constant.dstStrides);
+    std::copy(dimensions.begin(), dimensions.end(), &constant.dimensions[0]);
+    std::copy(srcStrides.begin(), srcStrides.end(), &constant.srcStrides[0]);
+    std::copy(dstStrides.begin(), dstStrides.end(), &constant.dstStrides[0]);
     return constant;
 }
 

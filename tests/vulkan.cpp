@@ -53,14 +53,6 @@ using mlsdk::el::tests::ScopedEnvironment;
 
 namespace {
 
-class MLEmulationLayerForVulkan : public ::testing::Test {
-  public:
-    ~MLEmulationLayerForVulkan() override = default;
-
-    // Override this to define how to tear down the environment.
-    void TearDown() override {}
-};
-
 vk::raii::Instance createInstance(vk::raii::Context &ctx, std::vector<const char *> enabledLayers = {},
                                   std::vector<const char *> enabledExtensions = {}) {
     const vk::ApplicationInfo applicationInfo{
@@ -514,12 +506,10 @@ void expectRawSadProfileProperty(const std::shared_ptr<Device> &device, const Pr
                                   });
 }
 
-} // namespace
-
 /*******************************************************************************
  * Test cases
  *******************************************************************************/
-TEST_F(MLEmulationLayerForVulkan, EnumerateLayers) {
+TEST(MLEmulationLayerForVulkan, EnumerateLayers) { // cppcheck-suppress syntaxError
     vk::raii::Context ctx{};
 
     const auto layerProperties = ctx.enumerateInstanceLayerProperties();
@@ -529,7 +519,7 @@ TEST_F(MLEmulationLayerForVulkan, EnumerateLayers) {
     }
 }
 
-TEST_F(MLEmulationLayerForVulkan, EnumerateInstanceExtensions) {
+TEST(MLEmulationLayerForVulkan, EnumerateInstanceExtensions) {
     vk::raii::Context ctx{};
 
     const auto extensionProperties = ctx.enumerateInstanceExtensionProperties();
@@ -539,12 +529,12 @@ TEST_F(MLEmulationLayerForVulkan, EnumerateInstanceExtensions) {
     }
 }
 
-TEST_F(MLEmulationLayerForVulkan, CreateInstance) {
+TEST(MLEmulationLayerForVulkan, CreateInstance) {
     vk::raii::Context ctx{};
     [[maybe_unused]] auto instance = createInstance(ctx, {"VK_LAYER_ML_Tensor_Emulation"});
 }
 
-TEST_F(MLEmulationLayerForVulkan, EnumeratePhysicalDevices) {
+TEST(MLEmulationLayerForVulkan, EnumeratePhysicalDevices) {
     vk::raii::Context ctx{};
     auto instance = createInstance(ctx, {"VK_LAYER_ML_Tensor_Emulation"}, {});
     auto physicalDevices = vk::raii::PhysicalDevices{instance};
@@ -572,13 +562,13 @@ TEST_F(MLEmulationLayerForVulkan, EnumeratePhysicalDevices) {
     }
 }
 
-TEST_F(MLEmulationLayerForVulkan, CreateDevice) {
+TEST(MLEmulationLayerForVulkan, CreateDevice) {
     vk::raii::Context ctx{};
     auto instance = createInstance(ctx, {"VK_LAYER_ML_Tensor_Emulation"});
     auto [device, physicalDevice] = createDevice(instance, {"VK_LAYER_ML_Tensor_Emulation"});
 }
 
-TEST_F(MLEmulationLayerForVulkan, ToolingInfo) {
+TEST(MLEmulationLayerForVulkan, ToolingInfo) {
     vk::raii::Context ctx{};
     auto instance = createInstance(ctx, {"VK_LAYER_ML_Graph_Emulation", "VK_LAYER_ML_Tensor_Emulation"});
     auto [device, physicalDevice] = createDevice(instance, {"VK_EXT_tooling_info"});
@@ -596,7 +586,7 @@ TEST_F(MLEmulationLayerForVulkan, ToolingInfo) {
     ASSERT_TRUE(graphLayerTool && tensorLayerTool) << "Tooling Info feature failed!";
 }
 
-TEST_F(MLEmulationLayerForVulkan, CheckTensorFeature) {
+TEST(MLEmulationLayerForVulkan, CheckTensorFeature) {
     vk::raii::Context ctx{};
     auto instance = createInstance(ctx, {"VK_LAYER_ML_Tensor_Emulation"});
     auto [device, physicalDevice] = createDevice(instance, {"VK_LAYER_ML_Tensor_Emulation"});
@@ -605,7 +595,7 @@ TEST_F(MLEmulationLayerForVulkan, CheckTensorFeature) {
     ASSERT_TRUE(tensorFeature.shaderTensorAccess) << "shaderTensorAccess not supported!";
 }
 
-TEST_F(MLEmulationLayerForVulkan, CreateTensor) {
+TEST(MLEmulationLayerForVulkan, CreateTensor) {
     vk::raii::Context ctx{};
     auto instance = createInstance(ctx, {"VK_LAYER_ML_Tensor_Emulation"});
     auto [device, physicalDevice] =
@@ -618,7 +608,7 @@ TEST_F(MLEmulationLayerForVulkan, CreateTensor) {
     [[maybe_unused]] auto tensorView = createTensorView(device, tensor, vk::Format::eR8Sint);
 }
 
-TEST_F(MLEmulationLayerForVulkan, MaxPool2D) {
+TEST(MLEmulationLayerForVulkan, MaxPool2D) {
     auto device = createDevice();
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 16, 16, 3}});
@@ -667,7 +657,7 @@ TEST_F(MLEmulationLayerForVulkan, MaxPool2D) {
     ASSERT_TRUE(outputTensor->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) << "Output mismatch";
 }
 
-TEST_F(MLEmulationLayerForVulkan, GraphProfilingQueryableProperty) {
+TEST(MLEmulationLayerForVulkan, GraphProfilingQueryableProperty) {
     ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
 
     auto device = createDevice();
@@ -680,7 +670,7 @@ TEST_F(MLEmulationLayerForVulkan, GraphProfilingQueryableProperty) {
     expectMaxPoolProfileProperty(device, graph);
 }
 
-TEST_F(MLEmulationLayerForVulkan, GraphProfilingCollectsFenceLessSubmitOnQueueWaitIdle) {
+TEST(MLEmulationLayerForVulkan, GraphProfilingCollectsFenceLessSubmitOnQueueWaitIdle) {
     ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
 
     auto device = createDevice();
@@ -693,7 +683,7 @@ TEST_F(MLEmulationLayerForVulkan, GraphProfilingCollectsFenceLessSubmitOnQueueWa
     expectMaxPoolProfileProperty(device, graph);
 }
 
-TEST_F(MLEmulationLayerForVulkan, GraphProfilingCollectsFenceLessSubmitOnDeviceWaitIdle) {
+TEST(MLEmulationLayerForVulkan, GraphProfilingCollectsFenceLessSubmitOnDeviceWaitIdle) {
     ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
 
     auto device = createDevice();
@@ -706,7 +696,7 @@ TEST_F(MLEmulationLayerForVulkan, GraphProfilingCollectsFenceLessSubmitOnDeviceW
     expectMaxPoolProfileProperty(device, graph);
 }
 
-TEST_F(MLEmulationLayerForVulkan, GraphProfilingCollectsReusedCommandBufferSubmits) {
+TEST(MLEmulationLayerForVulkan, GraphProfilingCollectsReusedCommandBufferSubmits) {
     ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
 
     auto device = createDevice();
@@ -731,7 +721,7 @@ TEST_F(MLEmulationLayerForVulkan, GraphProfilingCollectsReusedCommandBufferSubmi
     EXPECT_EQ(parsed.at("by_operator").at(0).at("dispatch_count"), 2);
 }
 
-TEST_F(MLEmulationLayerForVulkan, GraphProfilingIncludesMotionEngineGraphOps) {
+TEST(MLEmulationLayerForVulkan, GraphProfilingIncludesMotionEngineGraphOps) {
     ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
 
     auto device = createDevice();
@@ -744,7 +734,7 @@ TEST_F(MLEmulationLayerForVulkan, GraphProfilingIncludesMotionEngineGraphOps) {
     expectRawSadProfileProperty(device, graph);
 }
 
-TEST_F(MLEmulationLayerForVulkan, GraphProfilingPropertyIsScopedToQueriedPipeline) {
+TEST(MLEmulationLayerForVulkan, GraphProfilingPropertyIsScopedToQueriedPipeline) {
     ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
 
     auto device = createDevice();
@@ -759,7 +749,7 @@ TEST_F(MLEmulationLayerForVulkan, GraphProfilingPropertyIsScopedToQueriedPipelin
     EXPECT_EQ(json.find("MAX_POOL2D"), std::string::npos);
 }
 
-TEST_F(MLEmulationLayerForVulkan, TwoLayerMaxPool2D) {
+TEST(MLEmulationLayerForVulkan, TwoLayerMaxPool2D) {
     auto device = createDevice();
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 16, 16, 3}});
@@ -801,7 +791,7 @@ TEST_F(MLEmulationLayerForVulkan, TwoLayerMaxPool2D) {
     ASSERT_TRUE(outputTensor->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) << "Output mismatch";
 }
 
-TEST_F(MLEmulationLayerForVulkan, SamePipelineLayout) {
+TEST(MLEmulationLayerForVulkan, SamePipelineLayout) {
     auto device = createDevice();
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 16, 16, 3}});
@@ -874,7 +864,7 @@ TEST_F(MLEmulationLayerForVulkan, SamePipelineLayout) {
     ASSERT_TRUE(outputTensor1->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) << "Output mismatch";
 }
 
-TEST_F(MLEmulationLayerForVulkan, UpdateAfterDispatch) {
+TEST(MLEmulationLayerForVulkan, UpdateAfterDispatch) {
     auto device = createDevice();
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 16, 16, 3}});
@@ -925,7 +915,7 @@ TEST_F(MLEmulationLayerForVulkan, UpdateAfterDispatch) {
     ASSERT_TRUE(outputTensor->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) << "Output mismatch";
 }
 
-TEST_F(MLEmulationLayerForVulkan, SequentialDispatch) {
+TEST(MLEmulationLayerForVulkan, SequentialDispatch) {
     auto device = createDevice();
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 16, 16, 3}});
@@ -1005,7 +995,7 @@ TEST_F(MLEmulationLayerForVulkan, SequentialDispatch) {
     ASSERT_TRUE(outputTensor1->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) << "Output mismatch";
 }
 
-TEST_F(MLEmulationLayerForVulkan, Conv2D) {
+TEST(MLEmulationLayerForVulkan, Conv2D) {
     auto device = createDevice();
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 8, 8, 3}});
@@ -1098,7 +1088,7 @@ TEST_F(MLEmulationLayerForVulkan, Conv2D) {
         << "Output mismatch";
 }
 
-TEST_F(MLEmulationLayerForVulkan, Conv2DAccumulatorInt64) {
+TEST(MLEmulationLayerForVulkan, Conv2DAccumulatorInt64) {
     auto device = createDevice();
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR16Sint, {1, 2, 2, 4}});
@@ -1151,7 +1141,7 @@ TEST_F(MLEmulationLayerForVulkan, Conv2DAccumulatorInt64) {
         << "Output mismatch";
 }
 
-TEST_F(MLEmulationLayerForVulkan, Conv3DLargeStridePadRegression) {
+TEST(MLEmulationLayerForVulkan, Conv3DLargeStridePadRegression) {
     constexpr int64_t kBatch = 1;
     constexpr int64_t kInputDepth = 3;
     constexpr int64_t kInputHeight = 2;
@@ -1205,7 +1195,7 @@ TEST_F(MLEmulationLayerForVulkan, Conv3DLargeStridePadRegression) {
 
     const auto setWeight = [&](int64_t oc, int64_t kd, int64_t kh, int64_t kx, int64_t ic, int8_t value) {
         const auto flatIndex = static_cast<size_t>(
-            ((((oc * kKernelDepth) + kd) * kKernelHeight + kh) * kKernelWidth + kx) * kInputChannels + ic);
+            (((((oc * kKernelDepth) + kd) * kKernelHeight + kh) * kKernelWidth + kx) * kInputChannels) + ic);
         weightValues[flatIndex] = value;
     };
 
@@ -1258,22 +1248,22 @@ void expectConv3DInlineEncodedConstantPipelineCreates(const std::string &shaderF
     ASSERT_NO_THROW(graphPipeline->dispatchSubmit());
 }
 
-TEST_F(MLEmulationLayerForVulkan, Conv3DInlineBFloat16ConstantRegression) {
+TEST(MLEmulationLayerForVulkan, Conv3DInlineBFloat16ConstantRegression) {
     expectConv3DInlineEncodedConstantPipelineCreates("conv3d_inline_bf16_constant.spvasm",
                                                      vk::Format::eR16SfloatFpencodingBfloat16ARM);
 }
 
-TEST_F(MLEmulationLayerForVulkan, Conv3DInlineFloat8E5M2ConstantRegression) {
+TEST(MLEmulationLayerForVulkan, Conv3DInlineFloat8E5M2ConstantRegression) {
     expectConv3DInlineEncodedConstantPipelineCreates("conv3d_inline_fp8e5m2_constant.spvasm",
                                                      vk::Format::eR8SfloatFpencodingFloat8E5M2ARM);
 }
 
-TEST_F(MLEmulationLayerForVulkan, Conv3DInlineFloat8E4M3ConstantRegression) {
+TEST(MLEmulationLayerForVulkan, Conv3DInlineFloat8E4M3ConstantRegression) {
     expectConv3DInlineEncodedConstantPipelineCreates("conv3d_inline_fp8e4m3_constant.spvasm",
                                                      vk::Format::eR8SfloatFpencodingFloat8E4M3ARM);
 }
 
-TEST_F(MLEmulationLayerForVulkan, Concat) {
+TEST(MLEmulationLayerForVulkan, Concat) {
     auto device = createDevice();
 
     auto inputTensor0 = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 2, 2, 2}});
@@ -1346,7 +1336,7 @@ TEST_F(MLEmulationLayerForVulkan, Concat) {
     ASSERT_TRUE(outputTensor->compare(&ref[0][0][0][0], sizeof(ref))) << "Output mismatch";
 }
 
-TEST_F(MLEmulationLayerForVulkan, Slice) {
+TEST(MLEmulationLayerForVulkan, Slice) {
     auto device = createDevice();
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 8, 8, 3}});
@@ -1399,7 +1389,7 @@ TEST_F(MLEmulationLayerForVulkan, Slice) {
         << "Output mismatch";
 }
 
-TEST_F(MLEmulationLayerForVulkan, NOPOutputs) {
+TEST(MLEmulationLayerForVulkan, NOPOutputs) {
     auto device = createDevice();
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 8, 8, 3}});
@@ -1484,7 +1474,7 @@ TEST_F(MLEmulationLayerForVulkan, NOPOutputs) {
         << "Output mismatch in OUTPUT_2";
 }
 
-TEST_F(MLEmulationLayerForVulkan, GraphConstantARM) {
+TEST(MLEmulationLayerForVulkan, GraphConstantARM) {
     auto device = createDevice();
 
     GraphConstants graphConstants;
@@ -1541,7 +1531,7 @@ TEST_F(MLEmulationLayerForVulkan, GraphConstantARM) {
     ASSERT_TRUE(outputTensor->compare(&ref[0], sizeof(ref))) << "Output mismatch";
 }
 
-TEST_F(MLEmulationLayerForVulkan, HigherRankConstant) {
+TEST(MLEmulationLayerForVulkan, HigherRankConstant) {
     auto device = createDevice();
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 3, 3, 1}});
@@ -1585,7 +1575,7 @@ TEST_F(MLEmulationLayerForVulkan, HigherRankConstant) {
     ASSERT_TRUE(outputTensor->compare(&ref[0][0][0][0], sizeof(ref))) << "Output mismatch";
 }
 
-TEST_F(MLEmulationLayerForVulkan, Maximum) {
+TEST(MLEmulationLayerForVulkan, Maximum) {
     auto device = createDevice();
 
     auto inputTensor0 = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sint, std::vector<int64_t>{1, 2, 2, 2}});
@@ -1651,7 +1641,7 @@ TEST_F(MLEmulationLayerForVulkan, Maximum) {
     ASSERT_TRUE(outputTensor->compare(&ref[0][0][0][0], sizeof(ref))) << "Output mismatch";
 }
 
-TEST_F(MLEmulationLayerForVulkan, FFT2D) {
+TEST(MLEmulationLayerForVulkan, FFT2D) {
     auto device = createDevice();
 
     auto inputTensor0 =
@@ -1701,7 +1691,7 @@ TEST_F(MLEmulationLayerForVulkan, FFT2D) {
     outputTensor1->print();
 }
 
-TEST_F(MLEmulationLayerForVulkan, SIN) {
+TEST(MLEmulationLayerForVulkan, SIN) {
     auto device = createDevice();
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{1}});
@@ -1757,11 +1747,11 @@ vk::raii::ShaderModule createShaderModule(const vk::raii::Device &device, const 
         code.data()                                            // code
     };
 
-    return vk::raii::ShaderModule(device, info);
+    return {device, info};
 }
 
 // FIXME: Temporarily disabled in Darwin due to not being able to pass SSBO's to functions
-TEST_F(MLEmulationLayerForVulkan, CreateTensorComputeShader) {
+TEST(MLEmulationLayerForVulkan, CreateTensorComputeShader) {
     auto device = createDevice();
 
     const auto spirvModule = mlsdk::el::utils::glslToSpirv(fileToString("tensor_all_access.comp"));
@@ -1769,7 +1759,7 @@ TEST_F(MLEmulationLayerForVulkan, CreateTensorComputeShader) {
 }
 
 // FIXME: Temporarily disabled in Darwin due to not being able to pass SSBO's to functions
-TEST_F(MLEmulationLayerForVulkan, TensorArray) {
+TEST(MLEmulationLayerForVulkan, TensorArray) {
     auto device = createDevice();
 
     const auto spirvModule = mlsdk::el::utils::glslToSpirv(fileToString("tensor_array.comp"));
@@ -1826,7 +1816,7 @@ TEST_F(MLEmulationLayerForVulkan, TensorArray) {
 }
 
 // FIXME: Temporarily disabled in Darwin due to not being able to pass SSBO's to functions
-TEST_F(MLEmulationLayerForVulkan, CreateTensorComputePipeline) {
+TEST(MLEmulationLayerForVulkan, CreateTensorComputePipeline) {
     auto device = createDevice();
 
     const auto spirv = mlsdk::el::utils::glslToSpirv(fileToString("tensor.comp"));
@@ -1875,7 +1865,7 @@ TEST_F(MLEmulationLayerForVulkan, CreateTensorComputePipeline) {
 }
 #endif
 
-TEST_F(MLEmulationLayerForVulkan, LinearTensorImageAliasingUsesImageRowPitch) {
+TEST(MLEmulationLayerForVulkan, LinearTensorImageAliasingUsesImageRowPitch) {
     constexpr uint32_t width = 7;
     constexpr uint32_t height = 4;
     const std::vector<int64_t> dimensions{height, width, 1};
@@ -1964,15 +1954,15 @@ TEST_F(MLEmulationLayerForVulkan, LinearTensorImageAliasingUsesImageRowPitch) {
     mappedMemory = static_cast<uint8_t *>(aliasedMemory.mapMemory(0, VK_WHOLE_SIZE));
     for (uint32_t y = 0; y < height; ++y) {
         for (uint32_t x = 0; x < width; ++x) {
-            const auto expected = static_cast<uint8_t>((y + 1) * 16 + x);
-            EXPECT_EQ(mappedMemory[imageLayout.offset + y * imageLayout.rowPitch + x], expected)
+            const auto expected = static_cast<uint8_t>(((y + 1) * 16) + x);
+            EXPECT_EQ(mappedMemory[imageLayout.offset + (y * imageLayout.rowPitch) + x], expected)
                 << "Mismatch at image coordinate (" << x << ", " << y << ")";
         }
     }
     aliasedMemory.unmapMemory();
 }
 
-TEST_F(MLEmulationLayerForVulkan, ShapeGetElementOffsetNonPacked) {
+TEST(MLEmulationLayerForVulkan, ShapeGetElementOffsetNonPacked) {
     const Shape shape{vk::Format::eR64Sint, {2, 3, 4}, {160, 40, 8}};
 
     EXPECT_EQ(shape.getElementOffset(0), 0u);
@@ -1984,7 +1974,7 @@ TEST_F(MLEmulationLayerForVulkan, ShapeGetElementOffsetNonPacked) {
     EXPECT_EQ(shape.getElementOffset(23), 264u);
 }
 
-TEST_F(MLEmulationLayerForVulkan, CopyLargeNonPackedTensor) {
+TEST(MLEmulationLayerForVulkan, CopyLargeNonPackedTensor) {
     auto device = createDevice();
     const std::vector<int64_t> dimensions{1, 1920, 1080, 3};
     const std::vector<int64_t> strides = {12441600, 6480, 6, 2};
@@ -2054,7 +2044,7 @@ TEST_F(MLEmulationLayerForVulkan, CopyLargeNonPackedTensor) {
     ASSERT_TRUE((outputTensor->stridedCompare<int8_t, int8_t>(*inputTensor))) << "Output mismatch";
 }
 
-TEST_F(MLEmulationLayerForVulkan, MultiSessionsInOneCommandBuffer) {
+TEST(MLEmulationLayerForVulkan, MultiSessionsInOneCommandBuffer) {
     auto device = createDevice();
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 16, 16, 3}});
@@ -2143,7 +2133,7 @@ TEST_F(MLEmulationLayerForVulkan, MultiSessionsInOneCommandBuffer) {
     }
 }
 
-TEST_F(MLEmulationLayerForVulkan, MultiSessionsOneAtTheTime) {
+TEST(MLEmulationLayerForVulkan, MultiSessionsOneAtTheTime) {
     auto device = createDevice();
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 16, 16, 3}});
@@ -2215,7 +2205,7 @@ TEST_F(MLEmulationLayerForVulkan, MultiSessionsOneAtTheTime) {
     }
 }
 
-TEST_F(MLEmulationLayerForVulkan, PipelineCreationFeedback) {
+TEST(MLEmulationLayerForVulkan, PipelineCreationFeedback) {
     auto device = createDevice();
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 16, 16, 3}});
@@ -2243,12 +2233,11 @@ TEST_F(MLEmulationLayerForVulkan, PipelineCreationFeedback) {
             for (uint32_t i = 0; i < tensors.size(); i++) {
                 const auto &tensor = tensors[i];
 
-                graphPipelineResourceInfos.push_back(vk::DataGraphPipelineResourceInfoARM{
-                    set,                            // descriptor set
-                    binding,                        // binding
-                    i,                              // array element
-                    &tensor->getTensorDescription() // next
-                });
+                graphPipelineResourceInfos.emplace_back(set,                            // descriptor set
+                                                        binding,                        // binding
+                                                        i,                              // array element
+                                                        &tensor->getTensorDescription() // next
+                );
             }
         }
         set++;
@@ -2269,12 +2258,10 @@ TEST_F(MLEmulationLayerForVulkan, PipelineCreationFeedback) {
 
         descriptorSetLayoutBindings.reserve(bindingMap.size());
         for (const auto &[binding, tensors] : bindingMap) {
-            descriptorSetLayoutBindings.push_back(vk::DescriptorSetLayoutBinding{
-                binding,                        // binding
-                vk::DescriptorType::eTensorARM, // descriptor type
-                uint32_t(tensors.size()),       // descriptor count
-                vk::ShaderStageFlagBits::eAll,  // flags
-            });
+            descriptorSetLayoutBindings.emplace_back(binding,                        // binding
+                                                     vk::DescriptorType::eTensorARM, // descriptor type
+                                                     uint32_t(tensors.size()),       // descriptor count
+                                                     vk::ShaderStageFlagBits::eAll);
         }
 
         std::vector<vk::DescriptorBindingFlags> descriptorBindingFlags(descriptorSetLayoutBindings.size(),
@@ -2292,7 +2279,7 @@ TEST_F(MLEmulationLayerForVulkan, PipelineCreationFeedback) {
             &descriptorSetBindingFlagsCreateInfo,                        // next
         };
 
-        descriptorSetLayouts.push_back(vk::raii::DescriptorSetLayout(&(*device), descriptorSetLayoutCreateInfo));
+        descriptorSetLayouts.emplace_back(&(*device), descriptorSetLayoutCreateInfo);
     }
 
     std::vector<vk::DescriptorSetLayout> vkDescriptorSetLayouts;
@@ -2334,7 +2321,7 @@ TEST_F(MLEmulationLayerForVulkan, PipelineCreationFeedback) {
     ASSERT_GT(creationFeedback.duration, 0);
 }
 
-TEST_F(MLEmulationLayerForVulkan, SpecConstBoolDoesNotBlockLowering) {
+TEST(MLEmulationLayerForVulkan, SpecConstBoolDoesNotBlockLowering) {
     auto device = createDevice();
 
     constexpr vk::Format kTensorFormat = vk::Format::eR16Uint;
@@ -2365,12 +2352,11 @@ TEST_F(MLEmulationLayerForVulkan, SpecConstBoolDoesNotBlockLowering) {
     for (const auto &bindingMap : descriptorMap) {
         for (const auto &[binding, tensors] : bindingMap) {
             for (uint32_t i = 0; i < tensors.size(); i++) {
-                graphPipelineResourceInfos.push_back(vk::DataGraphPipelineResourceInfoARM{
-                    set,                                // descriptor set
-                    binding,                            // binding
-                    i,                                  // array element
-                    &tensors[i]->getTensorDescription() // next
-                });
+                graphPipelineResourceInfos.emplace_back(set,                                // descriptor set
+                                                        binding,                            // binding
+                                                        i,                                  // array element
+                                                        &tensors[i]->getTensorDescription() // next
+                );
             }
         }
         set++;
@@ -2391,12 +2377,10 @@ TEST_F(MLEmulationLayerForVulkan, SpecConstBoolDoesNotBlockLowering) {
         std::vector<vk::DescriptorSetLayoutBinding> descriptorSetLayoutBindings;
         descriptorSetLayoutBindings.reserve(bindingMap.size());
         for (const auto &[binding, tensors] : bindingMap) {
-            descriptorSetLayoutBindings.push_back(vk::DescriptorSetLayoutBinding{
-                binding,                        // binding
-                vk::DescriptorType::eTensorARM, // descriptor type
-                uint32_t(tensors.size()),       // descriptor count
-                vk::ShaderStageFlagBits::eAll,  // stage flags
-            });
+            descriptorSetLayoutBindings.emplace_back(binding,                        // binding
+                                                     vk::DescriptorType::eTensorARM, // descriptor type
+                                                     uint32_t(tensors.size()),       // descriptor count
+                                                     vk::ShaderStageFlagBits::eAll);
         }
 
         std::vector<vk::DescriptorBindingFlags> descriptorBindingFlags(descriptorSetLayoutBindings.size(),
@@ -2414,7 +2398,7 @@ TEST_F(MLEmulationLayerForVulkan, SpecConstBoolDoesNotBlockLowering) {
             &descriptorSetBindingFlagsCreateInfo,                        // next
         };
 
-        descriptorSetLayouts.push_back(vk::raii::DescriptorSetLayout(&(*device), descriptorSetLayoutCreateInfo));
+        descriptorSetLayouts.emplace_back(&(*device), descriptorSetLayoutCreateInfo);
     }
 
     std::vector<vk::DescriptorSetLayout> vkDescriptorSetLayouts;
@@ -2467,7 +2451,7 @@ TEST_F(MLEmulationLayerForVulkan, SpecConstBoolDoesNotBlockLowering) {
     ASSERT_GT(creationFeedback.duration, 0);
 }
 
-TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelineAvailablePropertiesARM) {
+TEST(MLEmulationLayerForVulkan, GetDataGraphPipelineAvailablePropertiesARM) {
     const auto device = createDevice();
     const auto &vkDevice = &(*device);
 
@@ -2477,7 +2461,7 @@ TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelineAvailablePropertiesARM) {
     ASSERT_EQ(result[0], vk::DataGraphPipelinePropertyARM{});
 }
 
-TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelineAvailablePropertiesIncludesProfilingWhenEnvEnabled) {
+TEST(MLEmulationLayerForVulkan, GetDataGraphPipelineAvailablePropertiesIncludesProfilingWhenEnvEnabled) {
     ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
 
     auto device = createDevice();
@@ -2493,7 +2477,7 @@ TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelineAvailablePropertiesInclude
     }));
 }
 
-TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelineAvailablePropertiesOmitsProfilingWhenEnvDisabled) {
+TEST(MLEmulationLayerForVulkan, GetDataGraphPipelineAvailablePropertiesOmitsProfilingWhenEnvDisabled) {
     ScopedEnvironment disableProfiling{"VMEL_GRAPH_PROFILING", "0"};
 
     auto device = createDevice();
@@ -2509,7 +2493,7 @@ TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelineAvailablePropertiesOmitsPr
     }));
 }
 
-TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelinePropertiesARM) {
+TEST(MLEmulationLayerForVulkan, GetDataGraphPipelinePropertiesARM) {
     const auto device = createDevice();
     const auto &vkDevice = &(*device);
 
@@ -2525,7 +2509,7 @@ TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelinePropertiesARM) {
     ASSERT_EQ(queryResult.dataSize, data.size());
 }
 
-TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelinePropertiesARMReturnsIncompleteForSmallProfilingBuffer) {
+TEST(MLEmulationLayerForVulkan, GetDataGraphPipelinePropertiesARMReturnsIncompleteForSmallProfilingBuffer) {
     ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
 
     auto device = createDevice();
@@ -2551,7 +2535,7 @@ TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelinePropertiesARMReturnsIncomp
     ASSERT_EQ(queryResult.dataSize, data.size());
 }
 
-TEST_F(MLEmulationLayerForVulkan, GetQueueFamilyDataGraphProcessingEnginePropertiesARM) {
+TEST(MLEmulationLayerForVulkan, GetQueueFamilyDataGraphProcessingEnginePropertiesARM) {
     const auto device = createDevice();
     const auto &physicalDevice = device->getPhysicalDevice();
     const auto &vkPhysicalDevice = &(*physicalDevice);
@@ -2561,7 +2545,7 @@ TEST_F(MLEmulationLayerForVulkan, GetQueueFamilyDataGraphProcessingEnginePropert
     ASSERT_FALSE(result.foreignSemaphoreHandleTypes);
 }
 
-TEST_F(MLEmulationLayerForVulkan, GetQueueFamilyDataGraphPropertiesARM) {
+TEST(MLEmulationLayerForVulkan, GetQueueFamilyDataGraphPropertiesARM) {
     const auto device = createDevice();
     const auto &physicalDevice = device->getPhysicalDevice();
     const auto &vkPhysicalDevice = &(*physicalDevice);
@@ -2571,7 +2555,7 @@ TEST_F(MLEmulationLayerForVulkan, GetQueueFamilyDataGraphPropertiesARM) {
     ASSERT_FALSE(result.empty());
 }
 
-TEST_F(MLEmulationLayerForVulkan, GetQueueFamilyDataGraphPropertiesARM_TwoCallPattern) {
+TEST(MLEmulationLayerForVulkan, GetQueueFamilyDataGraphPropertiesARMTwoCallPattern) {
     const auto device = createDevice();
     const auto &physicalDevice = device->getPhysicalDevice();
     const auto &vkPhysicalDevice = &(*physicalDevice);
@@ -2598,7 +2582,7 @@ TEST_F(MLEmulationLayerForVulkan, GetQueueFamilyDataGraphPropertiesARM_TwoCallPa
     ASSERT_EQ(retrieveCount, count);
 }
 
-TEST_F(MLEmulationLayerForVulkan, GetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM) {
+TEST(MLEmulationLayerForVulkan, GetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM) {
     const auto device = createDevice();
     const auto &physicalDevice = device->getPhysicalDevice();
     const auto &vkPhysicalDevice = &(*physicalDevice);
@@ -2673,7 +2657,7 @@ TEST_F(MLEmulationLayerForVulkan, GetPhysicalDeviceQueueFamilyDataGraphEngineOpe
     ASSERT_GT(ofProps.maxHeight, 0u);
 }
 
-TEST_F(MLEmulationLayerForVulkan, GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM) {
+TEST(MLEmulationLayerForVulkan, GetPhysicalDeviceQueueFamilyDataGraphOpticalFlowImageFormatsARM) {
     const auto device = createDevice();
     const auto &physicalDevice = device->getPhysicalDevice();
     const auto &vkPhysicalDevice = &(*physicalDevice);
@@ -2747,7 +2731,7 @@ TEST_F(MLEmulationLayerForVulkan, GetPhysicalDeviceQueueFamilyDataGraphOpticalFl
     ASSERT_GT(outputFormatCount, 0u);
 }
 
-TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelineSessionBindPointRequirementsARM_TwoCallPattern) {
+TEST(MLEmulationLayerForVulkan, GetDataGraphPipelineSessionBindPointRequirementsARMTwoCallPattern) {
     auto device = createDevice();
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 16, 16, 3}});
@@ -2764,8 +2748,7 @@ TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelineSessionBindPointRequiremen
     for (const auto &bindingMap : descriptorMap) {
         for (const auto &[binding, tensors] : bindingMap) {
             for (uint32_t i = 0; i < tensors.size(); i++) {
-                resourceInfos.push_back(
-                    vk::DataGraphPipelineResourceInfoARM{set, binding, i, &tensors[i]->getTensorDescription()});
+                resourceInfos.emplace_back(set, binding, i, &tensors[i]->getTensorDescription());
             }
         }
         ++set;
@@ -2785,8 +2768,8 @@ TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelineSessionBindPointRequiremen
         std::vector<vk::DescriptorSetLayoutBinding> bindings;
         bindings.reserve(bindingMap.size());
         for (const auto &[binding, tensors] : bindingMap) {
-            bindings.push_back(
-                {binding, vk::DescriptorType::eTensorARM, uint32_t(tensors.size()), vk::ShaderStageFlagBits::eAll});
+            bindings.emplace_back(binding, vk::DescriptorType::eTensorARM, uint32_t(tensors.size()),
+                                  vk::ShaderStageFlagBits::eAll);
         }
         std::vector<vk::DescriptorBindingFlags> bindingFlags(bindings.size(),
                                                              vk::DescriptorBindingFlagBits::eUpdateAfterBind);
@@ -2840,7 +2823,7 @@ TEST_F(MLEmulationLayerForVulkan, GetDataGraphPipelineSessionBindPointRequiremen
     ASSERT_EQ(retrieveCount, count);
 }
 
-TEST_F(MLEmulationLayerForVulkan, GetExternalTensorPropertiesARM) {
+TEST(MLEmulationLayerForVulkan, GetExternalTensorPropertiesARM) {
     const auto device = createDevice();
     const auto &physicalDevice = device->getPhysicalDevice();
     const auto &vkPhysicalDevice = &(*physicalDevice);
@@ -2871,7 +2854,7 @@ TEST_F(MLEmulationLayerForVulkan, GetExternalTensorPropertiesARM) {
     ASSERT_EQ(properties.externalMemoryProperties, bufferProperties.externalMemoryProperties);
 }
 
-TEST_F(MLEmulationLayerForVulkan, BlockMatch_MIN_SAD_COST) {
+TEST(MLEmulationLayerForVulkan, BlockMatchMinSadCost) {
     auto device = createDevice();
     const int64_t height = 5;
     const int64_t width = 5;
@@ -2937,7 +2920,7 @@ TEST_F(MLEmulationLayerForVulkan, BlockMatch_MIN_SAD_COST) {
     ASSERT_TRUE(outputCost->compare(&refCost[0][0][0][0], sizeof(refCost))) << "Output mismatch";
 }
 
-TEST_F(MLEmulationLayerForVulkan, BlockMatch_MIN_SAD) {
+TEST(MLEmulationLayerForVulkan, BlockMatchMinSad) {
     auto device = createDevice();
     const int64_t height = 5;
     const int64_t width = 5;
@@ -2990,7 +2973,7 @@ TEST_F(MLEmulationLayerForVulkan, BlockMatch_MIN_SAD) {
     ASSERT_TRUE(outputFlow->compare(&ref[0][0][0][0], sizeof(ref))) << "Output mismatch";
 }
 
-TEST_F(MLEmulationLayerForVulkan, BlockMatch_RAW_SAD) {
+TEST(MLEmulationLayerForVulkan, BlockMatchRawSad) {
     auto device = createDevice();
     const int64_t height = 5;
     const int64_t width = 5;
@@ -3029,7 +3012,7 @@ TEST_F(MLEmulationLayerForVulkan, BlockMatch_RAW_SAD) {
     ASSERT_TRUE(outputCost->compare(&ref[0][0][0][0], sizeof(ref))) << "Output mismatch";
 }
 
-TEST_F(MLEmulationLayerForVulkan, Application_Fixed_Address_Allocation) {
+TEST(MLEmulationLayerForVulkan, ApplicationFixedAddressAllocation) {
     auto device = createDevice();
     const auto &vkDevice = &(*device);
     const auto &vkPhysicalDevice = &(*device->getPhysicalDevice());
@@ -3092,7 +3075,7 @@ TEST_F(MLEmulationLayerForVulkan, Application_Fixed_Address_Allocation) {
     }
 }
 
-TEST_F(MLEmulationLayerForVulkan, Buffer_Barrier_Graph_Rewrite) {
+TEST(MLEmulationLayerForVulkan, BufferBarrierGraphRewrite) {
     auto device = createDevice();
     vk::raii::Queue queue(&(*device), device->getPhysicalDevice()->getComputeFamilyIndex(), 0);
 
@@ -3136,3 +3119,5 @@ TEST_F(MLEmulationLayerForVulkan, Buffer_Barrier_Graph_Rewrite) {
 
     ASSERT_TRUE(result == vk::Result::eSuccess);
 }
+
+} // namespace

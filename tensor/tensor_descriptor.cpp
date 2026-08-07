@@ -71,8 +71,8 @@ VkBuffer TensorDescriptor::getTensorDescriptorBuffer(const Device &dev, VkTensor
     };
 
     descriptor->address = dev.loader->vkGetBufferDeviceAddress(dev.device, &addressInfo);
-    std::copy(info.dimensions.begin(), info.dimensions.end(), descriptor->dimensions);
-    std::copy(info.strides.begin(), info.strides.end(), descriptor->strides);
+    std::copy(info.dimensions.begin(), info.dimensions.end(), &descriptor->dimensions[0]);
+    std::copy(info.strides.begin(), info.strides.end(), &descriptor->strides[0]);
 
     dev.loader->vkUnmapMemory(dev.device, m_memory);
 

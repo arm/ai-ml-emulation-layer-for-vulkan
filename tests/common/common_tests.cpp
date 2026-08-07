@@ -66,7 +66,7 @@ TEST(MLEmulationLayerLog, HexDump) {
     const uint8_t testchar[]{"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor "
                              "incididunt ut labore et dolore magna "
                              "aliqua."};
-    const auto *charPointer{testchar};
+    const auto *charPointer{&testchar[0]};
 
     testLog(Severity::Error) << HexDump(charPointer, sizeof(testchar));
 }
