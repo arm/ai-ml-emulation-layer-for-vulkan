@@ -410,7 +410,7 @@ class Conv2D : public ComputePipeline {
            const std::shared_ptr<TensorDescriptor> &_output, const std::shared_ptr<TensorDescriptor> &_weights,
            const std::shared_ptr<TensorDescriptor> &_biases, const std::vector<int32_t> &_pad,
            const std::vector<int32_t> &_stride, const std::vector<int32_t> &_dilation, int8_t _inputZeroPoint,
-           int8_t _weightZeroPoint, uint32_t _accType, const std::string &debugName);
+           int8_t _weightZeroPoint, uint32_t _accType, uint32_t _maxGroupCountZ, const std::string &debugName);
 
   private:
     struct PushConstant {
@@ -419,6 +419,7 @@ class Conv2D : public ComputePipeline {
         int32_t pad[4];
         int32_t stride[2];
         int32_t dilation[2];
+        uint32_t outputChannelOffset;
     };
 
     PushConstant createPushConstant(const std::vector<int32_t> &pad, const std::vector<int32_t> &stride,
@@ -438,6 +439,7 @@ class Conv2D : public ComputePipeline {
     void cmdDispatch(VkCommandBuffer commandBuffer) override;
 
     PushConstant pushConstant;
+    uint32_t maxGroupCountZ;
 
     static constexpr std::string_view shaderName = "conv2d";
 
@@ -1514,6 +1516,7 @@ class GraphPipeline {
     std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> loader;
     VkPhysicalDevice physicalDevice;
     VkDevice device;
+    uint32_t maxComputeWorkGroupCountZ;
 
     std::shared_ptr<PipelineCache> pipelineCache;
     std::vector<std::shared_ptr<ComputePipelineBase>> pipelines;

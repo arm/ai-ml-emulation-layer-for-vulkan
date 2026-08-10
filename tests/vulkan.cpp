@@ -1088,6 +1088,36 @@ TEST(MLEmulationLayerForVulkan, Conv2D) {
         << "Output mismatch";
 }
 
+TEST(MLEmulationLayerForVulkan, Conv2DDispatchesBeyondZWorkgroupLimit) {
+    constexpr int64_t outputChannels = 262144;
+
+    auto device = createDevice();
+
+    auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, {1, 1, 1, 4}});
+    std::fill(inputTensor->data(), inputTensor->data() + inputTensor->size(), 1);
+
+    auto weightTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, {outputChannels, 1, 1, 4}});
+    std::fill(weightTensor->data(), weightTensor->data() + weightTensor->size(), 1);
+
+    auto biasTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sint, {outputChannels}});
+    std::fill(biasTensor->data(), biasTensor->data() + biasTensor->size(), 0);
+
+    auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sint, {1, 1, 1, outputChannels}});
+    const GraphPipeline::DescriptorMap descriptorMap = {{
+        {0, {inputTensor}},
+        {1, {weightTensor}},
+        {2, {biasTensor}},
+        {3, {outputTensor}},
+    }};
+
+    const auto spirv = assembleSpirv(fileToString("conv2d_large_output_channels.spvasm"));
+    auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, GraphConstants{}, spirv);
+    graphPipeline->dispatchSubmit();
+
+    const std::vector<int32_t> expected(outputChannels, 4);
+    ASSERT_TRUE(outputTensor->compare(expected.data(), expected.size() * sizeof(expected[0]))) << "Output mismatch";
+}
+
 TEST(MLEmulationLayerForVulkan, Conv2DAccumulatorInt64) {
     auto device = createDevice();
 

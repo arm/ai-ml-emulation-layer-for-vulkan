@@ -29,6 +29,7 @@ layout(push_constant) uniform PushConstants {
     int32_t pad[4];
     int32_t stride[2];
     int32_t dilation[2];
+    uint32_t outputChannelOffset;
 } pushConstants;
 
 layout(set = 0, binding = 0) uniform tensorARM<OUT_T, 4> outputData;
@@ -42,7 +43,7 @@ void main() {
     uint n = gl_GlobalInvocationID.x % batches;
     uint ox = gl_GlobalInvocationID.x / batches;
     uint oy = gl_GlobalInvocationID.y;
-    uint oc = gl_GlobalInvocationID.z * 4;
+    uint oc = pushConstants.outputChannelOffset + gl_GlobalInvocationID.z * 4;
     uint[4] ocs = {oc, oc + 1, oc + 2, oc + 3};
 
     if (oy >= tensorSizeARM(outputData, 1) ||
