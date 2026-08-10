@@ -52,15 +52,22 @@ void extendTensorLiveRange(const std::shared_ptr<TensorDescriptor> &tensor, cons
 
 void extendPipelineTensorLiveRanges(const ComputePipelineBase &pipeline, const uint32_t executionIndex,
                                     const SessionTensors &sessionTensors, LiveRanges &liveRanges) {
+
     const auto extend = [&](const auto &tensor) {
-        extendTensorLiveRange(tensor->getTensor(), executionIndex, sessionTensors, liveRanges);
+        extendTensorLiveRange(tensor, executionIndex, sessionTensors, liveRanges);
     };
+    const auto &pipelineLayout = pipeline.getComputePipelineLayout();
+    if (pipelineLayout) {
+        for (const auto &descriptor : pipelineLayout->getDescriptorMap()) {
+            extend(descriptor.tensor);
+        }
+    }
 
     const auto &parents = pipeline.getParents();
-    std::for_each(parents.begin(), parents.end(), extend);
+    std::for_each(parents.begin(), parents.end(), [&](const auto &tensor) { extend(tensor->getTensor()); });
 
     const auto &descendants = pipeline.getDescendants();
-    std::for_each(descendants.begin(), descendants.end(), extend);
+    std::for_each(descendants.begin(), descendants.end(), [&](const auto &tensor) { extend(tensor->getTensor()); });
 }
 
 std::vector<details::LiveInterval> createLiveIntervals(const std::shared_ptr<GraphPipeline> &graphPipeline,

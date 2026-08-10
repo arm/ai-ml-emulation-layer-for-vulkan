@@ -1,0 +1,58 @@
+;
+; SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+; SPDX-License-Identifier: Apache-2.0
+;
+                     OpCapability VulkanMemoryModel
+                     OpCapability Shader
+                     OpCapability GraphARM
+                     OpCapability TensorsARM
+                     OpExtension "SPV_ARM_graph"
+                     OpExtension "SPV_ARM_tensors"
+             %tosa = OpExtInstImport "TOSA.001000.1"
+                     OpMemoryModel Logical Vulkan
+                     OpDecorate %input_ptr DescriptorSet 0
+                     OpDecorate %input_ptr Binding 0
+                     OpDecorate %one_ptr DescriptorSet 0
+                     OpDecorate %one_ptr Binding 1
+                     OpDecorate %zero_ptr DescriptorSet 0
+                     OpDecorate %zero_ptr Binding 2
+                     OpDecorate %output_ptr DescriptorSet 0
+                     OpDecorate %output_ptr Binding 3
+            %float = OpTypeFloat 32
+             %uint = OpTypeInt 32 0
+           %uint_0 = OpConstant %uint 0
+           %uint_1 = OpConstant %uint 1
+           %uint_2 = OpConstant %uint 2
+           %uint_3 = OpConstant %uint 3
+           %uint_4 = OpConstant %uint 4
+          %uint_12 = OpConstant %uint 12
+        %shape_1_t = OpTypeArray %uint %uint_1
+        %shape_2_t = OpTypeArray %uint %uint_2
+           %shape_1 = OpConstantComposite %shape_1_t %uint_1
+          %shape_31 = OpConstantComposite %shape_2_t %uint_3 %uint_1
+          %shape_33 = OpConstantComposite %shape_2_t %uint_3 %uint_3
+          %shape_34 = OpConstantComposite %shape_2_t %uint_3 %uint_4
+          %shape_12 = OpConstantComposite %shape_1_t %uint_12
+          %tensor_1 = OpTypeTensorARM %float %uint_1 %shape_1
+         %tensor_31 = OpTypeTensorARM %float %uint_2 %shape_31
+         %tensor_33 = OpTypeTensorARM %float %uint_2 %shape_33
+         %tensor_34 = OpTypeTensorARM %float %uint_2 %shape_34
+         %tensor_12 = OpTypeTensorARM %float %uint_1 %shape_12
+           %ptr_tensor_31 = OpTypePointer UniformConstant %tensor_31
+   %ptr_tensor_33 = OpTypePointer UniformConstant %tensor_33
+   %ptr_tensor_12 = OpTypePointer UniformConstant %tensor_12
+        %input_ptr = OpVariable %ptr_tensor_33 UniformConstant
+          %one_ptr = OpVariable %ptr_tensor_33 UniformConstant
+         %zero_ptr = OpVariable %ptr_tensor_31 UniformConstant
+        %output_ptr = OpVariable %ptr_tensor_12 UniformConstant
+       %graph_type = OpTypeGraphARM 3 %tensor_33 %tensor_33 %tensor_31 %tensor_12
+                     OpGraphEntryPointARM %graph "concat_interval" %input_ptr %one_ptr %zero_ptr %output_ptr
+           %graph = OpGraphARM %graph_type
+           %input = OpGraphInputARM %tensor_33 %uint_0
+             %one = OpGraphInputARM %tensor_33 %uint_1
+            %zero = OpGraphInputARM %tensor_31 %uint_2
+             %add = OpExtInst %tensor_33 %tosa ADD %input %one
+          %concat = OpExtInst %tensor_34 %tosa CONCAT %uint_1 %add %zero
+         %reshape = OpExtInst %tensor_12 %tosa RESHAPE %concat %shape_12
+                     OpGraphSetOutputARM %reshape %uint_0
+                     OpGraphEndARM

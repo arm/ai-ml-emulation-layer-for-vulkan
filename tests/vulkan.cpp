@@ -1336,6 +1336,41 @@ TEST(MLEmulationLayerForVulkan, Concat) {
     ASSERT_TRUE(outputTensor->compare(&ref[0][0][0][0], sizeof(ref))) << "Output mismatch";
 }
 
+TEST(MLEmulationLayerForVulkan, ConcatMultipleDispatchesPreserveInputLiveRange) {
+    ScopedEnvironment memoryPlanner{"VMEL_MEMORY_PLANNER", "Interval"};
+    auto device = createDevice();
+
+    const std::vector<float> input{0, 1, 2, 3, 4, 5, 6, 7, 8};
+    const std::vector<float> one(9, 1);
+    const std::vector<float> zero(3, 0);
+    auto inputTensor =
+        std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, {3, 3}},
+                                 reinterpret_cast<const uint8_t *>(input.data()), input.size() * sizeof(float));
+    auto oneTensor =
+        std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, {3, 3}},
+                                 reinterpret_cast<const uint8_t *>(one.data()), one.size() * sizeof(float));
+    auto zeroTensor =
+        std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, {3, 1}},
+                                 reinterpret_cast<const uint8_t *>(zero.data()), zero.size() * sizeof(float));
+    auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, {12}});
+    const GraphPipeline::DescriptorMap descriptorMap = {{
+        {0, {inputTensor}},
+        {1, {oneTensor}},
+        {2, {zeroTensor}},
+        {3, {outputTensor}},
+    }};
+
+    const auto spirv = assembleSpirv(fileToString("concat_interval.spvasm"));
+    auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, GraphConstants{}, spirv);
+
+    graphPipeline->dispatchSubmit();
+
+    const std::vector<float> expected{
+        1, 2, 3, 0, 4, 5, 6, 0, 7, 8, 9, 0,
+    };
+    ASSERT_TRUE(outputTensor->compare(expected.data(), expected.size() * sizeof(float))) << "Output mismatch";
+}
+
 TEST(MLEmulationLayerForVulkan, Slice) {
     auto device = createDevice();
 
