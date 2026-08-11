@@ -1118,6 +1118,43 @@ TEST(MLEmulationLayerForVulkan, Conv2DDispatchesBeyondZWorkgroupLimit) {
     ASSERT_TRUE(outputTensor->compare(expected.data(), expected.size() * sizeof(expected[0]))) << "Output mismatch";
 }
 
+class Conv2DLargeSpatialDimension : public testing::TestWithParam<std::tuple<std::string, int64_t, int64_t>> {};
+
+TEST_P(Conv2DLargeSpatialDimension, DispatchesBeyondWorkgroupLimit) {
+    constexpr int64_t channels = 4;
+    const auto &[shaderFile, height, width] = GetParam();
+
+    auto device = createDevice();
+
+    auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, {1, height, width, channels}});
+    std::fill(inputTensor->data(), inputTensor->data() + inputTensor->size(), 1);
+
+    auto weightTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, {channels, 1, 1, channels}});
+    std::fill(weightTensor->data(), weightTensor->data() + weightTensor->size(), 1);
+
+    auto biasTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sint, {channels}});
+    std::fill(biasTensor->data(), biasTensor->data() + biasTensor->size(), 0);
+
+    auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sint, {1, height, width, channels}});
+    const GraphPipeline::DescriptorMap descriptorMap = {{
+        {0, {inputTensor}},
+        {1, {weightTensor}},
+        {2, {biasTensor}},
+        {3, {outputTensor}},
+    }};
+
+    const auto spirv = assembleSpirv(fileToString(shaderFile));
+    auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, GraphConstants{}, spirv);
+    graphPipeline->dispatchSubmit();
+
+    const std::vector<int32_t> expected(static_cast<size_t>(height * width * channels), channels);
+    ASSERT_TRUE(outputTensor->compare(expected.data(), expected.size() * sizeof(expected[0]))) << "Output mismatch";
+}
+
+INSTANTIATE_TEST_SUITE_P(MLEmulationLayerForVulkan, Conv2DLargeSpatialDimension,
+                         testing::Values(std::make_tuple("conv2d_large_width.spvasm", 1, 524281),
+                                         std::make_tuple("conv2d_large_height.spvasm", 524281, 1)));
+
 TEST(MLEmulationLayerForVulkan, Conv2DAccumulatorInt64) {
     auto device = createDevice();
 
