@@ -916,13 +916,13 @@ Conv2D::Conv2D(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoade
                const std::shared_ptr<TensorDescriptor> &_output, const std::shared_ptr<TensorDescriptor> &_weights,
                const std::shared_ptr<TensorDescriptor> &_biases, const std::vector<int32_t> &_pad,
                const std::vector<int32_t> &_stride, const std::vector<int32_t> &_dilation, const int8_t _inputZeroPoint,
-               const int8_t _weightZeroPoint, const uint32_t _accType, const uint32_t _maxGroupCountZ,
+               const int8_t _weightZeroPoint, const uint32_t _accType, const std::array<uint32_t, 3> &_maxGroupCount,
                const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output, _weights, _biases),
                       {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
                       createSpirv(_pipelineCache, _input, _output, _weights, _accType), debugName),
       pushConstant{createPushConstant(_pad, _stride, _dilation, _inputZeroPoint, _weightZeroPoint)},
-      maxGroupCountZ{_maxGroupCountZ} {}
+      maxGroupCount{_maxGroupCount} {}
 
 Conv2D::PushConstant Conv2D::createPushConstant(const std::vector<int32_t> &pad, const std::vector<int32_t> &stride,
                                                 const std::vector<int32_t> &dilation, const int8_t inputZeroPoint,
@@ -944,7 +944,7 @@ Conv2D::PushConstant Conv2D::createPushConstant(const std::vector<int32_t> &pad,
             dilation[0],
             dilation[1],
         },
-        0,
+        {0, 0, 0},
     };
 
     return constant;
@@ -999,18 +999,26 @@ void Conv2D::cmdDispatch(VkCommandBuffer commandBuffer) {
     // Get first output tensor
     const auto &tensor = pipelineLayout->getTensorForSet(0);
     const auto &dimensions = tensor->getDimensions();
-    const auto groupCountX = divideRoundUp(static_cast<uint32_t>(dimensions[0] * dimensions[2]), warpX);
-    const auto groupCountY = divideRoundUp(static_cast<uint32_t>(dimensions[1]), warpY);
+    const auto totalGroupCountX = divideRoundUp(static_cast<uint32_t>(dimensions[0] * dimensions[2]), warpX);
+    const auto totalGroupCountY = divideRoundUp(static_cast<uint32_t>(dimensions[1]), warpY);
     const auto totalGroupCountZ = divideRoundUp(static_cast<uint32_t>(dimensions[3]), warpZ * 4);
 
-    for (uint32_t groupOffsetZ = 0; groupOffsetZ < totalGroupCountZ;) {
-        const auto groupCountZ = std::min(maxGroupCountZ, totalGroupCountZ - groupOffsetZ);
-        auto dispatchPushConstant = pushConstant;
-        dispatchPushConstant.outputChannelOffset = groupOffsetZ * warpZ * 4;
-        loader->vkCmdPushConstants(commandBuffer, pipelineLayout->getVkPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT, 0,
-                                   sizeof(dispatchPushConstant), &dispatchPushConstant);
-        loader->vkCmdDispatch(commandBuffer, groupCountX, groupCountY, groupCountZ);
-        groupOffsetZ += groupCountZ;
+    for (uint32_t groupOffsetX = 0; groupOffsetX < totalGroupCountX; groupOffsetX += maxGroupCount[0]) {
+        const auto groupCountX = std::min(maxGroupCount[0], totalGroupCountX - groupOffsetX);
+        for (uint32_t groupOffsetY = 0; groupOffsetY < totalGroupCountY; groupOffsetY += maxGroupCount[1]) {
+            const auto groupCountY = std::min(maxGroupCount[1], totalGroupCountY - groupOffsetY);
+            for (uint32_t groupOffsetZ = 0; groupOffsetZ < totalGroupCountZ; groupOffsetZ += maxGroupCount[2]) {
+                const auto groupCountZ = std::min(maxGroupCount[2], totalGroupCountZ - groupOffsetZ);
+                auto dispatchPushConstant = pushConstant;
+                dispatchPushConstant.outputPositionOffset[0] = groupOffsetX * warpX;
+                dispatchPushConstant.outputPositionOffset[1] = groupOffsetY * warpY;
+                dispatchPushConstant.outputPositionOffset[2] = groupOffsetZ * warpZ * 4;
+                loader->vkCmdPushConstants(commandBuffer, pipelineLayout->getVkPipelineLayout(),
+                                           VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(dispatchPushConstant),
+                                           &dispatchPushConstant);
+                loader->vkCmdDispatch(commandBuffer, groupCountX, groupCountY, groupCountZ);
+            }
+        }
     }
 }
 
@@ -2374,7 +2382,11 @@ GraphPipeline::GraphPipeline(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail:
     : loader{_loader}, physicalDevice{_physicalDevice}, device{_device}, pipelineCache{_pipelineCache} {
     VkPhysicalDeviceProperties properties{};
     loader->vkGetPhysicalDeviceProperties(physicalDevice, &properties);
-    maxComputeWorkGroupCountZ = properties.limits.maxComputeWorkGroupCount[2];
+    maxComputeWorkGroupCount = {
+        properties.limits.maxComputeWorkGroupCount[0],
+        properties.limits.maxComputeWorkGroupCount[1],
+        properties.limits.maxComputeWorkGroupCount[2],
+    };
 }
 
 GraphPipeline::~GraphPipeline() {
@@ -2610,7 +2622,7 @@ void GraphPipeline::makeConv2D(const std::shared_ptr<TensorDescriptor> &input,
                                const int8_t inputZeroPoint, const int8_t weightZeroPoint, const uint32_t accType,
                                const std::string &debugName) {
     makePipeline<Conv2D>(input, output, weights, biases, pad, stride, dilation, inputZeroPoint, weightZeroPoint,
-                         accType, maxComputeWorkGroupCountZ, debugName);
+                         accType, maxComputeWorkGroupCount, debugName);
 }
 
 void GraphPipeline::makeConv3D(const std::shared_ptr<TensorDescriptor> &input,

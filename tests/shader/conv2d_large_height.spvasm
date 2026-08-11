@@ -1,0 +1,73 @@
+;
+; SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+; SPDX-License-Identifier: Apache-2.0
+;
+               OpCapability VulkanMemoryModel
+               OpCapability Shader
+               OpCapability Int8
+               OpCapability TensorsARM
+               OpCapability GraphARM
+               OpCapability ReplicatedCompositesEXT
+               OpExtension "SPV_ARM_tensors"
+               OpExtension "SPV_ARM_graph"
+               OpExtension "SPV_EXT_replicated_composites"
+         %45 = OpExtInstImport "TOSA.001000.1"
+               OpMemoryModel Logical Vulkan
+               OpName %conv2d_arg_0 "conv2d_arg_0"
+               OpName %conv2d_arg_1 "conv2d_arg_1"
+               OpName %conv2d_arg_2 "conv2d_arg_2"
+               OpName %conv2d_res_0 "conv2d_res_0"
+               OpDecorate %conv2d_arg_0 Binding 0
+               OpDecorate %conv2d_arg_0 DescriptorSet 0
+               OpDecorate %conv2d_arg_1 Binding 1
+               OpDecorate %conv2d_arg_1 DescriptorSet 0
+               OpDecorate %conv2d_arg_2 Binding 2
+               OpDecorate %conv2d_arg_2 DescriptorSet 0
+               OpDecorate %conv2d_res_0 Binding 3
+               OpDecorate %conv2d_res_0 DescriptorSet 0
+      %uchar = OpTypeInt 8 0
+       %uint = OpTypeInt 32 0
+     %uint_4 = OpConstant %uint 4
+%_arr_uint_uint_4 = OpTypeArray %uint %uint_4
+     %uint_1 = OpConstant %uint 1
+%uint_524281 = OpConstant %uint 524281
+          %7 = OpConstantComposite %_arr_uint_uint_4 %uint_1 %uint_524281 %uint_1 %uint_4
+          %2 = OpTypeTensorARM %uchar %uint_4 %7
+%_ptr_UniformConstant_2 = OpTypePointer UniformConstant %2
+%conv2d_arg_0 = OpVariable %_ptr_UniformConstant_2 UniformConstant
+         %14 = OpConstantComposite %_arr_uint_uint_4 %uint_4 %uint_1 %uint_1 %uint_4
+         %13 = OpTypeTensorARM %uchar %uint_4 %14
+%_ptr_UniformConstant_13 = OpTypePointer UniformConstant %13
+%conv2d_arg_1 = OpVariable %_ptr_UniformConstant_13 UniformConstant
+%_arr_uint_uint_1 = OpTypeArray %uint %uint_1
+         %20 = OpConstantComposite %_arr_uint_uint_1 %uint_4
+         %18 = OpTypeTensorARM %uint %uint_1 %20
+%_ptr_UniformConstant_18 = OpTypePointer UniformConstant %18
+%conv2d_arg_2 = OpVariable %_ptr_UniformConstant_18 UniformConstant
+         %24 = OpConstantComposite %_arr_uint_uint_4 %uint_1 %uint_524281 %uint_1 %uint_4
+         %23 = OpTypeTensorARM %uint %uint_4 %24
+%_ptr_UniformConstant_23 = OpTypePointer UniformConstant %23
+%conv2d_res_0 = OpVariable %_ptr_UniformConstant_23 UniformConstant
+         %27 = OpTypeGraphARM 3 %2 %13 %18 %23
+     %uint_0 = OpConstant %uint 0
+         %33 = OpConstantComposite %_arr_uint_uint_1 %uint_4
+         %32 = OpTypeTensorARM %uint %uint_1 %33
+         %34 = OpConstantNull %32
+     %uint_2 = OpConstant %uint 2
+         %36 = OpConstantComposite %_arr_uint_uint_1 %uint_2
+         %35 = OpTypeTensorARM %uint %uint_1 %36
+         %37 = OpConstantCompositeReplicateEXT %35 %uint_1
+         %38 = OpConstantCompositeReplicateEXT %35 %uint_1
+       %bool = OpTypeBool
+      %false = OpConstantFalse %bool
+         %42 = OpConstantComposite %_arr_uint_uint_1 %uint_1
+         %41 = OpTypeTensorARM %uchar %uint_1 %42
+         %43 = OpConstantNull %41
+               OpGraphEntryPointARM %26 "conv2d" %conv2d_arg_0 %conv2d_arg_1 %conv2d_arg_2 %conv2d_res_0
+         %26 = OpGraphARM %27
+         %28 = OpGraphInputARM %2 %uint_0
+         %30 = OpGraphInputARM %13 %uint_1
+         %31 = OpGraphInputARM %18 %uint_2
+         %44 = OpExtInst %23 %45 CONV2D %34 %37 %38 %uint_1 %false %28 %30 %31 %43 %43
+               OpGraphSetOutputARM %44 %uint_0
+               OpGraphEndARM
