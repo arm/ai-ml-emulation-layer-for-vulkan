@@ -21,6 +21,8 @@
 - Fixed linear tensor/image aliasing to honor padded image row and depth pitches.
 - Fixed optical-flow image/buffer alias alignment and tensor descriptor binding
   flag substitution.
+- Split Conv2D output channels across multiple dispatches when the Z workgroup
+  count exceeds the physical-device limit.
 
 ### Bug Fixes
 
