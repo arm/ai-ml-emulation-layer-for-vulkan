@@ -67,8 +67,11 @@ class Builder:
         if self.package_release_pip:
             self.package_pip = True
 
+        self.pip_install = str(
+            EMULATION_LAYER_DIR / "pip_package" / "emulation_layer" / "deploy"
+        )
         if not self.install and self.package_pip:
-            self.install = "pip_install"
+            self.install = self.pip_install
 
         if not self.install and self.package_apk:
             self.install = "apk_install"
@@ -343,21 +346,36 @@ class Builder:
                     )
 
             if self.package_pip:
-                os.makedirs("pip_package/emulation_layer/deploy/", exist_ok=True)
-                shutil.copytree(
-                    self.install,
-                    "pip_package/emulation_layer/deploy/",
-                    dirs_exist_ok=True,
-                )
-                shutil.copyfile("README.md", "pip_package/README.md")
+                if self.install != self.pip_install:
+                    subprocess.run(
+                        [
+                            "cmake",
+                            "--install",
+                            self.build_dir,
+                            "--prefix",
+                            self.pip_install,
+                            "--config",
+                            self.build_type,
+                        ],
+                        check=True,
+                    )
 
-                os.environ[
+                build_env = os.environ.copy()
+                build_env[
                     "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_AI_ML_EMULATION_LAYER_FOR_VULKAN"
                 ] = package_version
+                build_env["EMULATION_LAYER_SKIP_NATIVE_BUILD"] = "1"
                 result = subprocess.Popen(
-                    [sys.executable, "-m", "build"],
-                    env=os.environ,
-                    cwd="pip_package",
+                    [
+                        sys.executable,
+                        "-m",
+                        "build",
+                        "--outdir",
+                        str(EMULATION_LAYER_DIR / "pip_package" / "dist"),
+                        str(EMULATION_LAYER_DIR),
+                    ],
+                    env=build_env,
+                    cwd=EMULATION_LAYER_DIR,
                 )
                 result.communicate()
                 if result.returncode != 0:
@@ -422,7 +440,7 @@ class Builder:
 
 
 def get_package_version():
-    pyproject = (EMULATION_LAYER_DIR / "pip_package" / "pyproject.toml").read_text()
+    pyproject = (EMULATION_LAYER_DIR / "pyproject.toml").read_text()
 
     regex_result = re.search(r'fallback_version\s*=\s*"([^"]+)"', pyproject)
     if not regex_result:
@@ -435,7 +453,7 @@ def get_package_version():
     return f"{base_version}.dev{date_tag}"
 
 
-def parse_arguments():
+def parse_arguments(argv=None):
     parser = argparse.ArgumentParser(description="Build ML SDK Emulation Layer")
     parser.add_argument(
         "--build-dir",
@@ -560,15 +578,18 @@ def parse_arguments():
     parser.add_argument("--json-path", default=f"{DEPENDENCY_DIR / 'json'}")
     parser.add_argument("--gtest-path", default=f"{DEPENDENCY_DIR / 'googletest'}")
 
-    if argcomplete:
+    if argcomplete and argv is None:
         argcomplete.autocomplete(parser)
 
-    return parser.parse_args()
+    return parser.parse_args(argv)
+
+
+def build(argv=None):
+    return Builder(parse_arguments(argv)).run()
 
 
 def main():
-    builder = Builder(parse_arguments())
-    sys.exit(builder.run())
+    sys.exit(build())
 
 
 if __name__ == "__main__":

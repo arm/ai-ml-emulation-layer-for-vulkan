@@ -509,10 +509,17 @@ the bootloader):
 
 The ML Emulation Layer for Vulkan® is available on PyPI as the [ai-ml-emulation-layer-for-vulkan](https://pypi.org/project/ai-ml-emulation-layer-for-vulkan) package.
 
-Install:
+Install the published package:
 
 ```bash
 pip install ai-ml-emulation-layer-for-vulkan
+```
+
+To build and install the host layers from an ML SDK checkout, run from this
+repository root:
+
+```bash
+pip install .
 ```
 
 ## Known Limitations

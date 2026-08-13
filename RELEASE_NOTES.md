@@ -7,6 +7,8 @@
 ### Build, Packaging & Developer Experience
 
 - Updated Emulation Layer `--version` output to report the package version and include git revision and dependency revision information
+- Enabled building and installing the native Emulation Layer with
+  `pip install .` from the repository root.
 - Enabled KosmicKrisp compatibility automatically based on selected driver.
 
 ### Tensor Shader Support
@@ -25,7 +27,7 @@
   count exceeds the corresponding physical-device limit.
 - Fixed interval memory planning to preserve tensor live ranges across multiple
   graph dispatches.
-- Fixed ambiguous shader conversion overloads for `uint_32_t` convolution outputs.
+- Fixed ambiguous shader conversion overloads for `uint32_t` convolution outputs.
 
 ## Version 0.10.0 – *Optical Flow, Graph Profiling & Runtime Refinement*
 
