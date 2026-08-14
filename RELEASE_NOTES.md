@@ -23,11 +23,9 @@
   flag substitution.
 - Split oversized Conv2D workloads across multiple dispatches when any workgroup
   count exceeds the corresponding physical-device limit.
-
-### Bug Fixes
-
 - Fixed interval memory planning to preserve tensor live ranges across multiple
   graph dispatches.
+- Fixed ambiguous shader conversion overloads for `uint_32_t` convolution outputs.
 
 ## Version 0.10.0 – *Optical Flow, Graph Profiling & Runtime Refinement*
 
