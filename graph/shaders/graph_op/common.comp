@@ -640,6 +640,7 @@ bool encode_from_f32(float x, bool)
     ACC_TYPE to_acc(int16_t v)    { return ACC_TYPE(v); }                                                             \
     ACC_TYPE to_acc(int v)        { return ACC_TYPE(v); }                                                             \
     ACC_TYPE to_acc(int64_t v)    { return ACC_TYPE(v); }                                                             \
+    ACC_TYPE to_acc(uint32_t v)   { return ACC_TYPE(v); }                                                             \
     ACC_TYPE to_acc(bfloat16_t v) { return ACC_TYPE(decode_to_f32(v)); }                                              \
     ACC_TYPE to_acc(uint8_t v) { return ACC_TYPE(decode_float8_to_f16(v, IN_TYPE_TAG)); }                            \
                                                                                                                        \
@@ -650,4 +651,5 @@ bool encode_from_f32(float x, bool)
     OUT_TYPE acc_to_out(ACC_TYPE v, int8_t)     { return OUT_TYPE(v); }                                               \
     OUT_TYPE acc_to_out(ACC_TYPE v, int16_t)    { return OUT_TYPE(v); }                                               \
     OUT_TYPE acc_to_out(ACC_TYPE v, int)        { return OUT_TYPE(v); }                                               \
-    OUT_TYPE acc_to_out(ACC_TYPE v, int64_t)    { return OUT_TYPE(v); }
+    OUT_TYPE acc_to_out(ACC_TYPE v, int64_t)    { return OUT_TYPE(v); }                                               \
+    OUT_TYPE acc_to_out(ACC_TYPE v, uint32_t)   { return OUT_TYPE(v); }
