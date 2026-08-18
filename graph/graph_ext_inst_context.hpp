@@ -12,21 +12,28 @@
 
 #include "compute_graph_op.hpp"
 #include "mlel/float.hpp"
-#include "source/opt/pass.h"
+#include "source/opt/ir_context.h"
 
-#include <numeric>
-#include <spirv-tools/optimizer.hpp>
-#include <type_traits>
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <map>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <tuple>
+#include <typeinfo>
+#include <vector>
 
 /*******************************************************************************
- * Base Graph Pass
+ * Graph extended instruction lowering context
  *******************************************************************************/
-
-using namespace mlsdk::el::compute::graph_op;
 
 namespace spvtools {
 
 namespace opt {
+
+using mlsdk::el::compute::graph_op::GraphPipeline;
 
 // Helper function to expand a splat pattern in-place, if the provided values represent a replicated constant pattern.
 // Normally values contain one value that is replicated to the total element count of a composite constant, but in some
@@ -53,101 +60,29 @@ template <typename T> bool tryExpandReplicatedPattern(std::vector<T> &values, co
     return true;
 }
 
-enum RoundingMode {
-    SingleRound = 1,
-    InexactRound = 2,
-    DoubleRound = 3,
-};
+bool isBFloat16(const analysis::Float *type);
+bool isFloat8E5M2(const analysis::Float *type);
+bool isFloat8E4M3(const analysis::Float *type);
 
-class GraphPassBase : public Pass {
+class GraphExtInstContext {
   public:
-    GraphPassBase(GraphPipeline &_graphPipeline) : graphPipeline{_graphPipeline} {}
+    GraphExtInstContext(IRContext &_irContext, GraphPipeline &_graphPipeline)
+        : irContext{_irContext}, graphPipeline{_graphPipeline} {}
 
-    ~GraphPassBase() override = default;
-
-  protected:
-    Status Process() override;
-    virtual void handleGraph(const Graph *graph) = 0;
-
-    void handleGraphConstants();
-    void handleGraphs();
-    void handleInputsAndOutputs(const Instruction &opGraphEntryPoint);
-    const Graph *getGraphById(const Operand &operand);
-
-    const analysis::TensorARM *getTensorType(const Operand &operand) const;
-    const analysis::TensorARM *getTensorType(uint32_t id) const;
-    std::tuple<uint64_t, uint64_t> getDescriptorSetAndBinding(const Operand &operand);
-    std::tuple<uint64_t, uint64_t, std::shared_ptr<mlsdk::el::compute::TensorDescriptor>>
-    getTensorByDecoration(const Operand &operand, uint32_t arrayIndex);
     std::shared_ptr<mlsdk::el::compute::TensorDescriptor> getTensor(const Instruction &instruction,
                                                                     uint32_t arrayIndex = 0);
     std::shared_ptr<mlsdk::el::compute::TensorDescriptor> getTensor(const Operand &operand, uint32_t arrayIndex = 0);
-    std::shared_ptr<mlsdk::el::compute::TensorDescriptor> makeTensor(const analysis::TensorARM *tensor) const;
-    std::shared_ptr<mlsdk::el::compute::TensorDescriptor> getOrMakeCompositeTensor(uint32_t id);
-    std::shared_ptr<mlsdk::el::compute::TensorDescriptor> makeCompositeTensor(uint32_t id) const;
-    VkFormat getVkFormat(const analysis::Type *type) const;
-    bool getBoolConstant(const Operand &operand);
 
-    // Temp implementation until debug info is truly available
-    std::string extractDebugInfoFromSPV(const Instruction *, const std::string &defaultname) { return defaultname; }
+    std::shared_ptr<mlsdk::el::compute::TensorDescriptor> getOrMakeCompositeTensor(uint32_t id);
+
+    bool getBoolConstant(const Operand &operand);
 
     template <typename T> std::vector<T> getConstVector(const Operand &operand) const {
         return getConstVector<T>(operand.AsId());
     }
 
-    template <typename T>
-    void getFlattenedCompositeConstant(const spvtools::opt::analysis::CompositeConstant *composite,
-                                       std::vector<T> &kernel) const {
-        const auto &components = composite->GetComponents();
-        kernel.reserve(kernel.size() + components.size());
-        for (const auto *component : components) {
-            if (const auto *innerComposite = component->AsCompositeConstant()) {
-                getFlattenedCompositeConstant(innerComposite, kernel);
-            } else {
-                kernel.push_back(getConstScalar<T>(component));
-            }
-        }
-    }
-
-    template <typename T> std::vector<T> getConstVector(const uint32_t id) const {
-        const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(id);
-        std::vector<T> kernel;
-
-        if (!constant) {
-            throw std::runtime_error("Missing declared constant for id: " + std::to_string(id));
-        }
-
-        if (const auto *composite = constant->AsCompositeConstant()) {
-            const auto *instruction = context()->get_def_use_mgr()->GetDef(id);
-            const bool isSplat = isCompositeReplicateConstantOpcode(instruction->opcode());
-            getFlattenedCompositeConstant(composite, kernel);
-
-            if (isSplat) {
-                const auto *tensorType = getTensorType(id);
-                const auto elemCount = getElementCount(tensorType->shape_id());
-                if (!tryExpandReplicatedPattern(kernel, elemCount)) {
-                    throw std::runtime_error(
-                        "Unexpected replicated constant element count for id: " + std::to_string(id) + ", expected " +
-                        std::to_string(elemCount) + ", found " + std::to_string(kernel.size()));
-                }
-            }
-        } else if (const auto *null = constant->AsNullConstant(); null != nullptr) {
-            if (const auto *tensor = constant->type()->AsTensorARM()) {
-                // TensorARM: zero-initialize a composite tensor with the total element count
-                const auto elemCount = getElementCount(tensor->shape_id());
-                kernel.resize(elemCount, 0);
-            } else {
-                assert(false);
-            }
-        } else {
-            assert(false);
-        }
-
-        return kernel;
-    }
-
     template <typename T> T getConstScalar(const Operand &operand) const {
-        return getConstScalar<T>(context()->get_constant_mgr()->FindDeclaredConstant(operand.AsId()));
+        return getConstScalar<T>(irContext.get_constant_mgr()->FindDeclaredConstant(operand.AsId()));
     }
 
     template <typename T> T getConstScalar(const analysis::Constant *constant) const {
@@ -217,13 +152,82 @@ class GraphPassBase : public Pass {
                                  " for requested return type: " + typeid(T).name());
     }
 
-    static bool isBFloat16(const spvtools::opt::analysis::Float *f);
-    static bool isFloat8E5M2(const spvtools::opt::analysis::Float *f);
-    static bool isFloat8E4M3(const spvtools::opt::analysis::Float *f);
-
-    GraphPipeline &graphPipeline;
+    GraphPipeline &pipeline() const { return graphPipeline; }
+    std::string debugName(const Instruction *, const std::string &defaultName) const { return defaultName; }
+    const analysis::Constant *findConstant(uint32_t id) const {
+        return irContext.get_constant_mgr()->FindDeclaredConstant(id);
+    }
 
   private:
+    friend class GraphPassExtInst;
+
+    void handleGraphConstants();
+    void handleInputsAndOutputs(const Instruction &opGraphEntryPoint);
+    const Graph *getGraphById(const Operand &operand);
+
+    const analysis::TensorARM *getTensorType(const Operand &operand) const;
+    const analysis::TensorARM *getTensorType(uint32_t id) const;
+    std::tuple<uint64_t, uint64_t> getDescriptorSetAndBinding(const Operand &operand);
+    std::tuple<uint64_t, uint64_t, std::shared_ptr<mlsdk::el::compute::TensorDescriptor>>
+    getTensorByDecoration(const Operand &operand, uint32_t arrayIndex);
+
+    std::shared_ptr<mlsdk::el::compute::TensorDescriptor> makeTensor(const analysis::TensorARM *tensor) const;
+    std::shared_ptr<mlsdk::el::compute::TensorDescriptor> makeCompositeTensor(uint32_t id) const;
+    VkFormat getVkFormat(const analysis::Type *type) const;
+
+    template <typename T>
+    void getFlattenedCompositeConstant(const spvtools::opt::analysis::CompositeConstant *composite,
+                                       std::vector<T> &kernel) const {
+        const auto &components = composite->GetComponents();
+        kernel.reserve(kernel.size() + components.size());
+        for (const auto *component : components) {
+            if (const auto *innerComposite = component->AsCompositeConstant()) {
+                getFlattenedCompositeConstant(innerComposite, kernel);
+            } else {
+                kernel.push_back(getConstScalar<T>(component));
+            }
+        }
+    }
+
+    template <typename T> std::vector<T> getConstVector(const uint32_t id) const {
+        const auto *constant = irContext.get_constant_mgr()->FindDeclaredConstant(id);
+        std::vector<T> kernel;
+
+        if (!constant) {
+            throw std::runtime_error("Missing declared constant for id: " + std::to_string(id));
+        }
+
+        if (const auto *composite = constant->AsCompositeConstant()) {
+            const auto *instruction = irContext.get_def_use_mgr()->GetDef(id);
+            const bool isSplat = isCompositeReplicateConstantOpcode(instruction->opcode());
+            getFlattenedCompositeConstant(composite, kernel);
+
+            if (isSplat) {
+                const auto *tensorType = getTensorType(id);
+                const auto elemCount = getElementCount(tensorType->shape_id());
+                if (!tryExpandReplicatedPattern(kernel, elemCount)) {
+                    throw std::runtime_error(
+                        "Unexpected replicated constant element count for id: " + std::to_string(id) + ", expected " +
+                        std::to_string(elemCount) + ", found " + std::to_string(kernel.size()));
+                }
+            }
+        } else if (const auto *null = constant->AsNullConstant(); null != nullptr) {
+            if (const auto *tensor = constant->type()->AsTensorARM()) {
+                // TensorARM: zero-initialize a composite tensor with the total element count
+                const auto elemCount = getElementCount(tensor->shape_id());
+                kernel.resize(elemCount, 0);
+            } else {
+                assert(false);
+            }
+        } else {
+            assert(false);
+        }
+
+        return kernel;
+    }
+
+    IRContext &irContext;
+    GraphPipeline &graphPipeline;
     // Local cache from SPIR-V result id to the tensor descriptors used while lowering a graph.
     // Slot 1 is for multi-result logical values (for example FFT-style ops), not descriptor array elements.
     std::map<uint32_t, std::array<std::shared_ptr<mlsdk::el::compute::TensorDescriptor>, 2>> tensorMap;
@@ -238,14 +242,5 @@ class GraphPassBase : public Pass {
 };
 
 } // namespace opt
-
-/*******************************************************************************
- * Create pass
- *******************************************************************************/
-
-template <typename T, std::enable_if_t<std::is_base_of_v<opt::GraphPassBase, T>, bool> = true>
-Optimizer::PassToken CreateGraphPass(GraphPipeline &graphPipeline) {
-    return Optimizer::PassToken{MakeUnique<T>(graphPipeline)};
-}
 
 } // namespace spvtools

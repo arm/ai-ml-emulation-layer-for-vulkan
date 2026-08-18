@@ -8,51 +8,33 @@
  * Includes
  *******************************************************************************/
 
-#include "spirv_pass_tosaspv_v100.hpp"
+#include "graph_tosa_1_0_ext_inst.hpp"
+#include "graph_ext_inst_context.hpp"
 #include "graph_log.hpp"
 
 #include <cstring>
-#include <spirv/unified1/ArmMotionEngine.100.h>
 #include <spirv/unified1/TOSA.001000.1.h>
+#include <unordered_map>
 
 using namespace mlsdk::el::log;
 using namespace mlsdk::el::compute;
 
 /*******************************************************************************
- * GraphPass TosaSpv100
+ * GraphPass extended instruction sets
  *******************************************************************************/
 namespace spvtools::opt {
 
-void GraphPassTosaSpv100::handleGraph(const Graph *graph) {
-    // Iterate over instructions in the graph
-    for (const auto &opExtInst : graph->instructions()) {
+namespace {
 
-        // OpExtInst <result id> <OpExtInstImport id> <tosa operation> [arguments]
-        switch (opExtInst->opcode()) {
-        case spv::Op::OpExtInst:
-            break;
-        case spv::Op::OpCompositeExtract:
-            continue;
-        default:
-            throw std::runtime_error(std::string("Unsupported graph instruction ") +
-                                     std::to_string(static_cast<unsigned>(opExtInst->opcode())));
-        }
+enum RoundingMode {
+    SingleRound = 1,
+    InexactRound = 2,
+    DoubleRound = 3,
+};
 
-        const auto &resultId = opExtInst->GetInOperand(0);
-        const auto *importInstr = get_def_use_mgr()->GetDef(resultId.AsId());
-        const auto &importName = importInstr->GetInOperand(0).AsString();
+} // namespace
 
-        if (importName == tosaSpv100) {
-            handleTosaInst(opExtInst.get());
-        } else if (importName == motionEngine100) {
-            handleMotionEngineInst(opExtInst.get());
-        } else {
-            throw std::runtime_error(std::string("Unsupported extension ") + importName);
-        }
-    }
-}
-
-void GraphPassTosaSpv100::handleTosaInst(const Instruction *opExtInst) {
+void GraphTosa10ExtInst::handleOp(const Instruction *opExtInst) const {
     const auto &tosa = TOSAInstructions(opExtInst->GetInOperand(1).words[0]);
 
     // Verify that this is a TOSA external instruction
@@ -124,7 +106,7 @@ void GraphPassTosaSpv100::handleTosaInst(const Instruction *opExtInst) {
         {TOSATRANSPOSE, "TRANSPOSE"},
         {TOSATRANSPOSE_CONV2D, "TRANSPOSE_CONV2D"},
     };
-    std::string debugName = extractDebugInfoFromSPV(opExtInst, opNameMap.count(tosa) ? opNameMap.at(tosa) : "UNKNOWN");
+    std::string debugName = context.debugName(opExtInst, opNameMap.count(tosa) ? opNameMap.at(tosa) : "UNKNOWN");
 
     switch (tosa) {
     case TOSAABS:
@@ -330,88 +312,61 @@ void GraphPassTosaSpv100::handleTosaInst(const Instruction *opExtInst) {
     }
 }
 
-void GraphPassTosaSpv100::handleMotionEngineInst(const Instruction *opExtInst) {
-    const auto &motionEngine = ArmMotionEngineInstructions(opExtInst->GetInOperand(1).words[0]);
-
-    // Verify that this is a Motion Engine external instruction
-    static const std::unordered_map<ArmMotionEngineInstructions, std::string> opNameMap = {
-        {ArmMotionEngineMIN_SAD, "MIN_SAD"},
-        {ArmMotionEngineMIN_SAD_COST, "MIN_SAD_COST"},
-        {ArmMotionEngineRAW_SAD, "RAW_SAD"},
-    };
-    std::string debugName =
-        extractDebugInfoFromSPV(opExtInst, opNameMap.count(motionEngine) ? opNameMap.at(motionEngine) : "UNKNOWN");
-
-    switch (motionEngine) {
-    case ArmMotionEngineMIN_SAD:
-        handleMinSad(opExtInst, debugName);
-        break;
-    case ArmMotionEngineMIN_SAD_COST:
-        handleMinSadCost(opExtInst, debugName);
-        break;
-    case ArmMotionEngineRAW_SAD:
-        handleRawSad(opExtInst, debugName);
-        break;
-    default:
-        throw std::runtime_error(std::string("Unsupported ArmMotionEngine operand ") + std::to_string(motionEngine));
-    }
-}
-
-void GraphPassTosaSpv100::handleArgmax(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleArgmax(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> ARGMAX axis nanMode input
     assert(opExtInst->NumInOperands() == 5);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &axis = getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
-    const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(3));
+    const auto &axis = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &nanMode = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(3));
     const auto &inputId = opExtInst->GetInOperand(4);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", axis=" << axis
                              << ", nanMode=" << nanMode << ", input=%" << inputId.AsId() << std::endl;
 
-    graphPipeline.makeArgmax(getTensor(inputId), getTensor(*opExtInst), axis, nanMode, debugName);
+    context.pipeline().makeArgmax(context.getTensor(inputId), context.getTensor(*opExtInst), axis, nanMode, debugName);
 }
 
-void GraphPassTosaSpv100::handleArithmeticRightShift(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleArithmeticRightShift(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> ARITHMETIC_RIGHT_SHIFT round input1 input2
     assert(opExtInst->NumInOperands() == 5);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &round = getBoolConstant(opExtInst->GetInOperand(2));
+    const auto &round = context.getBoolConstant(opExtInst->GetInOperand(2));
     const auto &inputId1 = opExtInst->GetInOperand(3);
     const auto &inputId2 = opExtInst->GetInOperand(4);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", round=" << round
                              << ", input1=%" << inputId1.AsId() << ", input2=%" << inputId2.AsId() << std::endl;
 
-    graphPipeline.makeArithmeticRightShift(getTensor(inputId1), getTensor(inputId2), getTensor(*opExtInst), round,
-                                           debugName);
+    context.pipeline().makeArithmeticRightShift(context.getTensor(inputId1), context.getTensor(inputId2),
+                                                context.getTensor(*opExtInst), round, debugName);
 }
 
-void GraphPassTosaSpv100::handleAvgPool2D(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleAvgPool2D(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> AVG_POOL2D kernel stride pad accType input inputZeroPoint
     // outputZeroPoint
     assert(opExtInst->NumInOperands() == 9);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &kernel = getConstVector<int32_t>(opExtInst->GetInOperand(2));
-    const auto &stride = getConstVector<int32_t>(opExtInst->GetInOperand(3));
-    const auto &pad = getConstVector<int32_t>(opExtInst->GetInOperand(4));
-    const auto &accType = getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
+    const auto &kernel = context.getConstVector<int32_t>(opExtInst->GetInOperand(2));
+    const auto &stride = context.getConstVector<int32_t>(opExtInst->GetInOperand(3));
+    const auto &pad = context.getConstVector<int32_t>(opExtInst->GetInOperand(4));
+    const auto &accType = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
     const auto &inputId = opExtInst->GetInOperand(6);
-    const auto &inputZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(7));
-    const auto &outputZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(8));
+    const auto &inputZeroPoint = context.getConstVector<int8_t>(opExtInst->GetInOperand(7));
+    const auto &outputZeroPoint = context.getConstVector<int8_t>(opExtInst->GetInOperand(8));
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ", " << debugName << ", kernel=" << kernel
                              << ", stride=" << stride << ", pad=" << pad << ", accType=" << accType
                              << ", inputZeroPoint=" << inputZeroPoint << ", outputZeroPoint=" << outputZeroPoint
                              << ", input=%" << inputId.AsId() << std::endl;
 
-    graphPipeline.makeAvgPool2D(getTensor(inputId), getTensor(*opExtInst), kernel, stride, pad, accType,
-                                inputZeroPoint[0], outputZeroPoint[0], debugName);
+    context.pipeline().makeAvgPool2D(context.getTensor(inputId), context.getTensor(*opExtInst), kernel, stride, pad,
+                                     accType, inputZeroPoint[0], outputZeroPoint[0], debugName);
 }
 
-void GraphPassTosaSpv100::handleCast(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleCast(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> CAST input
     assert(opExtInst->NumInOperands() == 3);
 
@@ -421,19 +376,19 @@ void GraphPassTosaSpv100::handleCast(const Instruction *opExtInst, const std::st
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input=%" << inputId.AsId()
                              << std::endl;
 
-    graphPipeline.makeCast(getTensor(inputId), getTensor(*opExtInst), debugName);
+    context.pipeline().makeCast(context.getTensor(inputId), context.getTensor(*opExtInst), debugName);
 }
 
-void GraphPassTosaSpv100::handleClamp(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleClamp(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> CLAMP minVal maxVal nanMode input
     assert(opExtInst->NumInOperands() == 6);
 
     auto getClampBound = [&](const Operand &operand) {
-        const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(operand.AsId());
+        const auto *constant = context.findConstant(operand.AsId());
         const auto *floatConstant = constant->AsFloatConstant();
         if (floatConstant != nullptr) {
             const auto *type = floatConstant->type()->AsFloat();
-            if (GraphPassBase::isBFloat16(type)) {
+            if (isBFloat16(type)) {
                 const uint32_t bits = uint32_t(uint16_t(floatConstant->words()[0])) << 16;
                 float value = 0.0F;
                 std::memcpy(&value, &bits, sizeof(value));
@@ -441,58 +396,59 @@ void GraphPassTosaSpv100::handleClamp(const Instruction *opExtInst, const std::s
             }
         }
 
-        return getConstScalar<real_t>(constant);
+        return context.getConstScalar<real_t>(constant);
     };
 
     const auto &resultId = opExtInst->result_id();
     const auto minVal = getClampBound(opExtInst->GetInOperand(2));
     const auto maxVal = getClampBound(opExtInst->GetInOperand(3));
-    const auto nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(4));
+    const auto nanMode = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(4));
     const auto &inputId = opExtInst->GetInOperand(5);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", minVal=" << minVal
                              << ", maxVal=" << maxVal << ", nanMode=" << nanMode << ", input=%" << inputId.AsId()
                              << std::endl;
 
-    graphPipeline.makeClamp(getTensor(inputId), getTensor(*opExtInst), minVal, maxVal, nanMode, debugName);
+    context.pipeline().makeClamp(context.getTensor(inputId), context.getTensor(*opExtInst), minVal, maxVal, nanMode,
+                                 debugName);
 }
 
-void GraphPassTosaSpv100::handleConcat(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleConcat(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> CONCAT axis [inputs]
     assert(opExtInst->NumInOperands() > 2);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &axis = getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &axis = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
 
     std::vector<std::shared_ptr<TensorDescriptor>> inputs;
     std::string inputsStr;
     for (uint32_t i = 3; i < opExtInst->NumInOperands(); i++) {
-        inputs.push_back(getTensor(opExtInst->GetInOperand(i)));
+        inputs.push_back(context.getTensor(opExtInst->GetInOperand(i)));
         inputsStr += ", input" + std::to_string(i - 3) + "=%" + std::to_string(opExtInst->GetInOperand(i).AsId());
     }
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", axis=" << axis << inputsStr
                              << std::endl;
 
-    graphPipeline.makeConcat(inputs, getTensor(*opExtInst), axis, debugName);
+    context.pipeline().makeConcat(inputs, context.getTensor(*opExtInst), axis, debugName);
 }
 
-void GraphPassTosaSpv100::handleConv2D(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleConv2D(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> CONV2D pad stride dilation accType localBound input weight bias
     // inputZeroPoint weightZeroPoint
     assert(opExtInst->NumInOperands() == 12);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &pad = getConstVector<int32_t>(opExtInst->GetInOperand(2));
-    const auto &stride = getConstVector<int32_t>(opExtInst->GetInOperand(3));
-    const auto &dilation = getConstVector<int32_t>(opExtInst->GetInOperand(4));
-    const auto &accType = getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
-    const auto &localBound = getBoolConstant(opExtInst->GetInOperand(6));
+    const auto &pad = context.getConstVector<int32_t>(opExtInst->GetInOperand(2));
+    const auto &stride = context.getConstVector<int32_t>(opExtInst->GetInOperand(3));
+    const auto &dilation = context.getConstVector<int32_t>(opExtInst->GetInOperand(4));
+    const auto &accType = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
+    const auto &localBound = context.getBoolConstant(opExtInst->GetInOperand(6));
     const auto &inputId = opExtInst->GetInOperand(7);
     const auto &weightId = opExtInst->GetInOperand(8);
     const auto &biasId = opExtInst->GetInOperand(9);
-    const auto &inputZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(10));
-    const auto &weightZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(11));
+    const auto &inputZeroPoint = context.getConstVector<int8_t>(opExtInst->GetInOperand(10));
+    const auto &weightZeroPoint = context.getConstVector<int8_t>(opExtInst->GetInOperand(11));
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", pad=" << pad
                              << ", stride=" << stride << ", dilation=" << dilation << ", accType=" << accType
@@ -500,26 +456,27 @@ void GraphPassTosaSpv100::handleConv2D(const Instruction *opExtInst, const std::
                              << weightId.AsId() << ", bias=%" << biasId.AsId() << ", inputZeroPoint=" << inputZeroPoint
                              << ", weightZeroPoint=" << weightZeroPoint << std::endl;
 
-    graphPipeline.makeConv2D(getTensor(inputId), getTensor(*opExtInst), getTensor(weightId), getTensor(biasId), pad,
-                             stride, dilation, inputZeroPoint[0], weightZeroPoint[0], accType, debugName);
+    context.pipeline().makeConv2D(context.getTensor(inputId), context.getTensor(*opExtInst),
+                                  context.getTensor(weightId), context.getTensor(biasId), pad, stride, dilation,
+                                  inputZeroPoint[0], weightZeroPoint[0], accType, debugName);
 }
 
-void GraphPassTosaSpv100::handleConv3D(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleConv3D(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> CONV3D pad stride dilation accType localBound input weight bias
     // inputZeroPoint weightZeroPoint
     assert(opExtInst->NumInOperands() == 12);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &pad = getConstVector<int32_t>(opExtInst->GetInOperand(2));
-    const auto &stride = getConstVector<int32_t>(opExtInst->GetInOperand(3));
-    const auto &dilation = getConstVector<int32_t>(opExtInst->GetInOperand(4));
-    const auto &accType = getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
-    const auto &localBound = getBoolConstant(opExtInst->GetInOperand(6));
+    const auto &pad = context.getConstVector<int32_t>(opExtInst->GetInOperand(2));
+    const auto &stride = context.getConstVector<int32_t>(opExtInst->GetInOperand(3));
+    const auto &dilation = context.getConstVector<int32_t>(opExtInst->GetInOperand(4));
+    const auto &accType = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
+    const auto &localBound = context.getBoolConstant(opExtInst->GetInOperand(6));
     const auto &inputId = opExtInst->GetInOperand(7);
     const auto &weightId = opExtInst->GetInOperand(8);
     const auto &biasId = opExtInst->GetInOperand(9);
-    const auto &inputZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(10));
-    const auto &weightZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(11));
+    const auto &inputZeroPoint = context.getConstVector<int8_t>(opExtInst->GetInOperand(10));
+    const auto &weightZeroPoint = context.getConstVector<int8_t>(opExtInst->GetInOperand(11));
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", pad=" << pad
                              << ", stride=" << stride << ", dilation=" << dilation << ", accType=" << accType
@@ -527,26 +484,27 @@ void GraphPassTosaSpv100::handleConv3D(const Instruction *opExtInst, const std::
                              << weightId.AsId() << ", bias=%" << biasId.AsId() << ", inputZeroPoint=" << inputZeroPoint
                              << ", weightZeroPoint=" << weightZeroPoint << std::endl;
 
-    graphPipeline.makeConv3D(getTensor(inputId), getTensor(*opExtInst), getTensor(weightId), getTensor(biasId), pad,
-                             stride, dilation, inputZeroPoint[0], weightZeroPoint[0], accType, debugName);
+    context.pipeline().makeConv3D(context.getTensor(inputId), context.getTensor(*opExtInst),
+                                  context.getTensor(weightId), context.getTensor(biasId), pad, stride, dilation,
+                                  inputZeroPoint[0], weightZeroPoint[0], accType, debugName);
 }
 
-void GraphPassTosaSpv100::handleDepthwiseConv2D(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleDepthwiseConv2D(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> DEPTHWISE_CONV2D pad stride dilation accType localBound input weight
     // bias inputZeroPoint weightZeroPoint
     assert(opExtInst->NumInOperands() == 12);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &pad = getConstVector<int32_t>(opExtInst->GetInOperand(2));
-    const auto &stride = getConstVector<int32_t>(opExtInst->GetInOperand(3));
-    const auto &dilation = getConstVector<int32_t>(opExtInst->GetInOperand(4));
-    const auto &accType = getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
-    const auto &localBound = getBoolConstant(opExtInst->GetInOperand(6));
+    const auto &pad = context.getConstVector<int32_t>(opExtInst->GetInOperand(2));
+    const auto &stride = context.getConstVector<int32_t>(opExtInst->GetInOperand(3));
+    const auto &dilation = context.getConstVector<int32_t>(opExtInst->GetInOperand(4));
+    const auto &accType = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
+    const auto &localBound = context.getBoolConstant(opExtInst->GetInOperand(6));
     const auto &inputId = opExtInst->GetInOperand(7);
     const auto &weightId = opExtInst->GetInOperand(8);
     const auto &biasId = opExtInst->GetInOperand(9);
-    const auto &inputZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(10));
-    const auto &weightZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(11));
+    const auto &inputZeroPoint = context.getConstVector<int8_t>(opExtInst->GetInOperand(10));
+    const auto &weightZeroPoint = context.getConstVector<int8_t>(opExtInst->GetInOperand(11));
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", pad=" << pad
                              << ", stride=" << stride << ", dilation=" << dilation << ", accType=" << accType
@@ -554,15 +512,16 @@ void GraphPassTosaSpv100::handleDepthwiseConv2D(const Instruction *opExtInst, co
                              << weightId.AsId() << ", bias=%" << biasId.AsId() << ", inputZeroPoint=" << inputZeroPoint
                              << ", weightZeroPoint=" << weightZeroPoint << std::endl;
 
-    graphPipeline.makeDepthwiseConv2D(getTensor(inputId), getTensor(*opExtInst), getTensor(weightId), getTensor(biasId),
-                                      pad, stride, dilation, inputZeroPoint[0], weightZeroPoint[0], accType, debugName);
+    context.pipeline().makeDepthwiseConv2D(context.getTensor(inputId), context.getTensor(*opExtInst),
+                                           context.getTensor(weightId), context.getTensor(biasId), pad, stride,
+                                           dilation, inputZeroPoint[0], weightZeroPoint[0], accType, debugName);
 }
 
-void GraphPassTosaSpv100::handleElementwiseBinary(
+void GraphTosa10ExtInst::handleElementwiseBinary(
     const Instruction *opExtInst, const std::string &debugName,
     const std::function<void(GraphPipeline *, const std::shared_ptr<TensorDescriptor> &,
                              const std::shared_ptr<TensorDescriptor> &, const std::shared_ptr<TensorDescriptor> &,
-                             const std::string &)> &function) {
+                             const std::string &)> &function) const {
     // OpExtInst <result id> <OpExtInstImport id> OPERATION input1 input2
     assert(opExtInst->NumInOperands() == 4);
 
@@ -573,13 +532,14 @@ void GraphPassTosaSpv100::handleElementwiseBinary(
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ", " << debugName << ", input1=%" << inputId1.AsId()
                              << ", input2=%" << inputId2.AsId() << std::endl;
 
-    std::invoke(function, &graphPipeline, getTensor(inputId1), getTensor(inputId2), getTensor(*opExtInst), debugName);
+    std::invoke(function, &context.pipeline(), context.getTensor(inputId1), context.getTensor(inputId2),
+                context.getTensor(*opExtInst), debugName);
 }
 
-void GraphPassTosaSpv100::handleElementwiseUnary(
+void GraphTosa10ExtInst::handleElementwiseUnary(
     const Instruction *opExtInst, const std::string &debugName,
     const std::function<void(GraphPipeline *, const std::shared_ptr<TensorDescriptor> &,
-                             const std::shared_ptr<TensorDescriptor> &, const std::string &)> &function) {
+                             const std::shared_ptr<TensorDescriptor> &, const std::string &)> &function) const {
     // OpExtInst <result id> <OpExtInstImport id> OPERATION input1
     assert(opExtInst->NumInOperands() == 3);
 
@@ -589,16 +549,16 @@ void GraphPassTosaSpv100::handleElementwiseUnary(
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input1=%" << inputId1.AsId()
                              << std::endl;
 
-    std::invoke(function, &graphPipeline, getTensor(inputId1), getTensor(*opExtInst), debugName);
+    std::invoke(function, &context.pipeline(), context.getTensor(inputId1), context.getTensor(*opExtInst), debugName);
 }
 
-void GraphPassTosaSpv100::handleFft2D(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleFft2D(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> FFT2D inverse localBound input_real input_imag
     assert(opExtInst->NumInOperands() == 6);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &inverse = getBoolConstant(opExtInst->GetInOperand(2));
-    const auto &localBound = getBoolConstant(opExtInst->GetInOperand(3));
+    const auto &inverse = context.getBoolConstant(opExtInst->GetInOperand(2));
+    const auto &localBound = context.getBoolConstant(opExtInst->GetInOperand(3));
     const auto &inputRealId = opExtInst->GetInOperand(4);
     const auto &inputImagId = opExtInst->GetInOperand(5);
 
@@ -606,11 +566,12 @@ void GraphPassTosaSpv100::handleFft2D(const Instruction *opExtInst, const std::s
                              << ", localBound=" << localBound << ", inputReal=%" << inputRealId.AsId()
                              << ", inputImag=%" << inputImagId.AsId() << std::endl;
 
-    graphPipeline.makeFft2D(getTensor(inputRealId), getTensor(inputImagId), getTensor(*opExtInst, 0),
-                            getTensor(*opExtInst, 1), inverse, debugName);
+    context.pipeline().makeFft2D(context.getTensor(inputRealId), context.getTensor(inputImagId),
+                                 context.getTensor(*opExtInst, 0), context.getTensor(*opExtInst, 1), inverse,
+                                 debugName);
 }
 
-void GraphPassTosaSpv100::handleGather(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleGather(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> GATHER values indices
     assert(opExtInst->NumInOperands() == 4);
 
@@ -621,115 +582,120 @@ void GraphPassTosaSpv100::handleGather(const Instruction *opExtInst, const std::
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", values=%" << valuesId.AsId()
                              << ", indices=%" << indicesId.AsId() << std::endl;
 
-    graphPipeline.makeGather(getTensor(valuesId), getTensor(indicesId), getTensor(*opExtInst), debugName);
+    context.pipeline().makeGather(context.getTensor(valuesId), context.getTensor(indicesId),
+                                  context.getTensor(*opExtInst), debugName);
 }
 
-void GraphPassTosaSpv100::handleMatmul(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleMatmul(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> MATMUL input1 input2 input1ZeroPoint input2ZeroPoint
     assert(opExtInst->NumInOperands() == 6);
 
     const auto &resultId = opExtInst->result_id();
     const auto &inputId1 = opExtInst->GetInOperand(2);
     const auto &inputId2 = opExtInst->GetInOperand(3);
-    const auto &input1ZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(4));
-    const auto &input2ZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(5));
+    const auto &input1ZeroPoint = context.getConstVector<int8_t>(opExtInst->GetInOperand(4));
+    const auto &input2ZeroPoint = context.getConstVector<int8_t>(opExtInst->GetInOperand(5));
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input1=%" << inputId1.AsId()
                              << ", input2=%" << inputId2.AsId() << ", input1ZeroPoint=" << input1ZeroPoint
                              << ", input2ZeroPoint=" << input2ZeroPoint << std::endl;
 
-    graphPipeline.makeMatmul(getTensor(inputId1), getTensor(inputId2), getTensor(*opExtInst), input1ZeroPoint[0],
-                             input2ZeroPoint[0], debugName);
+    context.pipeline().makeMatmul(context.getTensor(inputId1), context.getTensor(inputId2),
+                                  context.getTensor(*opExtInst), input1ZeroPoint[0], input2ZeroPoint[0], debugName);
 }
 
-void GraphPassTosaSpv100::handleMaximum(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleMaximum(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> MAXIMUM nanMode input1 input2
     assert(opExtInst->NumInOperands() == 5);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &nanMode = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
     const auto &inputId1 = opExtInst->GetInOperand(3);
     const auto &inputId2 = opExtInst->GetInOperand(4);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", nanMode=" << nanMode
                              << ", input1=%" << inputId1.AsId() << ", input2=%" << inputId2.AsId() << std::endl;
 
-    graphPipeline.makeMaximum(getTensor(inputId1), getTensor(inputId2), getTensor(*opExtInst), nanMode, debugName);
+    context.pipeline().makeMaximum(context.getTensor(inputId1), context.getTensor(inputId2),
+                                   context.getTensor(*opExtInst), nanMode, debugName);
 }
 
-void GraphPassTosaSpv100::handleMaxPool2D(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleMaxPool2D(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> MAX_POOL2D kernel stride pad nanMode input
     assert(opExtInst->NumInOperands() == 7);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &kernel = getConstVector<int32_t>(opExtInst->GetInOperand(2));
-    const auto &stride = getConstVector<int32_t>(opExtInst->GetInOperand(3));
-    const auto &pad = getConstVector<int32_t>(opExtInst->GetInOperand(4));
-    const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
+    const auto &kernel = context.getConstVector<int32_t>(opExtInst->GetInOperand(2));
+    const auto &stride = context.getConstVector<int32_t>(opExtInst->GetInOperand(3));
+    const auto &pad = context.getConstVector<int32_t>(opExtInst->GetInOperand(4));
+    const auto &nanMode = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(5));
     const auto &inputId = opExtInst->GetInOperand(6);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", kernel=" << kernel
                              << ", stride=" << stride << ", pad=" << pad << ", nanMode=" << nanMode << ", input=%"
                              << inputId.AsId() << std::endl;
 
-    graphPipeline.makeMaxPool2D(getTensor(inputId), getTensor(*opExtInst), kernel, stride, pad, nanMode, debugName);
+    context.pipeline().makeMaxPool2D(context.getTensor(inputId), context.getTensor(*opExtInst), kernel, stride, pad,
+                                     nanMode, debugName);
 }
 
-void GraphPassTosaSpv100::handleMinimum(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleMinimum(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> MINIMUM nanMode input1 input2
     assert(opExtInst->NumInOperands() == 5);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &nanMode = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
     const auto &inputId1 = opExtInst->GetInOperand(3);
     const auto &inputId2 = opExtInst->GetInOperand(4);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", nanMode=" << nanMode
                              << ", input1=%" << inputId1.AsId() << ", input2=%" << inputId2.AsId() << std::endl;
 
-    graphPipeline.makeMinimum(getTensor(inputId1), getTensor(inputId2), getTensor(*opExtInst), nanMode, debugName);
+    context.pipeline().makeMinimum(context.getTensor(inputId1), context.getTensor(inputId2),
+                                   context.getTensor(*opExtInst), nanMode, debugName);
 }
 
-void GraphPassTosaSpv100::handleMul(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleMul(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> MUL input1 input2 shift
     assert(opExtInst->NumInOperands() == 5);
 
     const auto &resultId = opExtInst->result_id();
     const auto &inputId1 = opExtInst->GetInOperand(2);
     const auto &inputId2 = opExtInst->GetInOperand(3);
-    const auto &shift = getConstVector<uint8_t>(opExtInst->GetInOperand(4));
+    const auto &shift = context.getConstVector<uint8_t>(opExtInst->GetInOperand(4));
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input1=%" << inputId1.AsId()
                              << ", input2=%" << inputId2.AsId() << ", shift=" << shift << std::endl;
 
-    graphPipeline.makeMul(getTensor(inputId1), getTensor(inputId2), getTensor(*opExtInst), shift[0], debugName);
+    context.pipeline().makeMul(context.getTensor(inputId1), context.getTensor(inputId2), context.getTensor(*opExtInst),
+                               shift[0], debugName);
 }
 
-void GraphPassTosaSpv100::handleNegate(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleNegate(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> NEGATE input inputZeroPoint outputZeroPoint
     assert(opExtInst->NumInOperands() == 5);
 
     const auto &resultId = opExtInst->result_id();
     const auto &inputId = opExtInst->GetInOperand(2);
-    const auto &inputZeroPoint = getConstVector<int32_t>(opExtInst->GetInOperand(3));
-    const auto &outputZeroPoint = getConstVector<int32_t>(opExtInst->GetInOperand(4));
+    const auto &inputZeroPoint = context.getConstVector<int32_t>(opExtInst->GetInOperand(3));
+    const auto &outputZeroPoint = context.getConstVector<int32_t>(opExtInst->GetInOperand(4));
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input=%" << inputId.AsId()
                              << ", inputZeroPoint=" << inputZeroPoint << ", outputZeroPoint=" << outputZeroPoint
                              << std::endl;
 
-    graphPipeline.makeNegate(getTensor(inputId), getTensor(*opExtInst), inputZeroPoint[0], outputZeroPoint[0],
-                             debugName);
+    context.pipeline().makeNegate(context.getTensor(inputId), context.getTensor(*opExtInst), inputZeroPoint[0],
+                                  outputZeroPoint[0], debugName);
 }
 
-void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handlePad(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> PAD input padding padConst
     assert(opExtInst->NumInOperands() == 5);
 
     const auto &resultId = opExtInst->result_id();
     const auto &inputId = opExtInst->GetInOperand(2);
-    const auto output = getTensor(*opExtInst);
-    const auto &padding = getOrMakeCompositeTensor(opExtInst->GetInOperand(3).AsId());
+    const auto output = context.getTensor(*opExtInst);
+    const auto &padding = context.getOrMakeCompositeTensor(opExtInst->GetInOperand(3).AsId());
     real_t padConst = 0.0;
     int32_t padConstInt = 0;
 
@@ -738,7 +704,7 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
     if (vkFormat == VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM ||
         vkFormat == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM ||
         vkFormat == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM) {
-        const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(opExtInst->GetInOperand(4).AsId());
+        const auto *constant = context.findConstant(opExtInst->GetInOperand(4).AsId());
         const auto *scalar = constant;
 
         const auto *composite = constant->AsCompositeConstant();
@@ -758,7 +724,7 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
             }
             const auto *floatType = floatConstant->type()->AsFloat();
             if (vkFormat == VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM) {
-                if (!GraphPassBase::isBFloat16(floatType)) {
+                if (!isBFloat16(floatType)) {
                     throw std::runtime_error("Unsupported BF16 PAD constant encoding, floatType: " +
                                              std::string(floatType->str()));
                 }
@@ -769,7 +735,7 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
                 std::memcpy(&fp32Value, &fp32Bits, sizeof(fp32Bits));
                 padConst = real_t(fp32Value);
             } else if (vkFormat == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM) {
-                if (!GraphPassBase::isFloat8E5M2(floatType)) {
+                if (!isFloat8E5M2(floatType)) {
                     throw std::runtime_error("Unsupported FLOAT8E5M2 PAD constant encoding, floatType: " +
                                              std::string(floatType->str()));
                 }
@@ -778,7 +744,7 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
                 const auto &fp = reinterpret_cast<const float8_e5m2 &>(f8);
                 padConst = real_t(fp);
             } else if (vkFormat == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM) {
-                if (!GraphPassBase::isFloat8E4M3(floatType)) {
+                if (!isFloat8E4M3(floatType)) {
                     throw std::runtime_error("Unsupported FLOAT8E4M3 PAD constant encoding, floatType: " +
                                              std::string(floatType->str()));
                 }
@@ -789,11 +755,11 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
             }
         }
     } else if (vkFormat == VK_FORMAT_R32_SINT) {
-        const auto &padConstVector = getConstVector<int32_t>(opExtInst->GetInOperand(4));
+        const auto &padConstVector = context.getConstVector<int32_t>(opExtInst->GetInOperand(4));
         padConstInt = padConstVector[0];
         padConst = real_t(padConstInt);
     } else {
-        const auto &padConstVector = getConstVector<real_t>(opExtInst->GetInOperand(4));
+        const auto &padConstVector = context.getConstVector<real_t>(opExtInst->GetInOperand(4));
         padConst = padConstVector[0];
         padConstInt = int32_t(padConst);
     }
@@ -802,25 +768,25 @@ void GraphPassTosaSpv100::handlePad(const Instruction *opExtInst, const std::str
                              << ", padConst=" << std::fixed << std::setprecision(0) << padConst << ", input=%"
                              << inputId.AsId() << std::endl;
 
-    graphPipeline.makePad(getTensor(inputId), output, padding, padConst, padConstInt, debugName);
+    context.pipeline().makePad(context.getTensor(inputId), output, padding, padConst, padConstInt, debugName);
 }
 
-void GraphPassTosaSpv100::handleRescale(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleRescale(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> RESCALE scale32 roundingMode perChannel inputUnsigned
     // outputUnsigned input multiplier shift inputZeroPoint outputZeroPoint inputUnsigned outputUnsigned input
     assert(opExtInst->NumInOperands() == 12);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &scale32 = getBoolConstant(opExtInst->GetInOperand(2));
-    const auto &roundingMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(3));
-    const auto &perChannel = getBoolConstant(opExtInst->GetInOperand(4));
-    const auto &inputUnsigned = getBoolConstant(opExtInst->GetInOperand(5));
-    const auto &outputUnsigned = getBoolConstant(opExtInst->GetInOperand(6));
+    const auto &scale32 = context.getBoolConstant(opExtInst->GetInOperand(2));
+    const auto &roundingMode = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(3));
+    const auto &perChannel = context.getBoolConstant(opExtInst->GetInOperand(4));
+    const auto &inputUnsigned = context.getBoolConstant(opExtInst->GetInOperand(5));
+    const auto &outputUnsigned = context.getBoolConstant(opExtInst->GetInOperand(6));
     const auto &inputId = opExtInst->GetInOperand(7);
-    const auto &multiplier = getOrMakeCompositeTensor(opExtInst->GetInOperand(8).AsId());
-    const auto &shift = getOrMakeCompositeTensor(opExtInst->GetInOperand(9).AsId());
-    const auto &inputZeroPoint = getConstVector<int32_t>(opExtInst->GetInOperand(10));
-    const auto &outputZeroPoint = getConstVector<int32_t>(opExtInst->GetInOperand(11));
+    const auto &multiplier = context.getOrMakeCompositeTensor(opExtInst->GetInOperand(8).AsId());
+    const auto &shift = context.getOrMakeCompositeTensor(opExtInst->GetInOperand(9).AsId());
+    const auto &inputZeroPoint = context.getConstVector<int32_t>(opExtInst->GetInOperand(10));
+    const auto &outputZeroPoint = context.getConstVector<int32_t>(opExtInst->GetInOperand(11));
 
     graphLog(Severity::Info) << "OpExtInst result=" << resultId << ',' << debugName << ", scale32=" << scale32
                              << ", roundingRound=" << roundingMode << ", perChannel=" << perChannel
@@ -831,120 +797,125 @@ void GraphPassTosaSpv100::handleRescale(const Instruction *opExtInst, const std:
 
     const bool doubleRound = (roundingMode == RoundingMode::DoubleRound);
 
-    graphPipeline.makeRescale(getTensor(inputId), getTensor(*opExtInst), inputZeroPoint[0], outputZeroPoint[0],
-                              multiplier, shift, scale32, doubleRound, perChannel, inputUnsigned, outputUnsigned,
-                              debugName);
+    context.pipeline().makeRescale(context.getTensor(inputId), context.getTensor(*opExtInst), inputZeroPoint[0],
+                                   outputZeroPoint[0], multiplier, shift, scale32, doubleRound, perChannel,
+                                   inputUnsigned, outputUnsigned, debugName);
 }
 
-void GraphPassTosaSpv100::handleReduce(
+void GraphTosa10ExtInst::handleReduce(
     const Instruction *opExtInst, const std::string &debugName,
     const std::function<void(GraphPipeline *, const std::shared_ptr<TensorDescriptor> &,
-                             const std::shared_ptr<TensorDescriptor> &, const uint32_t, const std::string &)>
-        &function) {
+                             const std::shared_ptr<TensorDescriptor> &, const uint32_t, const std::string &)> &function)
+    const {
     // OpExtInst <result id> <OpExtInstImport id> REDUCE_* axis input
     assert(opExtInst->NumInOperands() == 4);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &axis = getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &axis = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
     const auto &inputId = opExtInst->GetInOperand(3);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ", " << debugName << ", axis=" << axis
                              << ", input=%" << inputId.AsId() << std::endl;
 
-    std::invoke(function, &graphPipeline, getTensor(inputId), getTensor(*opExtInst), axis, debugName);
+    std::invoke(function, &context.pipeline(), context.getTensor(inputId), context.getTensor(*opExtInst), axis,
+                debugName);
 }
 
-void GraphPassTosaSpv100::handleReduceMax(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleReduceMax(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> REDUCE_MAX axis nanMode input
     assert(opExtInst->NumInOperands() == 5);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &axis = getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
-    const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(3));
+    const auto &axis = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &nanMode = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(3));
     const auto &inputId = opExtInst->GetInOperand(4);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", axis=" << axis
                              << ", nanMode=" << nanMode << ", input=%" << inputId.AsId() << std::endl;
 
-    graphPipeline.makeReduceMax(getTensor(inputId), getTensor(*opExtInst), axis, nanMode, debugName);
+    context.pipeline().makeReduceMax(context.getTensor(inputId), context.getTensor(*opExtInst), axis, nanMode,
+                                     debugName);
 }
 
-void GraphPassTosaSpv100::handleReduceMin(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleReduceMin(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> REDUCE_MIN axis nanMode input
     assert(opExtInst->NumInOperands() == 5);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &axis = getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
-    const auto &nanMode = getConstScalar<uint32_t>(opExtInst->GetInOperand(3));
+    const auto &axis = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &nanMode = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(3));
     const auto &inputId = opExtInst->GetInOperand(4);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", axis=" << axis
                              << ", nanMode=" << nanMode << ", input=%" << inputId.AsId() << std::endl;
 
-    graphPipeline.makeReduceMin(getTensor(inputId), getTensor(*opExtInst), axis, nanMode, debugName);
+    context.pipeline().makeReduceMin(context.getTensor(inputId), context.getTensor(*opExtInst), axis, nanMode,
+                                     debugName);
 }
 
-void GraphPassTosaSpv100::handleReshape(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleReshape(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> RESHAPE input shape
     assert(opExtInst->NumInOperands() == 4);
 
     const auto &resultId = opExtInst->result_id();
     const auto &inputId = opExtInst->GetInOperand(2);
-    const auto &shape = getConstVector<uint32_t>(opExtInst->GetInOperand(3));
+    const auto &shape = context.getConstVector<uint32_t>(opExtInst->GetInOperand(3));
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input=%" << inputId.AsId()
                              << ", shape=" << shape << std::endl;
 
-    graphPipeline.makeReshape(getTensor(inputId), getTensor(*opExtInst), debugName);
+    context.pipeline().makeReshape(context.getTensor(inputId), context.getTensor(*opExtInst), debugName);
 }
 
-void GraphPassTosaSpv100::handleResize(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleResize(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> RESIZE mode input scale offset border
     assert(opExtInst->NumInOperands() == 7);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &mode = getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &mode = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
     const auto &inputId = opExtInst->GetInOperand(3);
-    const auto &scale = getConstVector<int32_t>(opExtInst->GetInOperand(4));
-    const auto &offset = getConstVector<int32_t>(opExtInst->GetInOperand(5));
-    const auto &border = getConstVector<int32_t>(opExtInst->GetInOperand(6));
+    const auto &scale = context.getConstVector<int32_t>(opExtInst->GetInOperand(4));
+    const auto &offset = context.getConstVector<int32_t>(opExtInst->GetInOperand(5));
+    const auto &border = context.getConstVector<int32_t>(opExtInst->GetInOperand(6));
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", scale=" << scale
                              << ", offset=" << offset << ", border=" << border << ", mode=" << mode << ", input=%"
                              << inputId.AsId() << std::endl;
 
-    graphPipeline.makeResize(getTensor(inputId), getTensor(*opExtInst), scale, offset, border, mode, debugName);
+    context.pipeline().makeResize(context.getTensor(inputId), context.getTensor(*opExtInst), scale, offset, border,
+                                  mode, debugName);
 }
 
-void GraphPassTosaSpv100::handleReverse(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleReverse(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> REVERSE axis input
     assert(opExtInst->NumInOperands() == 4);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &axis = getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &axis = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(2));
     const auto &inputId = opExtInst->GetInOperand(3);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", axis=" << axis << ", input=%"
                              << inputId.AsId() << std::endl;
 
-    graphPipeline.makeReverse(getTensor(inputId), getTensor(*opExtInst), axis, debugName);
+    context.pipeline().makeReverse(context.getTensor(inputId), context.getTensor(*opExtInst), axis, debugName);
 }
 
-void GraphPassTosaSpv100::handleRfft2D(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleRfft2D(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> RFFT2D localBound input
     assert(opExtInst->NumInOperands() == 4);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &localBound = getBoolConstant(opExtInst->GetInOperand(2));
+    const auto &localBound = context.getBoolConstant(opExtInst->GetInOperand(2));
     const auto &inputId = opExtInst->GetInOperand(3);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", localBound=" << localBound
                              << ", input=%" << inputId.AsId() << std::endl;
 
-    graphPipeline.makeRfft2D(getTensor(inputId), getTensor(*opExtInst, 0), getTensor(*opExtInst, 1), debugName);
+    context.pipeline().makeRfft2D(context.getTensor(inputId), context.getTensor(*opExtInst, 0),
+                                  context.getTensor(*opExtInst, 1), debugName);
 }
 
-void GraphPassTosaSpv100::handleScatter(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleScatter(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> SCATTER valuesIn indices input
     assert(opExtInst->NumInOperands() == 5);
 
@@ -956,11 +927,11 @@ void GraphPassTosaSpv100::handleScatter(const Instruction *opExtInst, const std:
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", valuesIn=%" << inputId.AsId()
                              << ", indices=%" << indicesId.AsId() << ", input=%" << inputId.AsId() << std::endl;
 
-    graphPipeline.makeScatter(getTensor(inputId), getTensor(valuesInId), getTensor(indicesId), getTensor(*opExtInst),
-                              debugName);
+    context.pipeline().makeScatter(context.getTensor(inputId), context.getTensor(valuesInId),
+                                   context.getTensor(indicesId), context.getTensor(*opExtInst), debugName);
 }
 
-void GraphPassTosaSpv100::handleSelect(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleSelect(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> SELECT input1 input2 input3
     assert(opExtInst->NumInOperands() == 5);
 
@@ -972,82 +943,82 @@ void GraphPassTosaSpv100::handleSelect(const Instruction *opExtInst, const std::
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input1=%" << inputId1.AsId()
                              << ", input2=%" << inputId2.AsId() << ", input3=%" << inputId3.AsId() << std::endl;
 
-    graphPipeline.makeSelect(getTensor(inputId1), getTensor(inputId2), getTensor(inputId3), getTensor(*opExtInst),
-                             debugName);
+    context.pipeline().makeSelect(context.getTensor(inputId1), context.getTensor(inputId2), context.getTensor(inputId3),
+                                  context.getTensor(*opExtInst), debugName);
 }
 
-void GraphPassTosaSpv100::handleSlice(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleSlice(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> SLICE start size input
     assert(opExtInst->NumInOperands() == 5);
 
     const auto &resultId = opExtInst->result_id();
     const auto &inputId = opExtInst->GetInOperand(2);
-    const auto &start = getConstVector<uint32_t>(opExtInst->GetInOperand(3));
-    const auto &size = getConstVector<uint32_t>(opExtInst->GetInOperand(4));
+    const auto &start = context.getConstVector<uint32_t>(opExtInst->GetInOperand(3));
+    const auto &size = context.getConstVector<uint32_t>(opExtInst->GetInOperand(4));
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << " , input=%" << inputId.AsId()
                              << ", start=" << start << ", size=" << size << std::endl;
 
-    graphPipeline.makeSlice(getTensor(inputId), getTensor(*opExtInst), start, debugName);
+    context.pipeline().makeSlice(context.getTensor(inputId), context.getTensor(*opExtInst), start, debugName);
 }
 
-void GraphPassTosaSpv100::handleTable(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleTable(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> TABLE %input table
     assert(opExtInst->NumInOperands() == 4);
 
     const auto &resultId = opExtInst->result_id();
     const auto &inputId = opExtInst->GetInOperand(2);
-    const auto &table = getOrMakeCompositeTensor(opExtInst->GetInOperand(3).AsId());
+    const auto &table = context.getOrMakeCompositeTensor(opExtInst->GetInOperand(3).AsId());
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input=%" << inputId.AsId()
                              << ", table=" << table << std::endl;
 
-    graphPipeline.makeTable(getTensor(inputId), getTensor(*opExtInst), table, debugName);
+    context.pipeline().makeTable(context.getTensor(inputId), context.getTensor(*opExtInst), table, debugName);
 }
 
-void GraphPassTosaSpv100::handleTile(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleTile(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> TILE input multiplies
     assert(opExtInst->NumInOperands() == 4);
 
     const auto &resultId = opExtInst->result_id();
     const auto &inputId = opExtInst->GetInOperand(2);
-    const auto &multiples = getConstVector<uint32_t>(opExtInst->GetInOperand(3));
+    const auto &multiples = context.getConstVector<uint32_t>(opExtInst->GetInOperand(3));
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", input=%" << inputId.AsId()
                              << ", multiples=" << multiples << std::endl;
 
-    graphPipeline.makeTile(getTensor(inputId), getTensor(*opExtInst), debugName);
+    context.pipeline().makeTile(context.getTensor(inputId), context.getTensor(*opExtInst), debugName);
 }
 
-void GraphPassTosaSpv100::handleTranspose(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleTranspose(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> TRANSPOSE perms input
     assert(opExtInst->NumInOperands() == 4);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &perms = getConstVector<uint32_t>(opExtInst->GetInOperand(2));
+    const auto &perms = context.getConstVector<uint32_t>(opExtInst->GetInOperand(2));
     const auto &inputId = opExtInst->GetInOperand(3);
 
     graphLog(Severity::Info) << "OpExtInst result=%" << resultId << ',' << debugName << ", perms=" << perms
                              << ", input=%" << inputId.AsId() << std::endl;
 
-    graphPipeline.makeTranspose(getTensor(inputId), getTensor(*opExtInst), perms, debugName);
+    context.pipeline().makeTranspose(context.getTensor(inputId), context.getTensor(*opExtInst), perms, debugName);
 }
 
-void GraphPassTosaSpv100::handleTransposeConv2D(const Instruction *opExtInst, const std::string &debugName) {
+void GraphTosa10ExtInst::handleTransposeConv2D(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> TRANSPOSE_CONV2D outPad stride accType localBound input weight
     // bias inputZeroPoint weightZeroPoint
     assert(opExtInst->NumInOperands() == 11);
 
     const auto &resultId = opExtInst->result_id();
-    const auto &outPad = getConstVector<int32_t>(opExtInst->GetInOperand(2));
-    const auto &stride = getConstVector<int32_t>(opExtInst->GetInOperand(3));
-    const auto &accType = getConstScalar<uint32_t>(opExtInst->GetInOperand(4));
-    const auto &localBound = getBoolConstant(opExtInst->GetInOperand(5));
+    const auto &outPad = context.getConstVector<int32_t>(opExtInst->GetInOperand(2));
+    const auto &stride = context.getConstVector<int32_t>(opExtInst->GetInOperand(3));
+    const auto &accType = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(4));
+    const auto &localBound = context.getBoolConstant(opExtInst->GetInOperand(5));
     const auto &inputId = opExtInst->GetInOperand(6);
     const auto &weightId = opExtInst->GetInOperand(7);
     const auto &biasId = opExtInst->GetInOperand(8);
-    const auto &inputZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(9));
-    const auto &weightZeroPoint = getConstVector<int8_t>(opExtInst->GetInOperand(10));
+    const auto &inputZeroPoint = context.getConstVector<int8_t>(opExtInst->GetInOperand(9));
+    const auto &weightZeroPoint = context.getConstVector<int8_t>(opExtInst->GetInOperand(10));
 
     graphLog(Severity::Info) << "OpExtInst result=" << resultId << ',' << debugName << " , outPad=" << outPad
                              << ", stride=" << stride << ", accType=" << accType << ", localBound=" << localBound
@@ -1055,87 +1026,9 @@ void GraphPassTosaSpv100::handleTransposeConv2D(const Instruction *opExtInst, co
                              << biasId.AsId() << ", inputZeroPoint=" << inputZeroPoint
                              << ", weightZeroPoint=" << weightZeroPoint << std::endl;
 
-    graphPipeline.makeTransposeConv2D(getTensor(inputId), getTensor(*opExtInst), getTensor(weightId), getTensor(biasId),
-                                      outPad, stride, inputZeroPoint[0], weightZeroPoint[0], accType, debugName);
-}
-
-void GraphPassTosaSpv100::handleMinSad(const Instruction *opExtInst, const std::string &debugName) {
-    // OpExtInst <result id> <OpExtInstImport id> MIN_SAD kernel_sizes search_window_sizes input_strides
-    // window_strides window_offsets padding search_pattern input0 input1
-    assert(opExtInst->NumInOperands() == 11);
-
-    const auto &resultId = opExtInst->result_id();
-    const auto &kernelSizes = getConstVector<uint32_t>(opExtInst->GetInOperand(2));
-    const auto &searchWindowSizes = getConstVector<uint32_t>(opExtInst->GetInOperand(3));
-    const auto &inputStrides = getConstVector<uint32_t>(opExtInst->GetInOperand(4));
-    const auto &windowStrides = getConstVector<uint32_t>(opExtInst->GetInOperand(5));
-    const auto &windowOffsets = getConstVector<uint32_t>(opExtInst->GetInOperand(6));
-    const auto &padding = getConstVector<uint32_t>(opExtInst->GetInOperand(7));
-    const auto &searchPattern = getConstScalar<uint32_t>(opExtInst->GetInOperand(8));
-    const auto &input0Id = opExtInst->GetInOperand(9);
-    const auto &input1Id = opExtInst->GetInOperand(10);
-
-    graphLog(Severity::Info) << "OpExtInst result=" << resultId << ", " << debugName << ", kernelSizes=" << kernelSizes
-                             << ", searchWindowSizes=" << searchWindowSizes << ", inputStrides=" << inputStrides
-                             << ", windowStrides=" << windowStrides << ", windowOffsets=" << windowOffsets
-                             << ", padding=" << padding << ", searchPattern=" << searchPattern << ", input0=%"
-                             << input0Id.AsId() << ", input1=%" << input1Id.AsId() << std::endl;
-
-    graphPipeline.makeMinSad(getTensor(input0Id), getTensor(input1Id), getTensor(*opExtInst), kernelSizes,
-                             searchWindowSizes, inputStrides, windowStrides, windowOffsets, padding, searchPattern,
-                             debugName);
-}
-
-void GraphPassTosaSpv100::handleMinSadCost(const Instruction *opExtInst, const std::string &debugName) {
-    // OpExtInst <result id> <OpExtInstImport id> MIN_SAD_COST kernel_sizes search_window_sizes input_strides
-    // window_strides window_offsets padding search_pattern input0 input1
-    assert(opExtInst->NumInOperands() == 11);
-
-    const auto &resultId = opExtInst->result_id();
-    const auto &kernelSizes = getConstVector<uint32_t>(opExtInst->GetInOperand(2));
-    const auto &searchWindowSizes = getConstVector<uint32_t>(opExtInst->GetInOperand(3));
-    const auto &inputStrides = getConstVector<uint32_t>(opExtInst->GetInOperand(4));
-    const auto &windowStrides = getConstVector<uint32_t>(opExtInst->GetInOperand(5));
-    const auto &windowOffsets = getConstVector<uint32_t>(opExtInst->GetInOperand(6));
-    const auto &padding = getConstVector<uint32_t>(opExtInst->GetInOperand(7));
-    const auto &searchPattern = getConstScalar<uint32_t>(opExtInst->GetInOperand(8));
-    const auto &input0Id = opExtInst->GetInOperand(9);
-    const auto &input1Id = opExtInst->GetInOperand(10);
-
-    graphLog(Severity::Info) << "OpExtInst result=" << resultId << ", " << debugName << ", kernelSizes=" << kernelSizes
-                             << ", searchWindowSizes=" << searchWindowSizes << ", inputStrides=" << inputStrides
-                             << ", windowStrides=" << windowStrides << ", windowOffsets=" << windowOffsets
-                             << ", padding=" << padding << ", searchPattern=" << searchPattern << ", input0=%"
-                             << input0Id.AsId() << ", input1=%" << input1Id.AsId() << std::endl;
-
-    graphPipeline.makeMinSadCost(getTensor(input0Id), getTensor(input1Id), getTensor(*opExtInst, 0),
-                                 getTensor(*opExtInst, 1), kernelSizes, searchWindowSizes, inputStrides, windowStrides,
-                                 windowOffsets, padding, searchPattern, debugName);
-}
-
-void GraphPassTosaSpv100::handleRawSad(const Instruction *opExtInst, const std::string &debugName) {
-    // OpExtInst <result id> <OpExtInstImport id> RAW_SAD kernel_sizes search_window_sizes input_strides
-    // window_strides window_offsets padding input0 input1
-    assert(opExtInst->NumInOperands() == 10);
-
-    const auto &resultId = opExtInst->result_id();
-    const auto &kernelSizes = getConstVector<uint32_t>(opExtInst->GetInOperand(2));
-    const auto &searchWindowSizes = getConstVector<uint32_t>(opExtInst->GetInOperand(3));
-    const auto &inputStrides = getConstVector<uint32_t>(opExtInst->GetInOperand(4));
-    const auto &windowStrides = getConstVector<uint32_t>(opExtInst->GetInOperand(5));
-    const auto &windowOffsets = getConstVector<uint32_t>(opExtInst->GetInOperand(6));
-    const auto &padding = getConstVector<uint32_t>(opExtInst->GetInOperand(7));
-    const auto &input0Id = opExtInst->GetInOperand(8);
-    const auto &input1Id = opExtInst->GetInOperand(9);
-
-    graphLog(Severity::Info) << "OpExtInst result=" << resultId << ", " << debugName << ", kernelSizes=" << kernelSizes
-                             << ", searchWindowSizes=" << searchWindowSizes << ", inputStrides=" << inputStrides
-                             << ", windowStrides=" << windowStrides << ", windowOffsets=" << windowOffsets
-                             << ", padding=" << padding << ", input0=%" << input0Id.AsId() << ", input1=%"
-                             << input1Id.AsId() << std::endl;
-
-    graphPipeline.makeRawSad(getTensor(input0Id), getTensor(input1Id), getTensor(*opExtInst), kernelSizes,
-                             searchWindowSizes, inputStrides, windowStrides, windowOffsets, padding, debugName);
+    context.pipeline().makeTransposeConv2D(context.getTensor(inputId), context.getTensor(*opExtInst),
+                                           context.getTensor(weightId), context.getTensor(biasId), outPad, stride,
+                                           inputZeroPoint[0], weightZeroPoint[0], accType, debugName);
 }
 
 } // namespace spvtools::opt

@@ -11,7 +11,9 @@
 #include "mlel/vulkan_layer.hpp"
 
 #include "compute_graph_op.hpp"
+#include "graph_ext_inst_registry.hpp"
 #include "graph_log.hpp"
+#include "graph_pass_ext_inst.hpp"
 #include "graph_profiler.hpp"
 #include "interval_memory_planner.hpp"
 #include "memory_planner.hpp"
@@ -22,8 +24,6 @@
 #include "source/opt/build_module.h"
 #include "source/opt/ir_context.h"
 #include "source/opt/module.h"
-#include "spirv_pass.hpp"
-#include "spirv_pass_tosaspv_v100.hpp"
 
 #include <algorithm>
 #include <array>
@@ -365,40 +365,31 @@ std::optional<bool> isGraphSpirv(const uint32_t *spirvCode, const size_t spirvSi
     return !ir->module()->graphs().empty();
 }
 
-struct SupportedVersions {
-    std::optional<std::string> tosa;
-    std::optional<std::string> motionEngine;
+struct GraphInstructionSetImports {
+    std::vector<std::string> tosa;
+    std::vector<std::string> motionEngine;
 };
 
-bool checkInstVersion(const uint32_t *spirvCode, const size_t spirvSize, SupportedVersions &supportedVersions) {
+bool validateGraphExtInstImports(const uint32_t *spirvCode, const size_t spirvSize,
+                                 GraphInstructionSetImports &imports) {
     const auto ir = spvtools::BuildModule(SPV_ENV_UNIVERSAL_1_6, sprivMessageConsumer, spirvCode, spirvSize);
-    const auto tryGetExtInstVersion = [&ir](const std::string_view &prefix,
-                                            size_t digitCount) -> std::optional<std::string> {
-        for (const auto &inst : ir->module()->ext_inst_imports()) {
-            auto name = inst.GetInOperand(0).AsString();
-            if (hasVersionPrefix(name, prefix, digitCount)) {
-                return name;
-            }
+
+    for (const auto &inst : ir->module()->ext_inst_imports()) {
+        const auto importName = inst.GetInOperand(0).AsString();
+        const bool isTosa = hasVersionPrefix(importName, "TOSA.", 6);
+        const bool isMotionEngine = hasVersionPrefix(importName, "Arm.MotionEngine.", 3);
+        const bool isKnownFamily = isTosa || isMotionEngine;
+        if (isKnownFamily && !spvtools::opt::isRegisteredGraphExtInstImport(importName)) {
+            graphLog(Severity::Error) << "Unsupported graph extended instruction set: " << importName << std::endl;
+            return false;
         }
-        return std::nullopt;
-    };
-
-    const auto tosaVersion = tryGetExtInstVersion("TOSA.", 6);
-    const bool isTosaVersionUnsupported = tosaVersion.has_value() && tosaVersion != tosaSpv100;
-    if (isTosaVersionUnsupported) {
-        graphLog(Severity::Error) << "Unsupported Tosa version provided." << std::endl;
-        return false;
+        if (isTosa) {
+            imports.tosa.push_back(importName);
+        }
+        if (isMotionEngine) {
+            imports.motionEngine.push_back(importName);
+        }
     }
-    supportedVersions.tosa = tosaVersion;
-
-    const auto motionEngineVersion = tryGetExtInstVersion("Arm.MotionEngine.", 3);
-    const bool isMotionEngineVersionUnsupported =
-        motionEngineVersion.has_value() && motionEngineVersion != motionEngine100;
-    if (isMotionEngineVersionUnsupported) {
-        graphLog(Severity::Error) << "Unsupported MotionEngine version provided." << std::endl;
-        return false;
-    }
-    supportedVersions.motionEngine = motionEngineVersion;
 
     return true;
 }
@@ -938,8 +929,8 @@ class GraphLayer : public VulkanLayerImpl {
                     spirvSize = shaderModule->code.size();
                 }
 
-                SupportedVersions supportedVersions;
-                if (!checkInstVersion(spirvCode, spirvSize, supportedVersions)) {
+                GraphInstructionSetImports instructionSetImports;
+                if (!validateGraphExtInstImports(spirvCode, spirvSize, instructionSetImports)) {
                     return VK_ERROR_UNKNOWN;
                 }
 
@@ -949,16 +940,16 @@ class GraphLayer : public VulkanLayerImpl {
                 // Register passes
                 registerSpecConstantDefaultPasses(optimizer,
                                                   dataGraphPipelineShaderModuleCreateInfo->pSpecializationInfo);
-                pipeline->isTosaGraph = supportedVersions.tosa.has_value();
-                if (supportedVersions.tosa.has_value()) {
+                pipeline->isTosaGraph = !instructionSetImports.tosa.empty();
+                if (!instructionSetImports.tosa.empty()) {
                     pipeline->profilingPipelineKind = ProfilingPipelineKind::TOSA;
-                } else if (supportedVersions.motionEngine.has_value()) {
+                } else if (!instructionSetImports.motionEngine.empty()) {
                     pipeline->profilingPipelineKind = ProfilingPipelineKind::MOTION_ENGINE;
                 } else {
                     pipeline->profilingPipelineKind = ProfilingPipelineKind::GRAPH_OP;
                 }
 
-                optimizer.RegisterPass(spvtools::CreateGraphPass<spvtools::opt::GraphPassTosaSpv100>(*graphPipeline));
+                optimizer.RegisterPass(spvtools::createGraphPass(*graphPipeline));
 
                 // Run passes
                 spvtools::OptimizerOptions options;

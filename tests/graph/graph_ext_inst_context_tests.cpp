@@ -6,20 +6,20 @@
 
 #include <gtest/gtest.h>
 
-#include "spirv_pass.hpp"
+#include "graph_ext_inst_context.hpp"
 
 #include <cstdint>
 #include <vector>
 
 namespace {
 
-TEST(MLEmulationLayerSpirvPass, ReplicatedPatternExpansionTwoToFour) {
+TEST(GraphExtInstContext, ReplicatedPatternExpansionTwoToFour) {
     std::vector<int32_t> values{1, 2};
     ASSERT_TRUE(spvtools::opt::tryExpandReplicatedPattern(values, 4));
     ASSERT_EQ(values, (std::vector<int32_t>{1, 2, 1, 2}));
 }
 
-TEST(MLEmulationLayerSpirvPass, ReplicatedPatternExpansionRejectsNonDivisibleCounts) { // cppcheck-suppress syntaxError
+TEST(GraphExtInstContext, ReplicatedPatternExpansionRejectsNonDivisibleCounts) { // cppcheck-suppress syntaxError
     std::vector<int32_t> values{1, 2};
     ASSERT_FALSE(spvtools::opt::tryExpandReplicatedPattern(values, 3));
     ASSERT_EQ(values, (std::vector<int32_t>{1, 2}));
