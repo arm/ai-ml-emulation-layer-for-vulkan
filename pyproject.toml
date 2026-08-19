@@ -21,7 +21,11 @@ requires-python = ">=3.8"
 emulation_layer = "emulation_layer.cli:main"
 
 [tool.setuptools]
+package-dir = { "" = "pip_package" }
 include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["pip_package"]
 
 [tool.setuptools.package-data]
 emulation_layer = ["deploy/**"]
