@@ -315,11 +315,17 @@ class Builder:
                 subprocess.run(cmake_install_cmd, check=True)
 
             if self.run_tests and not self.cross_compile:
+                # Each test process creates a Vulkan device. Three workers perform nearly as
+                # well as four while reducing resource pressure; higher concurrency can
+                # regress performance or cause device initialization failures.
+                test_threads = min(self.threads, 3)
                 test_cmd = [
                     "ctest",
                     "--test-dir",
                     str(self.test_dir),
                     "--output-on-failure",
+                    "--parallel",
+                    str(test_threads),
                 ]
 
                 subprocess.run(test_cmd, check=True)
