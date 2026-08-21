@@ -25,8 +25,11 @@ target_sources(MLELGraph PRIVATE
     memory_planner.cpp
     optical_flow.cpp
     pipeline_cache.cpp
-    spirv_pass.cpp
-    spirv_pass_tosaspv_v100.cpp
+    graph_ext_inst_context.cpp
+    graph_pass_ext_inst.cpp
+    graph_ext_inst_registry.cpp
+    graph_motion_engine_1_0_ext_inst.cpp
+    graph_tosa_1_0_ext_inst.cpp
     tensor.cpp)
 
 # Generated GLSL shaders dependency

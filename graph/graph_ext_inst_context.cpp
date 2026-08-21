@@ -8,10 +8,13 @@
  * Includes
  *******************************************************************************/
 
-#include "spirv_pass.hpp"
+#include "graph_ext_inst_context.hpp"
 #include "graph_log.hpp"
 
 #include "mlel/utils.hpp"
+
+#include <algorithm>
+#include <limits>
 
 using namespace mlsdk::el::log;
 using namespace mlsdk::el::compute;
@@ -20,18 +23,6 @@ namespace {
 
 template <typename T, spv::FPEncoding encoding> bool isFloatEncoding(const spvtools::opt::analysis::Float *f) {
     return f && f->width() == (8 * sizeof(T)) && f->encoding() == encoding;
-}
-
-bool isBFloat16Impl(const spvtools::opt::analysis::Float *f) {
-    return isFloatEncoding<uint16_t, spv::FPEncoding::BFloat16KHR>(f);
-}
-
-bool isFloat8E5M2Impl(const spvtools::opt::analysis::Float *f) {
-    return isFloatEncoding<uint8_t, spv::FPEncoding::Float8E5M2EXT>(f);
-}
-
-bool isFloat8E4M3Impl(const spvtools::opt::analysis::Float *f) {
-    return isFloatEncoding<uint8_t, spv::FPEncoding::Float8E4M3EXT>(f);
 }
 
 template <typename T, spv::FPEncoding encoding>
@@ -57,18 +48,13 @@ void flattenFloatComposite(const spvtools::opt::analysis::CompositeConstant *com
 } // namespace
 
 /*******************************************************************************
- * Base Graph Pass
+ * Graph extended instruction lowering context
  *******************************************************************************/
 
 namespace spvtools::opt {
 
-Pass::Status GraphPassBase::Process() {
-    handleGraphs();
-    return Status::SuccessWithChange;
-}
-
-void GraphPassBase::handleGraphConstants() {
-    for (const auto &instruction : get_module()->types_values()) {
+void GraphExtInstContext::handleGraphConstants() {
+    for (const auto &instruction : irContext.module()->types_values()) {
         switch (instruction.opcode()) {
         case spv::Op::OpGraphConstantARM: {
             const auto resultId = instruction.result_id();
@@ -88,29 +74,7 @@ void GraphPassBase::handleGraphConstants() {
     }
 }
 
-void GraphPassBase::handleGraphs() {
-    const auto &module = *get_module();
-
-    // Iterate over graph entry points
-    for (const auto &graphEntry : module.graph_entry_points()) {
-        graphLog(Severity::Info) << graphEntry << std::endl;
-
-        // OpGraphEntryPointARM <graph id> <name> [input tensors] [output tensors]
-        // auto op = graphEntry.begin();
-        // auto &graphId = *(op++);
-        // auto &graphName = *(op++);
-
-        // Find OpGraphARM graph entry
-        const auto *graph = getGraphById(graphEntry.GetOperand(0));
-        assert(graph != nullptr);
-
-        handleGraphConstants();
-        handleInputsAndOutputs(graphEntry);
-        handleGraph(graph);
-    }
-}
-
-void GraphPassBase::handleInputsAndOutputs(const Instruction &opGraphEntryPoint) {
+void GraphExtInstContext::handleInputsAndOutputs(const Instruction &opGraphEntryPoint) {
     // OpGraphEntryPointARM <graph id> <name> [inputTensorId:s] [outputTensorId:s]
     const auto *graph = getGraphById(opGraphEntryPoint.GetOperand(0));
 
@@ -144,7 +108,7 @@ void GraphPassBase::handleInputsAndOutputs(const Instruction &opGraphEntryPoint)
         assert(opGraphSetOutputARM->opcode() == spv::Op::OpGraphSetOutputARM);
 
         // Tensor that shall be bound to the output
-        const auto *instruction = get_def_use_mgr()->GetDef(opGraphSetOutputARM->GetOperand(0).AsId());
+        const auto *instruction = irContext.get_def_use_mgr()->GetDef(opGraphSetOutputARM->GetOperand(0).AsId());
 
         // The external tensor id from the graph entry point
         const auto outputIndex = getConstScalar<int64_t>(opGraphSetOutputARM->GetOperand(1));
@@ -160,7 +124,7 @@ void GraphPassBase::handleInputsAndOutputs(const Instruction &opGraphEntryPoint)
         case spv::Op::OpGraphInputARM:
         case spv::Op::OpGraphConstantARM: {
             const auto inputTensor = getTensor(*instruction);
-            graphPipeline.makeCast(inputTensor, outputTensor, extractDebugInfoFromSPV(instruction, "CAST"));
+            graphPipeline.makeCast(inputTensor, outputTensor, debugName(instruction, "CAST"));
             break;
         }
         case spv::Op::OpCompositeExtract: {
@@ -180,10 +144,10 @@ void GraphPassBase::handleInputsAndOutputs(const Instruction &opGraphEntryPoint)
     }
 }
 
-const Graph *GraphPassBase::getGraphById(const Operand &operand) {
+const Graph *GraphExtInstContext::getGraphById(const Operand &operand) {
     // OpGraphARM <OpTypeGraphARM id>
-    const auto *opGraphARM = get_def_use_mgr()->GetDef(operand.AsId());
-    const auto &graphs = get_module()->graphs();
+    const auto *opGraphARM = irContext.get_def_use_mgr()->GetDef(operand.AsId());
+    const auto &graphs = irContext.module()->graphs();
     const auto found =
         std::find_if(graphs.begin(), graphs.end(), [&](auto &graph) { return graph->DefInst() == *opGraphARM; });
     if (found != graphs.end()) {
@@ -192,12 +156,12 @@ const Graph *GraphPassBase::getGraphById(const Operand &operand) {
     return nullptr;
 }
 
-const analysis::TensorARM *GraphPassBase::getTensorType(const Operand &operand) const {
+const analysis::TensorARM *GraphExtInstContext::getTensorType(const Operand &operand) const {
     return getTensorType(operand.AsId());
 }
 
-const analysis::TensorARM *GraphPassBase::getTensorType(uint32_t id) const {
-    const auto *instruction = get_def_use_mgr()->GetDef(id);
+const analysis::TensorARM *GraphExtInstContext::getTensorType(uint32_t id) const {
+    const auto *instruction = irContext.get_def_use_mgr()->GetDef(id);
 
     switch (instruction->opcode()) {
     case spv::Op::OpTypeTensorARM:
@@ -219,7 +183,7 @@ const analysis::TensorARM *GraphPassBase::getTensorType(uint32_t id) const {
         return nullptr;
     }
 
-    const auto *type = context()->get_type_mgr()->GetType(id);
+    const auto *type = irContext.get_type_mgr()->GetType(id);
     assert(type);
     const auto *tensorType = type->AsTensorARM();
     assert(tensorType);
@@ -227,11 +191,11 @@ const analysis::TensorARM *GraphPassBase::getTensorType(uint32_t id) const {
     return tensorType;
 }
 
-std::tuple<uint64_t, uint64_t> GraphPassBase::getDescriptorSetAndBinding(const Operand &operand) {
+std::tuple<uint64_t, uint64_t> GraphExtInstContext::getDescriptorSetAndBinding(const Operand &operand) {
     uint64_t descriptorSet = std::numeric_limits<uint64_t>::max();
     uint64_t binding = 0;
 
-    for (const auto *decoration : get_decoration_mgr()->GetDecorationsFor(operand.AsId(), false)) {
+    for (const auto *decoration : irContext.get_decoration_mgr()->GetDecorationsFor(operand.AsId(), false)) {
         switch (static_cast<spv::Decoration>(decoration->GetSingleWordInOperand(1))) {
         case spv::Decoration::DescriptorSet:
             descriptorSet = decoration->GetOperand(2).AsLiteralUint64();
@@ -248,7 +212,7 @@ std::tuple<uint64_t, uint64_t> GraphPassBase::getDescriptorSetAndBinding(const O
 }
 
 std::tuple<uint64_t, uint64_t, std::shared_ptr<TensorDescriptor>>
-GraphPassBase::getTensorByDecoration(const Operand &operand, const uint32_t arrayIndex) {
+GraphExtInstContext::getTensorByDecoration(const Operand &operand, const uint32_t arrayIndex) {
     const auto &[descriptorSet, binding] = getDescriptorSetAndBinding(operand);
 
     if (descriptorSet == std::numeric_limits<uint64_t>::max()) {
@@ -260,7 +224,8 @@ GraphPassBase::getTensorByDecoration(const Operand &operand, const uint32_t arra
     return std::make_tuple(descriptorSet, binding, std::move(tensor));
 }
 
-std::shared_ptr<TensorDescriptor> GraphPassBase::getTensor(const Instruction &instruction, const uint32_t arrayIndex) {
+std::shared_ptr<TensorDescriptor> GraphExtInstContext::getTensor(const Instruction &instruction,
+                                                                 const uint32_t arrayIndex) {
     if (tensorMap[instruction.result_id()][arrayIndex] != nullptr) {
         return tensorMap[instruction.result_id()][arrayIndex];
     }
@@ -312,25 +277,25 @@ std::shared_ptr<TensorDescriptor> GraphPassBase::getTensor(const Instruction &in
     }
 }
 
-std::shared_ptr<TensorDescriptor> GraphPassBase::getTensor(const Operand &operand, const uint32_t arrayIndex) {
-    const auto *instruction = get_def_use_mgr()->GetDef(operand.AsId());
+std::shared_ptr<TensorDescriptor> GraphExtInstContext::getTensor(const Operand &operand, const uint32_t arrayIndex) {
+    const auto *instruction = irContext.get_def_use_mgr()->GetDef(operand.AsId());
     return getTensor(*instruction, arrayIndex);
 }
 
-std::shared_ptr<TensorDescriptor> GraphPassBase::makeTensor(const analysis::TensorARM *tensor) const {
+std::shared_ptr<TensorDescriptor> GraphExtInstContext::makeTensor(const analysis::TensorARM *tensor) const {
     const VkFormat format = getVkFormat(tensor->element_type());
     auto dimensions = tensor->is_shaped() ? getConstVector<int64_t>(tensor->shape_id()) : std::vector<int64_t>{};
 
     return graphPipeline.makeTensor(format, std::move(dimensions));
 }
 
-std::shared_ptr<TensorDescriptor> GraphPassBase::getOrMakeCompositeTensor(const uint32_t id) {
+std::shared_ptr<TensorDescriptor> GraphExtInstContext::getOrMakeCompositeTensor(const uint32_t id) {
     auto tensor = tensorMap[id][0];
     if (tensor != nullptr) {
         return tensor;
     }
 
-    const auto *instruction = get_def_use_mgr()->GetDef(id);
+    const auto *instruction = irContext.get_def_use_mgr()->GetDef(id);
     if (instruction->opcode() == spv::Op::OpGraphConstantARM) {
         const auto constantId = static_cast<uint32_t>(instruction->GetOperand(2).AsLiteralUint64());
         tensor = graphPipeline.getConstTensor(constantId);
@@ -341,8 +306,8 @@ std::shared_ptr<TensorDescriptor> GraphPassBase::getOrMakeCompositeTensor(const 
     return tensor;
 }
 
-std::shared_ptr<TensorDescriptor> GraphPassBase::makeCompositeTensor(const uint32_t id) const {
-    const auto *instruction = get_def_use_mgr()->GetDef(id);
+std::shared_ptr<TensorDescriptor> GraphExtInstContext::makeCompositeTensor(const uint32_t id) const {
+    const auto *instruction = irContext.get_def_use_mgr()->GetDef(id);
     const auto *tensorType = getTensorType(instruction->type_id());
     const auto format = getVkFormat(tensorType->element_type());
     auto dimensions = getConstVector<int64_t>(tensorType->shape_id());
@@ -387,7 +352,7 @@ std::shared_ptr<TensorDescriptor> GraphPassBase::makeCompositeTensor(const uint3
     }
 }
 
-VkFormat GraphPassBase::getVkFormat(const analysis::Type *type) const {
+VkFormat GraphExtInstContext::getVkFormat(const analysis::Type *type) const {
     const auto *integerType = type->AsInteger();
     if (integerType) {
         switch (integerType->width()) {
@@ -411,15 +376,15 @@ VkFormat GraphPassBase::getVkFormat(const analysis::Type *type) const {
 
     const auto *floatType = type->AsFloat();
     if (floatType) {
-        if (isFloat8E5M2Impl(floatType)) {
+        if (isFloat8E5M2(floatType)) {
             return VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM;
         }
-        if (isFloat8E4M3Impl(floatType)) {
+        if (isFloat8E4M3(floatType)) {
             return VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM;
         }
         switch (floatType->width()) {
         case 16:
-            if (isBFloat16Impl(floatType)) {
+            if (isBFloat16(floatType)) {
                 return VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM;
             } else {
                 return VK_FORMAT_R16_SFLOAT;
@@ -436,11 +401,11 @@ VkFormat GraphPassBase::getVkFormat(const analysis::Type *type) const {
     throw std::runtime_error(std::string("Unsupported tensor format: " + type->str()));
 }
 
-bool GraphPassBase::getBoolConstant(const Operand &operand) {
+bool GraphExtInstContext::getBoolConstant(const Operand &operand) {
     const auto id = operand.AsId();
-    const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(id);
+    const auto *constant = irContext.get_constant_mgr()->FindDeclaredConstant(id);
     if (constant == nullptr) {
-        const auto *instruction = get_def_use_mgr()->GetDef(id);
+        const auto *instruction = irContext.get_def_use_mgr()->GetDef(id);
         throw std::runtime_error("Expected boolean constant for id %" + std::to_string(id) + ", found opcode " +
                                  (instruction == nullptr
                                       ? std::string{"unknown"}
@@ -457,54 +422,28 @@ bool GraphPassBase::getBoolConstant(const Operand &operand) {
     return boolConstant->value();
 }
 
-// Disabled until needed
-// std::string GraphPassBase::extractDebugInfoFromSPV(const Instruction *opExtInst, const std::string &defaultName) {
-//     if (!opExtInst) {
-//         return defaultName;
-//     }
+bool isBFloat16(const analysis::Float *f) { return isFloatEncoding<uint16_t, spv::FPEncoding::BFloat16KHR>(f); }
+bool isFloat8E5M2(const analysis::Float *f) { return isFloatEncoding<uint8_t, spv::FPEncoding::Float8E5M2EXT>(f); }
+bool isFloat8E4M3(const analysis::Float *f) { return isFloatEncoding<uint8_t, spv::FPEncoding::Float8E4M3EXT>(f); }
 
-//     graphLog(Severity::Debug) << "[TRACE] extractDebugInfoFromSPV called with result_id: " << opExtInst->result_id()
-//                               << std::endl;
-
-//     bool hasDebugInfoExtension = false;
-//     for (const auto &inst : get_module()->extensions()) {
-//         if (inst.opcode() == spv::Op::OpExtension && inst.GetOperand(0).AsString() == "SPV_KHR_non_semantic_info") {
-//             hasDebugInfoExtension = true;
-//             break;
-//         }
-//     }
-
-//     if (!hasDebugInfoExtension) {
-//         return defaultName;
-//     }
-
-//     // TODO: extend with other non-semantic info decoration options
-
-//     return defaultName;
-// }
-
-bool GraphPassBase::isBFloat16(const spvtools::opt::analysis::Float *f) { return isBFloat16Impl(f); }
-bool GraphPassBase::isFloat8E5M2(const spvtools::opt::analysis::Float *f) { return isFloat8E5M2Impl(f); }
-bool GraphPassBase::isFloat8E4M3(const spvtools::opt::analysis::Float *f) { return isFloat8E4M3Impl(f); }
-
-size_t GraphPassBase::getElementCount(const uint32_t id) const {
+size_t GraphExtInstContext::getElementCount(const uint32_t id) const {
     const auto dimensions = getConstVector<int64_t>(id);
     return mlsdk::el::utils::getElementCount(dimensions);
 }
 
-bool GraphPassBase::isCompositeReplicateConstantOpcode(const spv::Op opcode) {
+bool GraphExtInstContext::isCompositeReplicateConstantOpcode(const spv::Op opcode) {
     return opcode == spv::Op::OpConstantCompositeReplicateEXT || opcode == spv::Op::OpSpecConstantCompositeReplicateEXT;
 }
 
 template <typename T, spv::FPEncoding fpEncoding>
-std::vector<T> GraphPassBase::getConstVector(const spvtools::opt::Instruction *instruction,
-                                             const std::vector<int64_t> &dimensions) const {
+std::vector<T> GraphExtInstContext::getConstVector(const spvtools::opt::Instruction *instruction,
+                                                   const std::vector<int64_t> &dimensions) const {
     if (!instruction) {
         throw std::runtime_error("Missing definition for encoded float composite constant");
     }
 
     std::vector<T> values;
-    const auto *constant = context()->get_constant_mgr()->FindDeclaredConstant(instruction->result_id());
+    const auto *constant = irContext.get_constant_mgr()->FindDeclaredConstant(instruction->result_id());
     if (constant == nullptr) {
         throw std::runtime_error("Missing declared encoded float constant for id: " +
                                  std::to_string(instruction->result_id()));
