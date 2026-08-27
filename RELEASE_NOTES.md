@@ -28,6 +28,8 @@
 - Fixed interval memory planning to preserve tensor live ranges across multiple
   graph dispatches.
 - Fixed ambiguous shader conversion overloads for `uint32_t` convolution outputs.
+- Prevented Resize interpolation from producing `Inf` or `NaN` for extreme
+  floating-point inputs on affected devices by preserving operation order.
 
 ## Version 0.10.0 – *Optical Flow, Graph Profiling & Runtime Refinement*
 

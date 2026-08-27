@@ -54,7 +54,9 @@ void main() {
     uint[4] index;
     getIndex4(outputData, index);
 
-    COMP_T acc = COMP_T(0);
+    // Preserve the interpolation operation order on drivers where contraction or
+    // reassociation can overflow intermediate values and produce Inf or NaN.
+    precise COMP_T acc = COMP_T(0);
 
     uint n = index[0];
     uint oy = index[1];
