@@ -30,6 +30,8 @@
 - Fixed ambiguous shader conversion overloads for `uint32_t` convolution outputs.
 - Prevented Resize interpolation from producing `Inf` or `NaN` for extreme
   floating-point inputs on affected devices by preserving operation order.
+- Fixed optical-flow session independence, moving internal resource ownership to
+  the session level, enabling safe parallel execution and per-session memory.
 
 ## Version 0.10.0 – *Optical Flow, Graph Profiling & Runtime Refinement*
 

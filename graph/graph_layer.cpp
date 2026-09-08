@@ -186,13 +186,13 @@ class DataGraphPipelineARM : public Loader {
             graphPipeline = std::make_shared<GraphPipeline>(device->loader, device->physicalDevice->physicalDevice,
                                                             device->device, _pipelineCache);
         } else {
-            opticalFlow = std::make_shared<OpticalFlow>(device->loader, device->physicalDevice->physicalDevice,
-                                                        device->device, _pipelineCache);
+            opticalFlowPipeline = std::make_shared<OpticalFlowPipeline>(
+                device->loader, device->physicalDevice->physicalDevice, device->device, _pipelineCache);
         }
     }
 
     std::shared_ptr<GraphPipeline> graphPipeline;
-    std::shared_ptr<OpticalFlow> opticalFlow;
+    std::shared_ptr<OpticalFlowPipeline> opticalFlowPipeline;
     ComputeDescriptorSetMap constantsDescriptorSets;
     bool isTosaGraph = false;
     ProfilingPipelineKind profilingPipelineKind = ProfilingPipelineKind::GRAPH_OP;
@@ -205,7 +205,7 @@ class DataGraphPipelineARM : public Loader {
     }
 
     bool isGraph() const { return graphPipeline != nullptr; }
-    bool isOpticalFlow() const { return opticalFlow != nullptr; }
+    bool isOpticalFlow() const { return opticalFlowPipeline != nullptr; }
 };
 
 /*****************************************************************************
@@ -221,10 +221,13 @@ class DataGraphPipelineSessionARM : public Loader {
         if (pipeline->isGraph()) {
             sessionRamDescriptorSets = pipeline->graphPipeline->makeSessionRamDescriptorSets();
             memoryPlanner = createMemoryPlanner();
+        } else {
+            opticalFlowSession = pipeline->opticalFlowPipeline->createSession(hasOpticalFlowCache());
         }
     }
 
     std::shared_ptr<DataGraphPipelineARM> pipeline;
+    std::shared_ptr<OpticalFlow> opticalFlowSession;
 
     // Session ram descriptor sets
     ComputeDescriptorSetMap sessionRamDescriptorSets;
@@ -247,11 +250,11 @@ class DataGraphPipelineSessionARM : public Loader {
         }
         if (pipeline->isOpticalFlow()) {
             if (bindPoint == VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM) {
-                return pipeline->opticalFlow->getTransientMemoryRequirements();
+                return opticalFlowSession->getTransientMemoryRequirements();
             }
             if (bindPoint == VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_OPTICAL_FLOW_CACHE_ARM &&
                 hasOpticalFlowCache()) {
-                return pipeline->opticalFlow->getCacheMemoryRequirements();
+                return opticalFlowSession->getCacheMemoryRequirements();
             }
         }
         return {0, 1, 0};
@@ -265,13 +268,13 @@ class DataGraphPipelineSessionARM : public Loader {
                 descriptorSet->updateDescriptorSet();
             }
         } else if (pipeline->isOpticalFlow()) {
-            pipeline->opticalFlow->bindSessionTransientMemory(memory, offset);
+            opticalFlowSession->bindSessionTransientMemory(memory, offset);
         }
         transientMemoryBound = true;
     }
 
     void bindOpticalFlowCacheMemory(VkDeviceMemory memory, VkDeviceSize offset) {
-        pipeline->opticalFlow->bindSessionCacheMemory(memory, offset);
+        opticalFlowSession->bindSessionCacheMemory(memory, offset);
         opticalFlowCacheMemoryBound = true;
     }
 
@@ -966,7 +969,7 @@ class GraphLayer : public VulkanLayerImpl {
                 assert(opticalFlowCreateInfo);
                 graphLog(Severity::Debug) << "Creating Optical Flow pipeline" << std::endl;
                 // Initialise OpticalFlow
-                const auto &opticalFlowPipeline = pipeline->opticalFlow;
+                const auto &opticalFlowPipeline = pipeline->opticalFlowPipeline;
                 OpticalFlow::Config config;
                 config.useMvInput =
                     (opticalFlowCreateInfo->flags & VK_DATA_GRAPH_OPTICAL_FLOW_CREATE_ENABLE_HINT_BIT_ARM) != 0;
@@ -1318,11 +1321,6 @@ class GraphLayer : public VulkanLayerImpl {
             graphLog(Severity::Error) << "OF cache create flag is invalid for non-OF pipelines" << std::endl;
             return VK_ERROR_UNKNOWN;
         }
-        if (pipelineImpl->isOpticalFlow() &&
-            (createInfo->flags & VK_DATA_GRAPH_PIPELINE_SESSION_CREATE_OPTICAL_FLOW_CACHE_BIT_ARM) == 0) {
-            graphLog(Severity::Error) << "OF sessions currently require OF cache create flag" << std::endl;
-            return VK_ERROR_UNKNOWN;
-        }
         *session = reinterpret_cast<VkDataGraphPipelineSessionARM>(
             allocateObject<DataGraphPipelineSessionARM>(callbacks, deviceHandle, pipelineImpl, createInfo->flags));
 
@@ -1390,10 +1388,9 @@ class GraphLayer : public VulkanLayerImpl {
 
     static VkResult VKAPI_CALL vkBindDataGraphPipelineSessionMemoryARM(
         VkDevice, uint32_t bindInfoCount, const VkBindDataGraphPipelineSessionMemoryInfoARM *bindInfos) {
-        auto *const session = reinterpret_cast<DataGraphPipelineSessionARM *>(bindInfos->session);
-
         // Bind session memory to hidden layers
         for (uint32_t i = 0; i < bindInfoCount; i++) {
+            auto *const session = reinterpret_cast<DataGraphPipelineSessionARM *>(bindInfos[i].session);
             switch (bindInfos[i].bindPoint) {
             case VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM: {
                 session->bindTransientMemory(bindInfos[i].memory, bindInfos[i].memoryOffset);
@@ -1916,7 +1913,7 @@ class GraphLayer : public VulkanLayerImpl {
                 graphPipeline->cmdBindAndDispatch(commandBuffer, allDescriptorSetMap);
             }
         } else if (pipeline->isOpticalFlow()) {
-            const auto &opticalFlowPipeline = pipeline->opticalFlow;
+            const auto &opticalFlowSession = session->opticalFlowSession;
 
             VkDataGraphOpticalFlowExecuteFlagsARM opticalFlowFlags = 0;
             uint32_t meanFlowL1NormHint = 0;
@@ -1966,15 +1963,15 @@ class GraphLayer : public VulkanLayerImpl {
                     }
                 }
             }
-            opticalFlowPipeline->updateDescriptorSets(descriptorMap);
+            opticalFlowSession->updateDescriptorSets(descriptorMap);
             if (deviceHandle->profiler) {
                 const auto dispatchDecorator = deviceHandle->profiler->makeOpticalFlowDispatchDecorator(
                     vkPipeline, commandBuffer, handle->queueFamilyIndex,
-                    opticalFlowPipeline->getMaxDispatchPipelineCount());
-                opticalFlowPipeline->cmdBindAndDispatch(commandBuffer, opticalFlowFlags, meanFlowL1NormHint,
-                                                        dispatchDecorator);
+                    opticalFlowSession->getMaxDispatchPipelineCount());
+                opticalFlowSession->cmdBindAndDispatch(commandBuffer, opticalFlowFlags, meanFlowL1NormHint,
+                                                       dispatchDecorator);
             } else {
-                opticalFlowPipeline->cmdBindAndDispatch(commandBuffer, opticalFlowFlags, meanFlowL1NormHint);
+                opticalFlowSession->cmdBindAndDispatch(commandBuffer, opticalFlowFlags, meanFlowL1NormHint);
             }
         }
     }

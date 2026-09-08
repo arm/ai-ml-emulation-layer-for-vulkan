@@ -93,7 +93,7 @@ class OpticalFlow {
         InputImage dstCost;
     };
 
-    void init(const Config &config);
+    void init(const Config &config, bool cacheEnabled);
 
     void setInputSearch() const;
     void setInputTemplate() const;
@@ -190,11 +190,34 @@ class OpticalFlow {
 
     VkMemoryRequirements cacheMemoryRequirements_{};
     VkMemoryRequirements transientMemoryRequirements_{};
+    bool cacheEnabled_ = false;
 
     std::vector<std::shared_ptr<ComputePipeline>> downsampleSearchPipelines_;
     std::vector<std::shared_ptr<ComputePipeline>> downsampleTemplatePipelines_;
     std::vector<std::shared_ptr<ComputePipeline>> motionEstimationPipelines_;
     std::vector<std::shared_ptr<Image>> allImages_;
+};
+
+/*******************************************************************************
+ * OpticalFlowPipeline
+ *******************************************************************************/
+
+class OpticalFlowPipeline {
+  public:
+    OpticalFlowPipeline(std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> loader,
+                        VkPhysicalDevice physicalDevice, VkDevice device,
+                        const std::shared_ptr<PipelineCache> &pipelineCache);
+
+    void init(const OpticalFlow::Config &config);
+    std::shared_ptr<OpticalFlow> createSession(bool cacheEnabled) const;
+
+  private:
+    std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> loader_;
+    VkPhysicalDevice physicalDevice_;
+    VkDevice device_;
+    std::shared_ptr<PipelineCache> pipelineCache_;
+    OpticalFlow::Config config_{};
+    bool initialized_ = false;
 };
 
 template <typename T, typename... Args>

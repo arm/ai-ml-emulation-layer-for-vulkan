@@ -151,6 +151,7 @@ class OpticalFlow {
             VK_DATA_GRAPH_OPTICAL_FLOW_PERFORMANCE_LEVEL_MEDIUM_ARM;
         bool enableHint = false;
         bool enableCost = false;
+        bool enableCache = true;
     };
 
     OpticalFlow(const std::shared_ptr<Device> &device, uint32_t width, uint32_t height, const Config &config)
@@ -164,12 +165,16 @@ class OpticalFlow {
         const vk::DescriptorSetLayoutCreateInfo dsLayoutCI{{}, static_cast<uint32_t>(bindings.size()), bindings.data()};
         descriptorSetLayout_ = vk::raii::DescriptorSetLayout{&(*device), dsLayoutCI};
 
-        const vk::DescriptorPoolSize poolSize{vk::DescriptorType::eStorageImage, descriptorCount()};
-        const vk::DescriptorPoolCreateInfo descriptorPoolCreateInfo{{}, 1, 1, &poolSize};
+        constexpr uint32_t descriptorSetCount = 2;
+        const vk::DescriptorPoolSize poolSize{vk::DescriptorType::eStorageImage,
+                                              descriptorSetCount * descriptorCount()};
+        const vk::DescriptorPoolCreateInfo descriptorPoolCreateInfo{
+            vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, descriptorSetCount, 1, &poolSize};
         descriptorPool_ = vk::raii::DescriptorPool{&(*device), descriptorPoolCreateInfo};
 
-        const vk::DescriptorSetLayout layouts[] = {*descriptorSetLayout_};
-        const vk::DescriptorSetAllocateInfo descriptorSetAllocateInfo{*descriptorPool_, 1, &layouts[0]};
+        const vk::DescriptorSetLayout layouts[] = {*descriptorSetLayout_, *descriptorSetLayout_};
+        const vk::DescriptorSetAllocateInfo descriptorSetAllocateInfo{*descriptorPool_, descriptorSetCount,
+                                                                      &layouts[0]};
         descriptorSets_ = vk::raii::DescriptorSets{&(*device), descriptorSetAllocateInfo};
 
         const vk::PipelineLayoutCreateInfo pipelineLayoutCI{{}, 1, &layouts[0]};
@@ -244,7 +249,8 @@ class OpticalFlow {
 
         VkDataGraphPipelineSessionCreateInfoARM sessionCreateInfo{};
         sessionCreateInfo.sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_CREATE_INFO_ARM;
-        sessionCreateInfo.flags = VK_DATA_GRAPH_PIPELINE_SESSION_CREATE_OPTICAL_FLOW_CACHE_BIT_ARM;
+        sessionCreateInfo.flags =
+            config_.enableCache ? VK_DATA_GRAPH_PIPELINE_SESSION_CREATE_OPTICAL_FLOW_CACHE_BIT_ARM : 0;
         sessionCreateInfo.dataGraphPipeline = pipeline_;
 
         result = vkDevice_.getDispatcher()->vkCreateDataGraphPipelineSessionARM(*vkDevice_, &sessionCreateInfo, nullptr,
@@ -257,6 +263,9 @@ class OpticalFlow {
     }
 
     ~OpticalFlow() {
+        for (auto *session : additionalSessions_) {
+            vkDevice_.getDispatcher()->vkDestroyDataGraphPipelineSessionARM(*vkDevice_, session, nullptr);
+        }
         if (session_ != VK_NULL_HANDLE) {
             vkDevice_.getDispatcher()->vkDestroyDataGraphPipelineSessionARM(*vkDevice_, session_, nullptr);
         }
@@ -271,7 +280,7 @@ class OpticalFlow {
 
     void bindImages(vk::ImageView inputView, vk::ImageView referenceView, vk::ImageView flowVectorView,
                     std::optional<vk::ImageView> hintView = std::nullopt,
-                    std::optional<vk::ImageView> costView = std::nullopt) {
+                    std::optional<vk::ImageView> costView = std::nullopt, uint32_t descriptorSetIndex = 0) {
         std::vector<vk::DescriptorImageInfo> imageInfos;
         imageInfos.reserve(descriptorCount());
         imageInfos.emplace_back(VK_NULL_HANDLE, inputView, vk::ImageLayout::eGeneral);
@@ -294,15 +303,16 @@ class OpticalFlow {
         std::vector<vk::WriteDescriptorSet> descriptorWrites;
         descriptorWrites.reserve(descriptorCount());
         for (uint32_t i = 0; i < descriptorCount(); i++) {
-            descriptorWrites.emplace_back(*descriptorSets_[0], i, 0, 1, vk::DescriptorType::eStorageImage,
-                                          &imageInfos[i]);
+            descriptorWrites.emplace_back(*descriptorSets_[descriptorSetIndex], i, 0, 1,
+                                          vk::DescriptorType::eStorageImage, &imageInfos[i]);
         }
 
         vkDevice_.updateDescriptorSets(descriptorWrites, {});
     }
 
     void dispatchSubmit(const std::vector<vk::Image> &images,
-                        VkDataGraphOpticalFlowExecuteFlagsARM opticalFlowFlags = 0, uint32_t meanFlowL1NormHint = 0) {
+                        VkDataGraphOpticalFlowExecuteFlagsARM opticalFlowFlags = 0, uint32_t meanFlowL1NormHint = 0,
+                        VkDataGraphPipelineSessionARM dispatchSession = VK_NULL_HANDLE) {
         const vk::CommandPoolCreateInfo commandPoolCreateInfo{{},
                                                               device_->getPhysicalDevice()->getComputeFamilyIndex()};
         vk::raii::CommandPool commandPool{&(*device_), commandPoolCreateInfo};
@@ -311,6 +321,23 @@ class OpticalFlow {
         auto commandBuffer = std::move(commandBuffers.front());
 
         commandBuffer.begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+        recordDispatch(*commandBuffer, images, dispatchSession == VK_NULL_HANDLE ? session_ : dispatchSession, 0,
+                       opticalFlowFlags, meanFlowL1NormHint);
+        commandBuffer.end();
+
+        vk::raii::Queue queue(&(*device_), device_->getPhysicalDevice()->getComputeFamilyIndex(), 0);
+        vk::raii::Fence fence(&(*device_), vk::FenceCreateInfo{});
+        const vk::SubmitInfo submitInfo{0, nullptr, nullptr, 1, &(*commandBuffer), 0, nullptr};
+        queue.submit({1, &submitInfo}, *fence);
+        const auto waitResult = (&(*device_)).waitForFences({*fence}, vk::True, uint64_t(-1));
+        if (waitResult != vk::Result::eSuccess) {
+            throw std::runtime_error("Failed waiting for optical flow dispatch completion");
+        }
+    }
+
+    void recordDispatch(VkCommandBuffer commandBuffer, const std::vector<vk::Image> &images,
+                        VkDataGraphPipelineSessionARM dispatchSession, uint32_t descriptorSetIndex = 0,
+                        VkDataGraphOpticalFlowExecuteFlagsARM opticalFlowFlags = 0, uint32_t meanFlowL1NormHint = 0) {
 
         for (const auto &image : images) {
             VkImageMemoryBarrier2 imageBarrier{};
@@ -330,12 +357,12 @@ class OpticalFlow {
             depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
             depInfo.imageMemoryBarrierCount = 1;
             depInfo.pImageMemoryBarriers = &imageBarrier;
-            vkDevice_.getDispatcher()->vkCmdPipelineBarrier2(*commandBuffer, &depInfo);
+            vkDevice_.getDispatcher()->vkCmdPipelineBarrier2(commandBuffer, &depInfo);
         }
 
-        vkDevice_.getDispatcher()->vkCmdBindPipeline(*commandBuffer, VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM, pipeline_);
-        const VkDescriptorSet vkDescriptorSet = *descriptorSets_[0];
-        vkDevice_.getDispatcher()->vkCmdBindDescriptorSets(*commandBuffer, VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM,
+        vkDevice_.getDispatcher()->vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM, pipeline_);
+        const VkDescriptorSet vkDescriptorSet = *descriptorSets_[descriptorSetIndex];
+        vkDevice_.getDispatcher()->vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM,
                                                            *pipelineLayout_, 0, 1, &vkDescriptorSet, 0, nullptr);
 
         VkDataGraphPipelineOpticalFlowDispatchInfoARM opticalFlowDispatchInfo{};
@@ -349,47 +376,64 @@ class OpticalFlow {
 
         const VkDataGraphPipelineDispatchInfoARM *pDispatchInfo =
             (opticalFlowFlags == 0 && meanFlowL1NormHint == 0) ? nullptr : &dispatchInfo;
-        vkDevice_.getDispatcher()->vkCmdDispatchDataGraphARM(*commandBuffer, session_, pDispatchInfo);
-        commandBuffer.end();
-
-        vk::raii::Queue queue(&(*device_), device_->getPhysicalDevice()->getComputeFamilyIndex(), 0);
-        vk::raii::Fence fence(&(*device_), vk::FenceCreateInfo{});
-        const vk::SubmitInfo submitInfo{0, nullptr, nullptr, 1, &(*commandBuffer), 0, nullptr};
-        queue.submit({1, &submitInfo}, *fence);
-        const auto waitResult = (&(*device_)).waitForFences({*fence}, vk::True, uint64_t(-1));
-        if (waitResult != vk::Result::eSuccess) {
-            throw std::runtime_error("Failed waiting for optical flow dispatch completion");
-        }
+        vkDevice_.getDispatcher()->vkCmdDispatchDataGraphARM(commandBuffer, dispatchSession, pDispatchInfo);
     }
 
     VkPipeline pipeline() const { return pipeline_; }
+    VkDataGraphPipelineSessionARM session() const { return session_; }
 
-  private:
-    void allocateAndBindSessionMemory() {
-        const VkDataGraphPipelineSessionBindPointRequirementsInfoARM bindPointReqInfo = {
+    std::vector<VkDataGraphPipelineSessionBindPointRequirementARM>
+    getBindPointRequirements(VkDataGraphPipelineSessionARM session) const {
+        const VkDataGraphPipelineSessionBindPointRequirementsInfoARM info = {
             VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENTS_INFO_ARM,
             nullptr,
-            session_,
+            session,
         };
 
-        uint32_t bindPointCount = 0;
+        uint32_t count = 0;
         VkResult result = vkDevice_.getDispatcher()->vkGetDataGraphPipelineSessionBindPointRequirementsARM(
-            *vkDevice_, &bindPointReqInfo, &bindPointCount, nullptr);
-        if (result != VK_SUCCESS || bindPointCount == 0) {
+            *vkDevice_, &info, &count, nullptr);
+        if (result != VK_SUCCESS || count == 0) {
             throw std::runtime_error("Failed querying optical flow bind point requirements");
         }
 
-        std::vector<VkDataGraphPipelineSessionBindPointRequirementARM> bindPointRequirements(bindPointCount);
-        for (auto &r : bindPointRequirements) {
-            r = {};
-            r.sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENT_ARM;
+        std::vector<VkDataGraphPipelineSessionBindPointRequirementARM> requirements(count);
+        for (auto &requirement : requirements) {
+            requirement.sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENT_ARM;
         }
-        uint32_t retrievedBindPointCount = bindPointCount;
         result = vkDevice_.getDispatcher()->vkGetDataGraphPipelineSessionBindPointRequirementsARM(
-            *vkDevice_, &bindPointReqInfo, &retrievedBindPointCount, bindPointRequirements.data());
-        if (result != VK_SUCCESS || retrievedBindPointCount != bindPointCount) {
+            *vkDevice_, &info, &count, requirements.data());
+        if (result != VK_SUCCESS || count != requirements.size()) {
             throw std::runtime_error("Failed retrieving optical flow bind point requirements");
         }
+        return requirements;
+    }
+
+    VkDataGraphPipelineSessionARM createAdditionalSession(bool enableCache) {
+        VkDataGraphPipelineSessionCreateInfoARM createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_CREATE_INFO_ARM;
+        createInfo.flags = enableCache ? VK_DATA_GRAPH_PIPELINE_SESSION_CREATE_OPTICAL_FLOW_CACHE_BIT_ARM : 0;
+        createInfo.dataGraphPipeline = pipeline_;
+
+        VkDataGraphPipelineSessionARM session = VK_NULL_HANDLE;
+        const auto result =
+            vkDevice_.getDispatcher()->vkCreateDataGraphPipelineSessionARM(*vkDevice_, &createInfo, nullptr, &session);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create additional data graph optical flow session");
+        }
+
+        additionalSessions_.push_back(session);
+        additionalSessionMemories_.emplace_back();
+        allocateAndBindSessionMemory(session, additionalSessionMemories_.back());
+        return session;
+    }
+
+  private:
+    void allocateAndBindSessionMemory() { allocateAndBindSessionMemory(session_, sessionMemories_); }
+
+    void allocateAndBindSessionMemory(VkDataGraphPipelineSessionARM session,
+                                      std::vector<vk::raii::DeviceMemory> &sessionMemories) {
+        const auto bindPointRequirements = getBindPointRequirements(session);
 
         std::vector<VkBindDataGraphPipelineSessionMemoryInfoARM> bindInfos;
         for (const auto &req : bindPointRequirements) {
@@ -399,7 +443,7 @@ class OpticalFlow {
 
                 VkDataGraphPipelineSessionMemoryRequirementsInfoARM memReqInfo{};
                 memReqInfo.sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_MEMORY_REQUIREMENTS_INFO_ARM;
-                memReqInfo.session = session_;
+                memReqInfo.session = session;
                 memReqInfo.bindPoint = req.bindPoint;
                 memReqInfo.objectIndex = objectIndex;
                 vkDevice_.getDispatcher()->vkGetDataGraphPipelineSessionMemoryRequirementsARM(*vkDevice_, &memReqInfo,
@@ -411,21 +455,21 @@ class OpticalFlow {
                     throw std::runtime_error("Failed finding optical flow session_ memory type index");
                 }
 
-                sessionMemories_.emplace_back(
+                sessionMemories.emplace_back(
                     &(*device_), vk::MemoryAllocateInfo{memReq.memoryRequirements.size, memoryTypeIndices[0]});
 
                 VkBindDataGraphPipelineSessionMemoryInfoARM bindInfo{};
                 bindInfo.sType = VK_STRUCTURE_TYPE_BIND_DATA_GRAPH_PIPELINE_SESSION_MEMORY_INFO_ARM;
-                bindInfo.session = session_;
+                bindInfo.session = session;
                 bindInfo.bindPoint = req.bindPoint;
                 bindInfo.objectIndex = objectIndex;
-                bindInfo.memory = *sessionMemories_.back();
+                bindInfo.memory = *sessionMemories.back();
                 bindInfo.memoryOffset = 0;
                 bindInfos.push_back(bindInfo);
             }
         }
 
-        result = vkDevice_.getDispatcher()->vkBindDataGraphPipelineSessionMemoryARM(
+        const auto result = vkDevice_.getDispatcher()->vkBindDataGraphPipelineSessionMemoryARM(
             *vkDevice_, static_cast<uint32_t>(bindInfos.size()), bindInfos.data());
         if (result != VK_SUCCESS) {
             throw std::runtime_error("Failed binding optical flow session_ memory");
@@ -446,6 +490,8 @@ class OpticalFlow {
     VkPipeline pipeline_{VK_NULL_HANDLE};
     VkDataGraphPipelineSessionARM session_{VK_NULL_HANDLE};
     std::vector<vk::raii::DeviceMemory> sessionMemories_;
+    std::vector<VkDataGraphPipelineSessionARM> additionalSessions_;
+    std::vector<std::vector<vk::raii::DeviceMemory>> additionalSessionMemories_;
 };
 
 void initializeImages(const std::shared_ptr<Device> &device, vk::Image input, vk::Image reference, vk::Image flow,
@@ -599,7 +645,7 @@ uint32_t granularityFromGrid(VkDataGraphOpticalFlowGridSizeFlagsARM gridSize) {
 void runOpticalFlowAndExpectOutputChange(const std::shared_ptr<Device> &device, const OpticalFlow::Config &cfg,
                                          std::string_view contextName,
                                          VkDataGraphOpticalFlowExecuteFlagsARM secondDispatchFlags = 0,
-                                         std::string *profileJson = nullptr) {
+                                         std::string *profileJson = nullptr, bool dispatchUncachedSibling = false) {
     constexpr uint32_t width = 64;
     constexpr uint32_t height = 64;
     const uint32_t granularity = granularityFromGrid(cfg.outputGridSize);
@@ -639,6 +685,17 @@ void runOpticalFlowAndExpectOutputChange(const std::shared_ptr<Device> &device, 
     }
 
     OpticalFlow opticalFlow{device, width, height, cfg};
+    const auto bindPointRequirements = opticalFlow.getBindPointRequirements(opticalFlow.session());
+    ASSERT_EQ(bindPointRequirements.size(), cfg.enableCache ? 2u : 1u);
+    EXPECT_TRUE(std::any_of(bindPointRequirements.begin(), bindPointRequirements.end(), [](const auto &requirement) {
+        return requirement.bindPoint == VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM;
+    }));
+    EXPECT_EQ(std::any_of(bindPointRequirements.begin(), bindPointRequirements.end(),
+                          [](const auto &requirement) {
+                              return requirement.bindPoint ==
+                                     VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_OPTICAL_FLOW_CACHE_ARM;
+                          }),
+              cfg.enableCache);
     opticalFlow.bindImages(*srcInput.view, *srcReference.view, *dstFlow.view,
                            srcHint.has_value() ? std::optional<vk::ImageView>{*srcHint->view} : std::nullopt,
                            dstCost.has_value() ? std::optional<vk::ImageView>{*dstCost->view} : std::nullopt);
@@ -652,6 +709,13 @@ void runOpticalFlowAndExpectOutputChange(const std::shared_ptr<Device> &device, 
     }
 
     opticalFlow.dispatchSubmit(images);
+    if (dispatchUncachedSibling) {
+        auto *const uncachedSession = opticalFlow.createAdditionalSession(false);
+        const auto uncachedRequirements = opticalFlow.getBindPointRequirements(uncachedSession);
+        ASSERT_EQ(uncachedRequirements.size(), 1u);
+        EXPECT_EQ(uncachedRequirements.front().bindPoint, VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM);
+        opticalFlow.dispatchSubmit(images, 0, 0, uncachedSession);
+    }
     if (secondDispatchFlags != 0) {
         opticalFlow.dispatchSubmit(images, secondDispatchFlags);
     }
@@ -671,6 +735,81 @@ void runOpticalFlowAndExpectOutputChange(const std::shared_ptr<Device> &device, 
 TEST(MLEmulationLayerOpticalFlowForVulkan, RGBToYSmokeGrid4x4) { // cppcheck-suppress syntaxError
     const auto device = createDevice();
     runOpticalFlowAndExpectOutputChange(device, OpticalFlow::Config{}, "RGBToY smoke");
+}
+
+TEST(MLEmulationLayerOpticalFlowForVulkan, UncachedSession) {
+    const auto device = createDevice();
+    OpticalFlow::Config cfg;
+    cfg.enableCache = false;
+    runOpticalFlowAndExpectOutputChange(device, cfg, "uncached session");
+}
+
+TEST(MLEmulationLayerOpticalFlowForVulkan, CachedAndUncachedSessionsSharePipeline) {
+    const auto device = createDevice();
+    runOpticalFlowAndExpectOutputChange(device, OpticalFlow::Config{}, "cached and uncached sessions", 0, nullptr,
+                                        true);
+}
+
+TEST(MLEmulationLayerOpticalFlowForVulkan, SessionsRecordedBeforeOverlappingSubmit) {
+    constexpr uint32_t width = 64;
+    constexpr uint32_t height = 64;
+    constexpr uint32_t flowWidth = 16;
+    constexpr uint32_t flowHeight = 16;
+
+    const auto device = createDevice();
+    const auto makeInput = [&]() {
+        return createImageResource(device, vk::Format::eR8Unorm, width, height,
+                                   vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage |
+                                       vk::ImageUsageFlagBits::eTransferDst);
+    };
+    const auto makeOutput = [&]() {
+        return createImageResource(device, vk::Format::eR16G16Sfloat, flowWidth, flowHeight,
+                                   vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled |
+                                       vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst);
+    };
+
+    auto input0 = makeInput();
+    auto reference0 = makeInput();
+    auto output0 = makeOutput();
+    auto input1 = makeInput();
+    auto reference1 = makeInput();
+    auto output1 = makeOutput();
+    initializeImages(device, *input0.image, *reference0.image, *output0.image, 48, 176, 255);
+    initializeImages(device, *input1.image, *reference1.image, *output1.image, 64, 192, 255);
+
+    OpticalFlow opticalFlow{device, width, height, OpticalFlow::Config{}};
+    auto *const uncachedSession = opticalFlow.createAdditionalSession(false);
+    opticalFlow.bindImages(*input0.view, *reference0.view, *output0.view, std::nullopt, std::nullopt, 0);
+    opticalFlow.bindImages(*input1.view, *reference1.view, *output1.view, std::nullopt, std::nullopt, 1);
+
+    const vk::CommandPoolCreateInfo commandPoolCreateInfo{{}, device->getPhysicalDevice()->getComputeFamilyIndex()};
+    vk::raii::CommandPool commandPool{&(*device), commandPoolCreateInfo};
+    const vk::CommandBufferAllocateInfo commandBufferAllocateInfo{*commandPool, vk::CommandBufferLevel::ePrimary, 2};
+    vk::raii::CommandBuffers commandBuffers{&(*device), commandBufferAllocateInfo};
+
+    commandBuffers[0].begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    opticalFlow.recordDispatch(*commandBuffers[0], {*input0.image, *reference0.image, *output0.image},
+                               opticalFlow.session(), 0);
+    commandBuffers[0].end();
+
+    commandBuffers[1].begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    opticalFlow.recordDispatch(*commandBuffers[1], {*input1.image, *reference1.image, *output1.image}, uncachedSession,
+                               1);
+    commandBuffers[1].end();
+
+    const std::array<vk::CommandBuffer, 2> submittedCommandBuffers{*commandBuffers[0], *commandBuffers[1]};
+    const vk::SubmitInfo submitInfo{
+        0, nullptr, nullptr, static_cast<uint32_t>(submittedCommandBuffers.size()), submittedCommandBuffers.data(),
+        0, nullptr};
+    vk::raii::Queue queue{&(*device), device->getPhysicalDevice()->getComputeFamilyIndex(), 0};
+    vk::raii::Fence fence{&(*device), vk::FenceCreateInfo{}};
+    queue.submit({1, &submitInfo}, *fence);
+    ASSERT_EQ((&(*device)).waitForFences({*fence}, vk::True, uint64_t(-1)), vk::Result::eSuccess);
+
+    for (const auto *output : {&output0, &output1}) {
+        const auto flow = readFlowImage(device, *output->image, flowWidth, flowHeight);
+        ASSERT_TRUE(std::any_of(flow.begin(), flow.end(), [](uint8_t value) { return value != 0xFF; }));
+    }
 }
 
 TEST(MLEmulationLayerOpticalFlowForVulkan, RGBToYGrid1x1) {

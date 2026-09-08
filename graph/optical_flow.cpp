@@ -30,7 +30,7 @@ OpticalFlow::OpticalFlow(std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchL
                          const std::shared_ptr<PipelineCache> &pipelineCache)
     : loader_(std::move(loader)), physicalDevice_(physicalDevice), device_(device), pipelineCache_(pipelineCache) {}
 
-void OpticalFlow::init(const Config &config) {
+void OpticalFlow::init(const Config &config, const bool cacheEnabled) {
     // Check configuration is supported
     [[maybe_unused]] auto isSupported = [](auto fmt, const auto &supported) -> bool {
         return supported.find(fmt) != supported.end();
@@ -47,6 +47,7 @@ void OpticalFlow::init(const Config &config) {
     assert(!config.outputCost || Spec::costSupported);
 
     config_ = config;
+    cacheEnabled_ = cacheEnabled;
     const auto inputUsage = Image::Usage::NoStoreImageSample;
     const auto outputUsage = Image::Usage::ImageStoreSample;
     const VkExtent3D inputDims{config.width, config.height, 1};
@@ -352,7 +353,7 @@ void OpticalFlow::computeMemoryRequirements() {
     for (const auto &image : allImages_) {
         const auto mrqs = image->getMemoryRequirements();
         const auto alignment = std::max(mrqs.alignment, bufferImageGranularity);
-        if (image->isCached()) {
+        if (image->isCached() && cacheEnabled_) {
             cacheMemReqs.size = roundUp(cacheMemReqs.size, alignment);
             image->setMemoryOffset(cacheMemReqs.size);
 
@@ -378,7 +379,7 @@ VkMemoryRequirements OpticalFlow::getTransientMemoryRequirements() const { retur
 
 void OpticalFlow::bindSessionTransientMemory(VkDeviceMemory memory, VkDeviceSize offset) {
     for (const auto &image : allImages_) {
-        if (!image->isCached()) {
+        if (!image->isCached() || !cacheEnabled_) {
             image->bindToMemory(memory, offset);
         }
     }
@@ -386,10 +387,31 @@ void OpticalFlow::bindSessionTransientMemory(VkDeviceMemory memory, VkDeviceSize
 
 void OpticalFlow::bindSessionCacheMemory(VkDeviceMemory memory, VkDeviceSize offset) {
     for (const auto &image : allImages_) {
-        if (image->isCached()) {
+        if (image->isCached() && cacheEnabled_) {
             image->bindToMemory(memory, offset);
         }
     }
+}
+
+/*******************************************************************************
+ * OpticalFlowPipeline
+ *******************************************************************************/
+
+OpticalFlowPipeline::OpticalFlowPipeline(std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> loader,
+                                         const VkPhysicalDevice physicalDevice, const VkDevice device,
+                                         const std::shared_ptr<PipelineCache> &pipelineCache)
+    : loader_{std::move(loader)}, physicalDevice_{physicalDevice}, device_{device}, pipelineCache_{pipelineCache} {}
+
+void OpticalFlowPipeline::init(const OpticalFlow::Config &config) {
+    config_ = config;
+    initialized_ = true;
+}
+
+std::shared_ptr<OpticalFlow> OpticalFlowPipeline::createSession(const bool cacheEnabled) const {
+    assert(initialized_);
+    auto session = std::make_shared<OpticalFlow>(loader_, physicalDevice_, device_, pipelineCache_);
+    session->init(config_, cacheEnabled);
+    return session;
 }
 
 void OpticalFlow::updateDescriptorSets(const OpticalFlowDescriptorMap &descriptorMap) {
