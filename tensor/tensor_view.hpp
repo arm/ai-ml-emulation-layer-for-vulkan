@@ -15,6 +15,7 @@ namespace mlsdk::el::layer {
 class TensorViewARM {
   public:
     TensorViewARM() = default;
+    ~TensorViewARM() = default;
     TensorViewARM(const TensorViewARM &) = delete;
     TensorViewARM &operator=(const TensorViewARM &) = delete;
 

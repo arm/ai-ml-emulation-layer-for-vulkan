@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -16,7 +16,10 @@ class TensorDescriptor {
     template <typename T, size_t ALIGN> struct alignas(ALIGN) AlignAs {
         T v;
 
-        template <typename U> void operator=(const U &val) { v = val; }
+        template <typename U> AlignAs &operator=(const U &val) {
+            v = val;
+            return *this;
+        }
     };
 
   public:

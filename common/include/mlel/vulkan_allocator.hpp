@@ -32,7 +32,8 @@ template <class T> struct Allocator {
                 return pointer;
             }
         } else {
-            if (auto pointer = static_cast<T *>(::malloc(n * sizeof(T)))) {
+            // Vulkan allocation callbacks permit a null fallback backed by the host allocator.
+            if (auto pointer = static_cast<T *>(::malloc(n * sizeof(T)))) { // NOLINT(cppcoreguidelines-no-malloc)
                 return pointer;
             }
         }
@@ -44,7 +45,8 @@ template <class T> struct Allocator {
         if (callbacks != nullptr) {
             callbacks->pfnFree(callbacks->pUserData, pointer);
         } else {
-            ::free(pointer);
+            // Matches the host allocation fallback in allocate().
+            ::free(pointer); // NOLINT(cppcoreguidelines-no-malloc)
         }
     }
 

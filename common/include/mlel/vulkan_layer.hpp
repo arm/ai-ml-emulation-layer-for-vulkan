@@ -122,7 +122,8 @@ template <typename T, class U> static LinkedType<T> findAndRemoveType(U *ptr, co
     if (node.current == nullptr) {
         return {};
     }
-    node.parent->pNext = reinterpret_cast<VkBaseOutStructure *>(const_cast<void *>(node.current->pNext));
+    node.parent->pNext =
+        const_cast<VkBaseOutStructure *>(reinterpret_cast<const VkBaseOutStructure *>(node.current->pNext));
     return node;
 }
 
@@ -174,6 +175,8 @@ template <typename DispatchableType> void *getDispatchTableKey(DispatchableType 
 class Loader {
   public:
     Loader(const Loader &_loader) = default;
+    Loader &operator=(const Loader &) = default;
+    ~Loader() = default;
 
     explicit Loader(std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader) : loader{_loader} {}
 
@@ -305,6 +308,9 @@ class CommandBuffer : public Loader {
         : Loader(_device->loader), device{_device}, commandBuffer{_commandBuffer}, commandPool{_commandPool},
           queueFamilyIndex{_queueFamilyIndex} {}
 
+    CommandBuffer(const CommandBuffer &) = delete;
+    CommandBuffer &operator=(const CommandBuffer &) = delete;
+
     virtual ~CommandBuffer() {
         if (secondaryCommandBuffer != VK_NULL_HANDLE) {
             loader->vkFreeCommandBuffers(device->device, commandPool, 1, &secondaryCommandBuffer);
@@ -372,7 +378,7 @@ class CommandBuffer : public Loader {
 class ShaderModule {
   public:
     explicit ShaderModule(const VkShaderModuleCreateInfo *info)
-        : code{info->pCode, info->pCode + info->codeSize / sizeof(uint32_t)} {}
+        : code{info->pCode, std::next(info->pCode, static_cast<std::ptrdiff_t>(info->codeSize / sizeof(uint32_t)))} {}
 
     const std::vector<uint32_t> code;
 };
@@ -558,7 +564,7 @@ class VulkanLayer {
     static VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice,
                                                                     const char *layerName, uint32_t *propertyCount,
                                                                     VkExtensionProperties *properties) {
-        if (layerName && std::string(layerName) == layerProperties.layerName) {
+        if (layerName && std::string(layerName) == static_cast<const char *>(layerProperties.layerName)) {
             if (properties == nullptr || extensions.size() == 0) {
                 *propertyCount = static_cast<uint32_t>(extensions.size());
                 return VK_SUCCESS;
@@ -700,7 +706,7 @@ class VulkanLayer {
         const bool hasExtension =
             std::any_of(extensions.begin(), extensions.end(), [deviceExtensions](const auto &left) {
                 return std::any_of(deviceExtensions.begin(), deviceExtensions.end(), [&left](const char *const right) {
-                    return std::strcmp(right, left.extensionName) == 0;
+                    return std::strcmp(right, static_cast<const char *>(left.extensionName)) == 0;
                 });
             });
 
@@ -710,7 +716,7 @@ class VulkanLayer {
                 std::remove_if(deviceExtensions.begin(), deviceExtensions.end(),
                                [](const char *const left) {
                                    return std::any_of(extensions.begin(), extensions.end(), [left](const auto &right) {
-                                       return std::strcmp(left, right.extensionName) == 0;
+                                       return std::strcmp(left, static_cast<const char *>(right.extensionName)) == 0;
                                    });
                                }),
                 deviceExtensions.end());
@@ -733,21 +739,23 @@ class VulkanLayer {
                                                                  supportedExtensions.data());
 
             for (const auto &requiredExt : requiredExtensions) {
-                auto it = std::find_if(supportedExtensions.begin(), supportedExtensions.end(),
-                                       [&requiredExt](const auto &supportExt) {
-                                           return std::strcmp(supportExt.extensionName, requiredExt.extensionName) == 0;
-                                       });
+                auto it = std::find_if(
+                    supportedExtensions.begin(), supportedExtensions.end(), [&requiredExt](const auto &supportExt) {
+                        return std::strcmp(static_cast<const char *>(supportExt.extensionName),
+                                           static_cast<const char *>(requiredExt.extensionName)) == 0;
+                    });
                 if (it == supportedExtensions.end()) {
                     layerLog(mlsdk::el::log::Severity::Error)
                         << "ML Emulation Layer for Vulkan requires extension: " << requiredExt.extensionName
                         << std::endl;
                     return VK_ERROR_FEATURE_NOT_PRESENT;
                 }
-                auto it2 =
-                    std::find_if(deviceExtensions.begin(), deviceExtensions.end(),
-                                 [&requiredExt](const std::string &ext) { return ext == requiredExt.extensionName; });
+                auto it2 = std::find_if(deviceExtensions.begin(), deviceExtensions.end(),
+                                        [&requiredExt](const std::string &ext) {
+                                            return ext == static_cast<const char *>(requiredExt.extensionName);
+                                        });
                 if (it2 == deviceExtensions.end()) {
-                    deviceExtensions.emplace_back(requiredExt.extensionName);
+                    deviceExtensions.emplace_back(static_cast<const char *>(requiredExt.extensionName));
                 }
             }
         }
@@ -889,7 +897,7 @@ class VulkanLayer {
      * Device
      *******************************************************************************/
 
-    template <typename T, typename U, typename Pred> static void erase_if(std::map<T, U> &map, Pred pred) {
+    template <typename T, typename U, typename Pred> static void erase_if(std::map<T, U> &map, const Pred &pred) {
         for (auto it = map.begin(); it != map.end();) {
             if (pred(it)) {
                 it = map.erase(it);

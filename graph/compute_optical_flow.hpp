@@ -23,7 +23,6 @@
 #include <string_view>
 #include <vector>
 
-using namespace mlsdk::el::utils;
 namespace mlsdk::el::compute::optical_flow {
 
 struct DescriptorConfig {
@@ -33,7 +32,6 @@ struct DescriptorConfig {
     DescriptorConfig(uint32_t index_in, VkDescriptorType type_in, VkDescriptorBindingFlags flags_in)
         : index(index_in), type(type_in), flags(flags_in) {}
 
-  private:
     DescriptorConfig() = delete;
 };
 using DescriptorConfigs = std::vector<DescriptorConfig>;
@@ -46,8 +44,8 @@ struct SpecConstants {
 class ScheduleHelper {
   public:
     ScheduleHelper(uint32_t width, uint32_t height) {
-        groupCountX = divideRoundUp(width, localSizeX);
-        groupCountY = divideRoundUp(height, localSizeY);
+        groupCountX = utils::divideRoundUp(width, localSizeX);
+        groupCountY = utils::divideRoundUp(height, localSizeY);
     }
     uint32_t localSizeX = 32;
     uint32_t localSizeY = 8;
@@ -66,6 +64,8 @@ class ComputePipeline {
                     const std::shared_ptr<PipelineCache> &pipelineCache, std::string_view shaderName,
                     const DescriptorConfigs &descriptorConfigs, const SpecConstants &specConstants,
                     uint32_t pushConstantsSize, const ScheduleHelper &schedule, const std::string &debugName);
+    ComputePipeline(const ComputePipeline &) = delete;
+    ComputePipeline &operator=(const ComputePipeline &) = delete;
     virtual ~ComputePipeline();
 
     void makePipeline();

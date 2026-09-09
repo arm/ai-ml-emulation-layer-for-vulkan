@@ -39,7 +39,7 @@ class Log {
      */
     template <typename T> Log &operator<<(const T &output) {
         if (enabled(severity)) {
-            *os << output;
+            *os << output; // NOLINT(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
         }
         return *this;
     }

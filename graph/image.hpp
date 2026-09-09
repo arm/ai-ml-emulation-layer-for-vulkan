@@ -72,6 +72,8 @@ class Image {
     Image(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, Usage usage,
           VkExtent3D dim, VkFormat format, VkImageLayout layout);
 
+    Image(const Image &) = delete;
+    Image &operator=(const Image &) = delete;
     ~Image();
 
     // Internal resource creation

@@ -20,15 +20,13 @@
 #include <utility>
 #include <vector>
 
-using namespace mlsdk::el::utils;
-
 namespace mlsdk::el::compute {
 
 /*******************************************************************************
  * PipelineCache
  *******************************************************************************/
 
-using SpirvBinary = Span<uint32_t>;
+using SpirvBinary = utils::Span<uint32_t>;
 
 class PipelineCache {
   public:

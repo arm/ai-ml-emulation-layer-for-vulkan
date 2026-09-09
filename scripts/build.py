@@ -292,6 +292,7 @@ class Builder:
 
                 clang_tidy_cmd = [
                     "run-clang-tidy",
+                    "-header-filter=emulation-layer/(common|graph|tensor|tests|utilities)/.*",
                     "-quiet",
                     f"-j{self.threads}",
                     f"-p{self.build_dir}",

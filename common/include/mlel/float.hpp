@@ -131,9 +131,10 @@ template <std::size_t EXPONENT, std::size_t MANTISSA> class FloatingPoint {
     }
 
     // cppcheck-suppress noExplicitConstructor
-    template <typename T> FloatingPoint(const T v) : FloatingPoint(double(v)) {}
+    // Implicit conversion is part of this numeric wrapper's value-type interface.
+    template <typename T> FloatingPoint(const T v) : FloatingPoint(double(v)) {} // NOLINT(google-explicit-constructor)
 
-    operator double() const {
+    operator double() const { // NOLINT(google-explicit-constructor)
         float64 fp;
 
         // Infinity or NaN

@@ -29,9 +29,7 @@
  * Graph extended instruction lowering context
  *******************************************************************************/
 
-namespace spvtools {
-
-namespace opt {
+namespace spvtools::opt {
 
 using mlsdk::el::compute::graph_op::GraphPipeline;
 
@@ -241,6 +239,4 @@ class GraphExtInstContext {
                                   const std::vector<int64_t> &dimensions) const;
 };
 
-} // namespace opt
-
-} // namespace spvtools
+} // namespace spvtools::opt
