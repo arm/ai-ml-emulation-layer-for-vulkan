@@ -33,6 +33,8 @@ class Tensor {
     Tensor(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, VkDevice _device,
            std::shared_ptr<TensorDescriptor> _tensorDescriptor, VkTensorARM _tensorARM, VkTensorViewARM _tensorViewARM);
 
+    Tensor(const Tensor &) = delete;
+    Tensor &operator=(const Tensor &) = delete;
     ~Tensor();
 
     const std::shared_ptr<TensorDescriptor> &getTensorDescriptor() const;

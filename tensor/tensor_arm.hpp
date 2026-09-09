@@ -74,6 +74,8 @@ class TensorCopyPipeline {
   public:
     TensorCopyPipeline(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader,
                        VkDevice _device, const TensorARM &srcTensor, const TensorARM &dstTensor);
+    TensorCopyPipeline(const TensorCopyPipeline &) = delete;
+    TensorCopyPipeline &operator=(const TensorCopyPipeline &) = delete;
     virtual ~TensorCopyPipeline();
     void cmdBindAndDispatchCopy(VkCommandBuffer cmd, uint32_t regionCount);
 

@@ -76,6 +76,8 @@ class ComputeDescriptorSet {
                                   VkDevice _device, VkDescriptorPool _descriptorPool, VkDescriptorSet _descriptorSet,
                                   const std::vector<DescriptorSetTensorBinding> &_tensorBindings);
     ~ComputeDescriptorSet();
+    ComputeDescriptorSet(const ComputeDescriptorSet &) = delete;
+    ComputeDescriptorSet &operator=(const ComputeDescriptorSet &) = delete;
 
     VkDescriptorSet getVkDescriptorSet() const;
     std::vector<std::shared_ptr<Tensor>> getTensors() const;
@@ -123,6 +125,8 @@ class ComputePipelineLayout {
                                    const PushConstant &_pushConstant = {});
 
     ~ComputePipelineLayout();
+    ComputePipelineLayout(const ComputePipelineLayout &) = delete;
+    ComputePipelineLayout &operator=(const ComputePipelineLayout &) = delete;
 
     VkPipelineLayout getVkPipelineLayout() const;
     const DescriptorMap &getDescriptorMap() const;
@@ -198,6 +202,8 @@ class ComputePipeline : public ComputePipelineBase {
                              const std::string &debugName, const SpecConstants &_constants = {});
 
     ~ComputePipeline() override;
+    ComputePipeline(const ComputePipeline &) = delete;
+    ComputePipeline &operator=(const ComputePipeline &) = delete;
 
     void cmdBindAndDispatch(VkCommandBuffer commandBuffer, const ComputeDescriptorSetMap &descriptorSetMap) override;
 
@@ -1208,6 +1214,8 @@ class GraphPipeline {
                   const std::shared_ptr<PipelineCache> &_pipelineCache);
 
     virtual ~GraphPipeline();
+    GraphPipeline(const GraphPipeline &) = delete;
+    GraphPipeline &operator=(const GraphPipeline &) = delete;
 
     ComputePipelineBase &getInputs() { return inputs; }
     ComputePipelineBase &getOutputs() { return outputs; }
