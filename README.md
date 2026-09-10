@@ -93,10 +93,12 @@ the dependencies required by the ML Emulation Layer for Vulkan® in
 
 The build system must have:
 
-- CMake 3.25 or later.
 - C/C++ 17 compiler: GCC or Clang on Linux, Clang on Darwin, or MSVC on
   Windows®.
-- Ninja 1.10 or later.
+- CMake 3.25 or later.
+- Ninja 1.8.2 or later.
+- Python 3.10 or later. Required python libraries for building are listed in
+  `tooling-requirements.txt`.
 - Vulkan® SDK 1.4.328.1 or later.
 
 The following dependencies are also needed:
