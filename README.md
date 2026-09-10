@@ -258,7 +258,7 @@ If you have installed the ML Emulation Layer for Vulkan® into a deploy folder, 
 following environment variables to enable the layers:
 
 ```shell
-export LD_LIBRARY_PATH=$PWD/deploy/lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=$PWD/deploy/lib64:$PWD/deploy/lib:$LD_LIBRARY_PATH
 export VK_ADD_LAYER_PATH=$PWD/deploy/share/vulkan/explicit_layer.d
 export VK_INSTANCE_LAYERS=VK_LAYER_ML_Graph_Emulation:VK_LAYER_ML_Tensor_Emulation
 ```
