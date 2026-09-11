@@ -1,5 +1,5 @@
 #
-# SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-FileCopyrightText: Copyright 2025-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: Apache-2.0
 #
 import os
@@ -8,9 +8,17 @@ import sys
 
 def get_deploy_paths():
     base = os.path.join(os.path.dirname(__file__), "deploy")
+    linux_library_paths = [
+        path
+        for path in (os.path.join(base, "lib64"), os.path.join(base, "lib"))
+        if os.path.isdir(path)
+    ]
+    if not linux_library_paths:
+        linux_library_paths.append(os.path.join(base, "lib"))
+
     return {
         "DYLD_LIBRARY_PATH": os.path.join(base, "lib"),  # Darwin
-        "LD_LIBRARY_PATH": os.path.join(base, "lib"),  # Linux
+        "LD_LIBRARY_PATH": os.pathsep.join(linux_library_paths),  # Linux
         "VK_LAYER_PATH_windows": os.path.join(base, "bin"),  # Windows
         "VK_LAYER_PATH": os.path.join(
             base, "share", "vulkan", "explicit_layer.d"
