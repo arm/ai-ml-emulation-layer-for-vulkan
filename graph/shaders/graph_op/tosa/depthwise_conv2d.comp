@@ -7,11 +7,10 @@
 #define OUT_T %out_t%
 #define WEIGHT_T %weight_t%
 #define TYPE_IN %in_t_type%
+#define TYPE_WEIGHT %weight_t_type%
 #define TYPE_OUT %out_t_type%
 #define TYPE_ACC %acc_t_type%
 #define ACC_T %acc_t%
-
-DEFINE_CONV_ACC_CASTS(ACC_T, OUT_T, TYPE_IN, TYPE_OUT)
 
 layout(local_size_x = %warpX%) in;
 
@@ -53,12 +52,12 @@ void main() {
                 IN_T tempValue;
                 uint index[] = {n, y, x, c};
                 tensorReadARM(inputData, index, tempValue);
-                ACC_T value = to_acc(tempValue);
+                ACC_T value = CONV_TO_ACC_INPUT(tempValue);
 
                 WEIGHT_T tempWeight;
                 uint weightIndex[] = {ky, kx, c, m};
                 tensorReadARM(weightsData, weightIndex, tempWeight);
-                ACC_T weight = to_acc(tempWeight);
+                ACC_T weight = CONV_TO_ACC_WEIGHT(tempWeight);
 
                 ACC_T outValue = ACC_T(value) - ACC_T(pushConstants.inputZeroPoint);
                 ACC_T outWeight = ACC_T(weight) - ACC_T(pushConstants.weightZeroPoint);
@@ -70,9 +69,9 @@ void main() {
 
     OUT_T bias;
     tensorReadARM(biasesData, uint[](tensorSizeARM(biasesData, 0) == 1 ? 0 : ocm), bias);
-    ACC_T bias_acc = to_acc(bias);
+    ACC_T bias_acc = CONV_TO_ACC_BIAS(bias);
     ACC_T sum = bias_acc + acc;
-    OUT_T outVal = acc_to_out(sum, OUT_T(0));
+    OUT_T outVal = CONV_ACC_TO_OUT(sum);
 
     tensorWriteARM(outputData, index, outVal);
 }

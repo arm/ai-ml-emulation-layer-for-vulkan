@@ -7,11 +7,10 @@
 #define OUT_T %out_t%
 #define WEIGHT_T %weight_t%
 #define TYPE_IN %in_t_type%
+#define TYPE_WEIGHT %weight_t_type%
 #define TYPE_OUT %out_t_type%
 #define TYPE_ACC %acc_t_type%
 #define ACC_T %acc_t%
-
-DEFINE_CONV_ACC_CASTS(ACC_T, OUT_T, TYPE_IN, TYPE_OUT)
 
 #if TYPE_ACC == TYPE_INT64
     #define VEC4 i64vec4
@@ -66,7 +65,7 @@ void main() {
                 for (uint ic = 0; ic < IC; ic += 4) {
                     IN_T tempValue[4];
                     tensorReadARM(inputData, uint[](n, y, x, ic), tempValue);
-                    VEC4 value = VEC4(to_acc(tempValue[0]), to_acc(tempValue[1]), to_acc(tempValue[2]), to_acc(tempValue[3]));
+                    VEC4 value = VEC4(CONV_TO_ACC_INPUT(tempValue[0]), CONV_TO_ACC_INPUT(tempValue[1]), CONV_TO_ACC_INPUT(tempValue[2]), CONV_TO_ACC_INPUT(tempValue[3]));
 
                     WEIGHT_T weight[4][4];
                     tensorReadARM(weightsData, uint[](ocs[0], ky, kx, ic), weight[0]);
@@ -75,10 +74,10 @@ void main() {
                     tensorReadARM(weightsData, uint[](ocs[3], ky, kx, ic), weight[3]);
 
                     VEC4 outValue = value - pushConstants.inputZeroPoint;
-                    VEC4 outWeight0 = VEC4(to_acc(weight[0][0]), to_acc(weight[0][1]), to_acc(weight[0][2]), to_acc(weight[0][3])) - pushConstants.weightZeroPoint;
-                    VEC4 outWeight1 = VEC4(to_acc(weight[1][0]), to_acc(weight[1][1]), to_acc(weight[1][2]), to_acc(weight[1][3])) - pushConstants.weightZeroPoint;
-                    VEC4 outWeight2 = VEC4(to_acc(weight[2][0]), to_acc(weight[2][1]), to_acc(weight[2][2]), to_acc(weight[2][3])) - pushConstants.weightZeroPoint;
-                    VEC4 outWeight3 = VEC4(to_acc(weight[3][0]), to_acc(weight[3][1]), to_acc(weight[3][2]), to_acc(weight[3][3])) - pushConstants.weightZeroPoint;
+                    VEC4 outWeight0 = VEC4(CONV_TO_ACC_WEIGHT(weight[0][0]), CONV_TO_ACC_WEIGHT(weight[0][1]), CONV_TO_ACC_WEIGHT(weight[0][2]), CONV_TO_ACC_WEIGHT(weight[0][3])) - pushConstants.weightZeroPoint;
+                    VEC4 outWeight1 = VEC4(CONV_TO_ACC_WEIGHT(weight[1][0]), CONV_TO_ACC_WEIGHT(weight[1][1]), CONV_TO_ACC_WEIGHT(weight[1][2]), CONV_TO_ACC_WEIGHT(weight[1][3])) - pushConstants.weightZeroPoint;
+                    VEC4 outWeight2 = VEC4(CONV_TO_ACC_WEIGHT(weight[2][0]), CONV_TO_ACC_WEIGHT(weight[2][1]), CONV_TO_ACC_WEIGHT(weight[2][2]), CONV_TO_ACC_WEIGHT(weight[2][3])) - pushConstants.weightZeroPoint;
+                    VEC4 outWeight3 = VEC4(CONV_TO_ACC_WEIGHT(weight[3][0]), CONV_TO_ACC_WEIGHT(weight[3][1]), CONV_TO_ACC_WEIGHT(weight[3][2]), CONV_TO_ACC_WEIGHT(weight[3][3])) - pushConstants.weightZeroPoint;
 
                     VEC4 mul0 = outValue * outWeight0;
                     VEC4 mul1 = outValue * outWeight1;
@@ -98,19 +97,19 @@ void main() {
     if (tensorSizeARM(biasesData, 0) == 1) {
         OUT_T bias;
         tensorReadARM(biasesData, uint[](0), bias);
-        acc[0] += to_acc(bias);
-        acc[1] += to_acc(bias);
-        acc[2] += to_acc(bias);
-        acc[3] += to_acc(bias);
+        acc[0] += CONV_TO_ACC_BIAS(bias);
+        acc[1] += CONV_TO_ACC_BIAS(bias);
+        acc[2] += CONV_TO_ACC_BIAS(bias);
+        acc[3] += CONV_TO_ACC_BIAS(bias);
     } else {
         OUT_T bias[4];
         tensorReadARM(biasesData, uint[](oc), bias);
-        acc[0] += to_acc(bias[0]);
-        acc[1] += to_acc(bias[1]);
-        acc[2] += to_acc(bias[2]);
-        acc[3] += to_acc(bias[3]);
+        acc[0] += CONV_TO_ACC_BIAS(bias[0]);
+        acc[1] += CONV_TO_ACC_BIAS(bias[1]);
+        acc[2] += CONV_TO_ACC_BIAS(bias[2]);
+        acc[3] += CONV_TO_ACC_BIAS(bias[3]);
     }
     uint index[] = {n, oy, ox, oc};
-    OUT_T outData[4] = OUT_T[](acc_to_out(acc[0], OUT_T(0)), acc_to_out(acc[1], OUT_T(0)), acc_to_out(acc[2], OUT_T(0)), acc_to_out(acc[3], OUT_T(0)));
+    OUT_T outData[4] = OUT_T[](CONV_ACC_TO_OUT(acc[0]), CONV_ACC_TO_OUT(acc[1]), CONV_ACC_TO_OUT(acc[2]), CONV_ACC_TO_OUT(acc[3]));
     tensorWriteARM(outputData, index, outData);
 }

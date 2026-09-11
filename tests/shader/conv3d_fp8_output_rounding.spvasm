@@ -1,0 +1,64 @@
+; SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+; SPDX-License-Identifier: Apache-2.0
+OpCapability VulkanMemoryModel
+OpCapability Shader
+OpCapability Int8
+OpCapability TensorsARM
+OpCapability GraphARM
+OpCapability ReplicatedCompositesEXT
+OpCapability Float8EXT
+OpExtension "SPV_ARM_tensors"
+OpExtension "SPV_ARM_graph"
+OpExtension "SPV_EXT_replicated_composites"
+OpExtension "SPV_EXT_float8"
+OpExtension "SPV_KHR_vulkan_memory_model"
+%tosa = OpExtInstImport "TOSA.001000.1"
+OpMemoryModel Logical Vulkan
+OpDecorate %input_var Binding 0
+OpDecorate %input_var DescriptorSet 0
+OpDecorate %weights_var Binding 1
+OpDecorate %weights_var DescriptorSet 0
+OpDecorate %output_var Binding 2
+OpDecorate %output_var DescriptorSet 0
+%fp8 = OpTypeFloat 8 Float8E4M3EXT
+%uint = OpTypeInt 32 0
+%uchar = OpTypeInt 8 0
+%bool = OpTypeBool
+%u0 = OpConstant %uint 0
+%u1 = OpConstant %uint 1
+%u3 = OpConstant %uint 3
+%u5 = OpConstant %uint 5
+%u6 = OpConstant %uint 6
+%zero = OpConstant %uchar 0
+%false = OpConstantFalse %bool
+%f0 = OpConstant %fp8 0.0
+%rank1 = OpTypeArray %uint %u1
+%rank5 = OpTypeArray %uint %u5
+%in_shape = OpConstantComposite %rank5 %u1 %u1 %u1 %u1 %u3
+%out_shape = OpConstantComposite %rank5 %u1 %u1 %u1 %u1 %u1
+%in_tensor = OpTypeTensorARM %fp8 %u5 %in_shape
+%out_tensor = OpTypeTensorARM %fp8 %u5 %out_shape
+%in_ptr = OpTypePointer UniformConstant %in_tensor
+%out_ptr = OpTypePointer UniformConstant %out_tensor
+%input_var = OpVariable %in_ptr UniformConstant
+%weights_var = OpVariable %in_ptr UniformConstant
+%output_var = OpVariable %out_ptr UniformConstant
+%bias_shape = OpConstantComposite %rank1 %u1
+%bias_tensor = OpTypeTensorARM %fp8 %u1 %bias_shape
+%bias = OpConstantComposite %bias_tensor %f0
+%zp_tensor = OpTypeTensorARM %uchar %u1 %bias_shape
+%zp = OpConstantComposite %zp_tensor %zero
+%vec3_shape = OpConstantComposite %rank1 %u3
+%vec3_tensor = OpTypeTensorARM %uint %u1 %vec3_shape
+%stride = OpConstantCompositeReplicateEXT %vec3_tensor %u1
+%pad_shape = OpConstantComposite %rank1 %u6
+%pad_tensor = OpTypeTensorARM %uint %u1 %pad_shape
+%pad = OpConstantCompositeReplicateEXT %pad_tensor %u0
+%graph_type = OpTypeGraphARM 2 %in_tensor %in_tensor %out_tensor
+OpGraphEntryPointARM %graph "conv3d_fp8_output_rounding" %input_var %weights_var %output_var
+%graph = OpGraphARM %graph_type
+%input = OpGraphInputARM %in_tensor %u0
+%weights = OpGraphInputARM %in_tensor %u1
+%output = OpExtInst %out_tensor %tosa CONV3D %pad %stride %stride %u3 %false %input %weights %bias %zp %zp
+OpGraphSetOutputARM %output %u0
+OpGraphEndARM

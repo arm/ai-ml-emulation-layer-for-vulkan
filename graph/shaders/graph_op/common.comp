@@ -23,6 +23,7 @@
 #define TYPE_INT16 0x6932  // "i2"
 #define TYPE_INT32 0x6934  // "i4"
 #define TYPE_INT64 0x6938  // "i8"
+#define TYPE_UINT8 0x7531  // "u1"
 #define TYPE_HALF 0x6632   // "f2"
 #define TYPE_FLOAT 0x6634  // "f4"
 #define TYPE_BFLOAT16 0x6642 // "fB"
@@ -632,24 +633,22 @@ bool encode_from_f32(float x, bool)
                                ? storageType(encode_from_f32_rne(float(compValue), storageType(0)))                  \
                                : storageType(compValue)))
 
-// Shared conversion overloads for convolution-family shaders.
-#define DEFINE_CONV_ACC_CASTS(ACC_TYPE, OUT_TYPE, IN_TYPE_TAG, OUT_TYPE_TAG)                                          \
-    ACC_TYPE to_acc(float16_t v)  { return ACC_TYPE(v); }                                                             \
-    ACC_TYPE to_acc(float v)      { return ACC_TYPE(v); }                                                             \
-    ACC_TYPE to_acc(int8_t v)     { return ACC_TYPE(v); }                                                             \
-    ACC_TYPE to_acc(int16_t v)    { return ACC_TYPE(v); }                                                             \
-    ACC_TYPE to_acc(int v)        { return ACC_TYPE(v); }                                                             \
-    ACC_TYPE to_acc(int64_t v)    { return ACC_TYPE(v); }                                                             \
-    ACC_TYPE to_acc(uint32_t v)   { return ACC_TYPE(v); }                                                             \
-    ACC_TYPE to_acc(bfloat16_t v) { return ACC_TYPE(decode_to_f32(v)); }                                              \
-    ACC_TYPE to_acc(uint8_t v) { return ACC_TYPE(decode_float8_to_f16(v, IN_TYPE_TAG)); }                            \
-                                                                                                                       \
-    OUT_TYPE acc_to_out(ACC_TYPE v, bfloat16_t) { return OUT_TYPE(encode_from_f32(float(v), bfloat16_t(0))); }      \
-    OUT_TYPE acc_to_out(ACC_TYPE v, uint8_t) { return OUT_TYPE(encode_from_f32_to_float8_trunc_by_type(float(v), OUT_TYPE_TAG)); }\
-    OUT_TYPE acc_to_out(ACC_TYPE v, float16_t)  { return OUT_TYPE(v); }                                               \
-    OUT_TYPE acc_to_out(ACC_TYPE v, float)      { return OUT_TYPE(v); }                                               \
-    OUT_TYPE acc_to_out(ACC_TYPE v, int8_t)     { return OUT_TYPE(v); }                                               \
-    OUT_TYPE acc_to_out(ACC_TYPE v, int16_t)    { return OUT_TYPE(v); }                                               \
-    OUT_TYPE acc_to_out(ACC_TYPE v, int)        { return OUT_TYPE(v); }                                               \
-    OUT_TYPE acc_to_out(ACC_TYPE v, int64_t)    { return OUT_TYPE(v); }                                               \
-    OUT_TYPE acc_to_out(ACC_TYPE v, uint32_t)   { return OUT_TYPE(v); }
+#define DECODE_CONV_OPERAND_TO_ACC(rawValue, typeTag, accTypeTag, compType)                                          \
+    (IS_FLOAT8(typeTag)                                                                                               \
+         ? compType(decode_float8_to_f16(uint8_t(rawValue), typeTag))                                                 \
+         : ((typeTag) == TYPE_UINT8 && IS_INTEGER(accTypeTag)                                                         \
+                ? compType(int8_t(rawValue))                                                                          \
+                : ((IS_BFLOAT(typeTag)) ? compType(decode_to_f32(bfloat16_t(rawValue))) : compType(rawValue))))
+
+// Conversion helpers for convolution-family shaders.
+#define CONV_TO_ACC_INPUT(value) DECODE_CONV_OPERAND_TO_ACC(value, TYPE_IN, TYPE_ACC, ACC_T)
+#define CONV_TO_ACC_WEIGHT(value) DECODE_CONV_OPERAND_TO_ACC(value, TYPE_WEIGHT, TYPE_ACC, ACC_T)
+// Use explicit storage types in reduced-float branches: GLSL also type-checks
+// inactive branches, including when the actual bias/output storage is uint32_t.
+#define CONV_TO_ACC_BIAS(value)                                                                                      \
+    (IS_FLOAT8(TYPE_OUT) ? ACC_T(decode_float8_to_f16(uint8_t(value), TYPE_OUT))                                     \
+                        : (IS_BFLOAT(TYPE_OUT) ? ACC_T(decode_to_f32(bfloat16_t(value))) : ACC_T(value)))
+// Keep FP32 accumulators at FP32 precision until the final FP8 conversion.
+#define CONV_ACC_TO_OUT(value)                                                                                       \
+    (IS_FLOAT8(TYPE_OUT) ? OUT_T(encode_from_f32_to_float8_trunc_by_type(float(value), TYPE_OUT))                    \
+                        : (IS_BFLOAT(TYPE_OUT) ? OUT_T(encode_from_f32(float(value), bfloat16_t(0))) : OUT_T(value)))

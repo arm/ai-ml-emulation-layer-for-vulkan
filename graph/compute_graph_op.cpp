@@ -990,6 +990,7 @@ SpirvBinary Conv2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                       {"%out_t%", outType->glslType},
                                       {"%out_t_type%", outType->typeId},
                                       {"%weight_t%", weightType->glslType},
+                                      {"%weight_t_type%", weightType->typeId},
                                       {"%acc_t_type%", accTypeType->typeId},
                                       {"%acc_t%", accTypeType->glslType},
                                   });
@@ -1104,6 +1105,7 @@ SpirvBinary Conv3D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                       {"%out_t%", outType->glslType},
                                       {"%out_t_type%", outType->typeId},
                                       {"%weight_t%", weightType->glslType},
+                                      {"%weight_t_type%", weightType->typeId},
                                       {"%acc_t_type%", accTypeType->typeId},
                                       {"%acc_t%", accTypeType->glslType},
                                   });
@@ -1193,6 +1195,7 @@ SpirvBinary DepthwiseConv2D::createSpirv(const std::shared_ptr<PipelineCache> &_
                                       {"%out_t%", outType->glslType},
                                       {"%out_t_type%", outType->typeId},
                                       {"%weight_t%", weightType->glslType},
+                                      {"%weight_t_type%", weightType->typeId},
                                       {"%acc_t_type%", accTypeType->typeId},
                                       {"%acc_t%", accTypeType->glslType},
                                   });
@@ -2282,6 +2285,8 @@ SpirvBinary TransposeConv2D::createSpirv(const std::shared_ptr<PipelineCache> &_
                                       {"%out_t%", outType->glslType},
                                       {"%out_t_type%", outType->typeId},
                                       {"%weight_t%", weightType->glslType},
+                                      {"%weight_t_type%", weightType->typeId},
+                                      {"%acc_t_type%", accTypeType->typeId},
                                       {"%acc_t%", accTypeType->glslType},
                                   });
 }
