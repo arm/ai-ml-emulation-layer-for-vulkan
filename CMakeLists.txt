@@ -18,10 +18,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_VISIBILITY_INLINES_HIDDEN 1)
 
-if(DEFINED ANDROID_ABI)
-    message(WARNING "Building for Android is currently an experimental feature.")
-endif()
-
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     add_compile_definitions(EXPERIMENTAL_MOLTEN_VK_SUPPORT)
 endif()
@@ -79,6 +75,19 @@ set(VMEL_VERSION_DEPS
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR DEFINED ANDROID_ABI)
     set(VMEL_USE_FLOAT_AS_DOUBLE ON CACHE BOOL "Use float as double precision type" FORCE)
+endif()
+
+###############################################################################
+# Android Configuration
+###############################################################################
+
+if(ANDROID)
+    message(WARNING "Building for Android is currently an experimental feature.")
+    # Link with 16KiB ELF segment alignment.
+    add_link_options(
+        "-Wl,-z,max-page-size=16384"
+        "-Wl,-z,common-page-size=16384"
+    )
 endif()
 
 ###############################################################################
