@@ -568,6 +568,58 @@ TEST(MLEmulationLayerForVulkan, CreateDevice) {
     auto [device, physicalDevice] = createDevice(instance, {"VK_LAYER_ML_Tensor_Emulation"});
 }
 
+TEST(MLEmulationLayerForVulkan, CreateDeviceWithUnifiedFeatureStructs) {
+    const std::vector<const char *> layers = {"VK_LAYER_ML_Graph_Emulation", "VK_LAYER_ML_Tensor_Emulation"};
+    const std::vector<const char *> extensions = {
+        VK_ARM_DATA_GRAPH_EXTENSION_NAME,
+        VK_ARM_DATA_GRAPH_INSTRUCTION_SET_TOSA_EXTENSION_NAME,
+        VK_ARM_DATA_GRAPH_OPTICAL_FLOW_EXTENSION_NAME,
+        VK_ARM_TENSORS_EXTENSION_NAME,
+    };
+
+    auto context = std::make_shared<vk::raii::Context>();
+    auto instance = std::make_shared<Instance>(context, layers);
+    auto physicalDevice = std::make_shared<PhysicalDevice>(instance, extensions);
+
+    vk::PhysicalDeviceVulkan13Features unified13{};
+    vk::PhysicalDeviceVulkan12Features unified12{};
+    unified12.shaderFloat16 = VK_TRUE;
+    unified12.pNext = &unified13;
+    vk::PhysicalDeviceVulkan11Features unified11{};
+    unified11.pNext = &unified12;
+    vk::PhysicalDeviceFeatures2 features2{};
+    features2.pNext = &unified11;
+
+    auto device = std::make_shared<Device>(physicalDevice, extensions, &features2);
+
+    auto graph = makeMaxPoolProfilingGraph(device);
+    submitGraphWithoutFence(device, graph, true);
+}
+
+TEST(MLEmulationLayerForVulkan, CreateDeviceWithIndividualPromotedFeatureStructs) {
+    const std::vector<const char *> layers = {"VK_LAYER_ML_Graph_Emulation", "VK_LAYER_ML_Tensor_Emulation"};
+    const std::vector<const char *> extensions = {
+        VK_ARM_DATA_GRAPH_EXTENSION_NAME,
+        VK_ARM_DATA_GRAPH_INSTRUCTION_SET_TOSA_EXTENSION_NAME,
+        VK_ARM_DATA_GRAPH_OPTICAL_FLOW_EXTENSION_NAME,
+        VK_ARM_TENSORS_EXTENSION_NAME,
+    };
+
+    auto context = std::make_shared<vk::raii::Context>();
+    auto instance = std::make_shared<Instance>(context, layers);
+    auto physicalDevice = std::make_shared<PhysicalDevice>(instance, extensions);
+
+    vk::PhysicalDeviceShaderFloat16Int8Features individualFloat16Int8{};
+    individualFloat16Int8.shaderFloat16 = VK_TRUE;
+    vk::PhysicalDeviceFeatures2 features2{};
+    features2.pNext = &individualFloat16Int8;
+
+    auto device = std::make_shared<Device>(physicalDevice, extensions, &features2);
+
+    auto graph = makeMaxPoolProfilingGraph(device);
+    submitGraphWithoutFence(device, graph, true);
+}
+
 TEST(MLEmulationLayerForVulkan, ToolingInfo) {
     vk::raii::Context ctx{};
     auto instance = createInstance(ctx, {"VK_LAYER_ML_Graph_Emulation", "VK_LAYER_ML_Tensor_Emulation"});
