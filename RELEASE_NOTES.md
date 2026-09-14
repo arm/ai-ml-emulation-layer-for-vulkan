@@ -20,6 +20,9 @@
 
 ### Bug Fixes
 
+- Fixed convolution input and weight decoding to preserve signed TOSA values in
+  `uint8_t` storage during integer accumulation, while retaining FP8 decoding and
+  avoiding intermediate FP16 rounding of FP32 accumulators for FP8 outputs.
 - Fixed linear tensor/image aliasing to honor padded image row and depth pitches.
 - Fixed optical-flow image/buffer alias alignment and tensor descriptor binding
   flag substitution.

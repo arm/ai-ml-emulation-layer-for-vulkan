@@ -995,16 +995,18 @@ TEST(MLEmulationLayerForVulkan, SequentialDispatch) {
     ASSERT_TRUE(outputTensor1->compare(reinterpret_cast<const int8_t *>(&ref[0]), sizeof(ref))) << "Output mismatch";
 }
 
-TEST(MLEmulationLayerForVulkan, Conv2D) {
+void expectConv2DStorageFormats(vk::Format inputFormat, vk::Format weightFormat, vk::Format outputFormat,
+                                bool negateWeights = false) {
     auto device = createDevice();
 
-    auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 8, 8, 3}});
+    auto inputTensor = std::make_shared<Tensor>(device, Shape{inputFormat, std::vector<int64_t>{1, 8, 8, 3}});
     std::iota(inputTensor->data(), inputTensor->data() + inputTensor->size(), uint8_t{});
 
-    auto weightTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{3, 2, 2, 3}});
-    std::fill(weightTensor->data(), weightTensor->data() + weightTensor->size(), 1);
+    auto weightTensor = std::make_shared<Tensor>(device, Shape{weightFormat, std::vector<int64_t>{3, 2, 2, 3}});
+    std::fill(weightTensor->data(), weightTensor->data() + weightTensor->size(),
+              negateWeights ? uint8_t{255} : uint8_t{1});
 
-    auto biasTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sint, std::vector<int64_t>{3}});
+    auto biasTensor = std::make_shared<Tensor>(device, Shape{outputFormat, std::vector<int64_t>{3}});
     for (size_t i = 0; i < biasTensor->size(); i++) {
         if ((i % 4) == 0) {
             *(biasTensor->data() + i) = uint8_t(i / 4);
@@ -1013,7 +1015,7 @@ TEST(MLEmulationLayerForVulkan, Conv2D) {
         }
     }
 
-    auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sint, std::vector<int64_t>{1, 4, 4, 3}});
+    auto outputTensor = std::make_shared<Tensor>(device, Shape{outputFormat, std::vector<int64_t>{1, 4, 4, 3}});
     const GraphPipeline::DescriptorMap descriptorMap = {
         {
             // set 0
@@ -1084,8 +1086,51 @@ TEST(MLEmulationLayerForVulkan, Conv2D) {
         },
     };
 
-    ASSERT_TRUE(outputTensor->compare(reinterpret_cast<const int32_t *>(&ref[0][0][0][0]), sizeof(ref)))
-        << "Output mismatch";
+    std::array<int32_t, 48> expected{};
+    std::memcpy(expected.data(), &ref, sizeof(ref));
+    if (negateWeights) {
+        for (size_t i = 0; i < expected.size(); ++i) {
+            expected[i] = -expected[i] + 2 * static_cast<int32_t>(i % 3);
+        }
+    }
+    // Compare the encoded result so negative TOSA values also match R32_UINT storage.
+    ASSERT_EQ(std::memcmp(outputTensor->data(), expected.data(), sizeof(expected)), 0) << "Output mismatch";
+}
+
+TEST(MLEmulationLayerForVulkan, Conv2D) {
+    expectConv2DStorageFormats(vk::Format::eR8Sint, vk::Format::eR8Sint, vk::Format::eR32Sint);
+}
+
+class Conv2DStorageFormats : public testing::TestWithParam<std::tuple<vk::Format, vk::Format, vk::Format, bool>> {};
+
+TEST_P(Conv2DStorageFormats, PreservesSignedTosaValues) {
+    const auto [inputFormat, weightFormat, outputFormat, negateWeights] = GetParam();
+    expectConv2DStorageFormats(inputFormat, weightFormat, outputFormat, negateWeights);
+}
+
+INSTANTIATE_TEST_SUITE_P(ConvolutionRegression, Conv2DStorageFormats,
+                         testing::Combine(testing::Values(vk::Format::eR8Sint, vk::Format::eR8Uint),
+                                          testing::Values(vk::Format::eR8Sint, vk::Format::eR8Uint),
+                                          testing::Values(vk::Format::eR32Sint, vk::Format::eR32Uint),
+                                          testing::Bool()));
+
+TEST(MLEmulationLayerForVulkan, Conv3DFloat8OutputAvoidsDoubleRounding) {
+    auto device = createDevice();
+    const auto format = vk::Format::eR8SfloatFpencodingFloat8E4M3ARM;
+    auto input = std::make_shared<Tensor>(device, Shape{format, {1, 1, 1, 1, 3}});
+    auto weights = std::make_shared<Tensor>(device, Shape{format, {1, 1, 1, 1, 3}});
+    auto output = std::make_shared<Tensor>(device, Shape{format, {1, 1, 1, 1, 1}});
+    // dot([1, 1/4, 1/512], [1, 1/4, 1/512]) = 1.0625 + 2^-18.
+    // Direct E4M3 rounding yields 1.125; rounding through FP16 yields 1.0.
+    const std::array<uint8_t, 3> values = {0x38, 0x28, 0x01};
+    std::memcpy(input->data(), values.data(), values.size());
+    std::memcpy(weights->data(), values.data(), values.size());
+    const GraphPipeline::DescriptorMap descriptorMap = {{{0, {input}}, {1, {weights}}, {2, {output}}}};
+    const auto spirv = assembleSpirv(fileToString("conv3d_fp8_output_rounding.spvasm"));
+    auto pipeline = std::make_shared<GraphPipeline>(device, descriptorMap, GraphConstants{}, spirv);
+    pipeline->dispatchSubmit();
+    const uint8_t expected = 0x39;
+    ASSERT_EQ(*output->data(), expected) << "FP32 accumulator was rounded through FP16";
 }
 
 TEST(MLEmulationLayerForVulkan, Conv2DDispatchesBeyondZWorkgroupLimit) {
