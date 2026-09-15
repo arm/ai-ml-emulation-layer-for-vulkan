@@ -44,6 +44,10 @@ endforeach()
 add_custom_target(mlel_generate_all_shaders ALL DEPENDS ${GLSL_SOURCES} mlel_generate_shader_comp)
 
 # Generate C++ header file
+# ${GLSL_SOURCES} is required to regenerate this header when shader files change.
+# mlel_generate_all_shaders alone only provides build ordering; it does not track
+# file changes. Keep both dependencies to coordinate shared shader generation
+# with the SPIR-V consumers during parallel builds.
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shaders.hpp.inc
     COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/generate_glsl_header.cmake
@@ -51,6 +55,7 @@ add_custom_command(
         SRCS ${GLSL_SOURCES}
     DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/generate_glsl_header.cmake
+        ${GLSL_SOURCES}
         mlel_generate_all_shaders)
 
 add_custom_target(mlel_generate_glsl_header DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shaders.hpp.inc)
