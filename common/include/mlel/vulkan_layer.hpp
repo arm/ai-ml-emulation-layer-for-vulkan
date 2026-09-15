@@ -846,9 +846,9 @@ class VulkanLayer {
             appendType(&newCreateInfo, &layerVulkan11Feature);
         } else {
             replaceOrAppendFeature(&newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES,
-                                  layer16BitStorageFeature, [&](VkPhysicalDevice16BitStorageFeatures &feature) {
-                                      feature.storageBuffer16BitAccess = queryVulkan11Feature.storageBuffer16BitAccess;
-                                  });
+                                   layer16BitStorageFeature, [&](VkPhysicalDevice16BitStorageFeatures &feature) {
+                                       feature.storageBuffer16BitAccess = queryVulkan11Feature.storageBuffer16BitAccess;
+                                   });
         }
 
         const auto *pDeviceFeature12 = removeType<VkPhysicalDeviceVulkan12Features>(
@@ -876,31 +876,30 @@ class VulkanLayer {
             appendType(&newCreateInfo, &layerVulkan12Feature);
         } else {
             replaceOrAppendFeature(&newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES,
-                                  layerFloat16Int8Feature, [&](VkPhysicalDeviceShaderFloat16Int8Features &feature) {
-                                      feature.shaderInt8 = queryVulkan12Feature.shaderInt8;
-                                      feature.shaderFloat16 = queryVulkan12Feature.shaderFloat16;
-                                  });
+                                   layerFloat16Int8Feature, [&](VkPhysicalDeviceShaderFloat16Int8Features &feature) {
+                                       feature.shaderInt8 = queryVulkan12Feature.shaderInt8;
+                                       feature.shaderFloat16 = queryVulkan12Feature.shaderFloat16;
+                                   });
             replaceOrAppendFeature(&newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_8BIT_STORAGE_FEATURES,
-                                  layer8BitStorageFeature, [&](VkPhysicalDevice8BitStorageFeatures &feature) {
-                                      feature.storageBuffer8BitAccess = queryVulkan12Feature.storageBuffer8BitAccess;
-                                  });
+                                   layer8BitStorageFeature, [&](VkPhysicalDevice8BitStorageFeatures &feature) {
+                                       feature.storageBuffer8BitAccess = queryVulkan12Feature.storageBuffer8BitAccess;
+                                   });
             replaceOrAppendFeature(&newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES,
-                                  layerBufferDeviceAddressFeature,
-                                  [&](VkPhysicalDeviceBufferDeviceAddressFeatures &feature) {
-                                      feature.bufferDeviceAddress = queryVulkan12Feature.bufferDeviceAddress;
-                                  });
-            replaceOrAppendFeature(&newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
-                                  layerDescriptorIndexingFeature,
-                                  [&](VkPhysicalDeviceDescriptorIndexingFeatures &feature) {
-                                      feature.descriptorBindingStorageBufferUpdateAfterBind =
-                                          queryVulkan12Feature.descriptorBindingStorageBufferUpdateAfterBind;
-                                      feature.descriptorBindingStorageImageUpdateAfterBind =
-                                          queryVulkan12Feature.descriptorBindingStorageImageUpdateAfterBind;
-                                      feature.descriptorBindingSampledImageUpdateAfterBind =
-                                          queryVulkan12Feature.descriptorBindingSampledImageUpdateAfterBind;
-                                      feature.descriptorBindingPartiallyBound =
-                                          queryVulkan12Feature.descriptorBindingPartiallyBound;
-                                  });
+                                   layerBufferDeviceAddressFeature,
+                                   [&](VkPhysicalDeviceBufferDeviceAddressFeatures &feature) {
+                                       feature.bufferDeviceAddress = queryVulkan12Feature.bufferDeviceAddress;
+                                   });
+            replaceOrAppendFeature(
+                &newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
+                layerDescriptorIndexingFeature, [&](VkPhysicalDeviceDescriptorIndexingFeatures &feature) {
+                    feature.descriptorBindingStorageBufferUpdateAfterBind =
+                        queryVulkan12Feature.descriptorBindingStorageBufferUpdateAfterBind;
+                    feature.descriptorBindingStorageImageUpdateAfterBind =
+                        queryVulkan12Feature.descriptorBindingStorageImageUpdateAfterBind;
+                    feature.descriptorBindingSampledImageUpdateAfterBind =
+                        queryVulkan12Feature.descriptorBindingSampledImageUpdateAfterBind;
+                    feature.descriptorBindingPartiallyBound = queryVulkan12Feature.descriptorBindingPartiallyBound;
+                });
         }
 
         const auto *pDeviceFeature13 = removeType<VkPhysicalDeviceVulkan13Features>(
@@ -917,13 +916,14 @@ class VulkanLayer {
             appendType(&newCreateInfo, &layerVulkan13Feature);
         } else {
             replaceOrAppendFeature(&newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
-                                  layerSynchronization2Feature, [&](VkPhysicalDeviceSynchronization2Features &feature) {
-                                      feature.synchronization2 = queryVulkan13Feature.synchronization2;
-                                  });
+                                   layerSynchronization2Feature,
+                                   [&](VkPhysicalDeviceSynchronization2Features &feature) {
+                                       feature.synchronization2 = queryVulkan13Feature.synchronization2;
+                                   });
             replaceOrAppendFeature(&newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES,
-                                  layerMaintenance4Feature, [&](VkPhysicalDeviceMaintenance4Features &feature) {
-                                      feature.maintenance4 = queryVulkan13Feature.maintenance4;
-                                  });
+                                   layerMaintenance4Feature, [&](VkPhysicalDeviceMaintenance4Features &feature) {
+                                       feature.maintenance4 = queryVulkan13Feature.maintenance4;
+                                   });
         }
 
         auto getInstanceProcAddr = layerCreateInfo->u.pLayerInfo->pfnNextGetInstanceProcAddr;
