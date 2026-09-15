@@ -21,8 +21,6 @@ except ImportError:
 EMULATION_LAYER_DIR = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(EMULATION_LAYER_DIR))
 
-from scripts.build import build as build_emulation_layer  # noqa: E402
-
 SKIP_NATIVE_BUILD_ENV = "EMULATION_LAYER_SKIP_NATIVE_BUILD"
 
 
@@ -64,6 +62,8 @@ class BuildPy(build_py):
             raise RuntimeError(
                 "The Emulation Layer native build requires: " + ", ".join(missing_tools)
             )
+
+        from scripts.build import build as build_emulation_layer
 
         build_command = self.get_finalized_command("build")
         native_build_dir = pathlib.Path(build_command.build_temp) / "emulation_layer"
