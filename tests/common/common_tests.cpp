@@ -94,80 +94,139 @@ template <typename T> void checkFloat(T v) {
     ASSERT_EQ(double(f64), v);
 }
 
-TEST(MLEmulationLayerFloat, Formats) {
+TEST(MLEmulationLayerFloat, StorageSizes) {
     ASSERT_EQ(sizeof(float8_e4m3), 1);
     ASSERT_EQ(sizeof(float16), 2);
     ASSERT_EQ(sizeof(float32), 4);
     ASSERT_EQ(sizeof(float64), 8);
+}
 
-    checkFloat(float(-10.5));
-    checkFloat(float(-0.5));
-    checkFloat(float(0));
-    checkFloat(float(0.5));
-    checkFloat(float(10.0));
+TEST(MLEmulationLayerFloat, ConstructAndAssignFromNegativeFloat) { checkFloat(float(-10.5)); }
 
-    checkFloat(int8_t(1));
-    checkFloat(uint8_t(2));
-    checkFloat(int16_t(3));
-    checkFloat(uint16_t(4));
-    checkFloat(int32_t(5));
-    checkFloat(uint32_t(6));
-    checkFloat(int64_t(7));
-    checkFloat(uint64_t(8));
+TEST(MLEmulationLayerFloat, ConstructAndAssignFromNegativeFraction) { checkFloat(float(-0.5)); }
 
-    checkFloat(float8_e4m3(10.5));
-    checkFloat(float16(11.5));
-    checkFloat(float32(12.5));
-    checkFloat(float64(13.5));
+TEST(MLEmulationLayerFloat, ConstructAndAssignFromZero) { checkFloat(float(0)); }
 
+TEST(MLEmulationLayerFloat, ConstructAndAssignFromPositiveFraction) { checkFloat(float(0.5)); }
+
+TEST(MLEmulationLayerFloat, ConstructAndAssignFromPositiveFloat) { checkFloat(float(10.0)); }
+
+TEST(MLEmulationLayerFloat, ConstructAndAssignFromInt8) { checkFloat(int8_t(1)); }
+
+TEST(MLEmulationLayerFloat, ConstructAndAssignFromUint8) { checkFloat(uint8_t(2)); }
+
+TEST(MLEmulationLayerFloat, ConstructAndAssignFromInt16) { checkFloat(int16_t(3)); }
+
+TEST(MLEmulationLayerFloat, ConstructAndAssignFromUint16) { checkFloat(uint16_t(4)); }
+
+TEST(MLEmulationLayerFloat, ConstructAndAssignFromInt32) { checkFloat(int32_t(5)); }
+
+TEST(MLEmulationLayerFloat, ConstructAndAssignFromUint32) { checkFloat(uint32_t(6)); }
+
+TEST(MLEmulationLayerFloat, ConstructAndAssignFromInt64) { checkFloat(int64_t(7)); }
+
+TEST(MLEmulationLayerFloat, ConstructAndAssignFromUint64) { checkFloat(uint64_t(8)); }
+
+TEST(MLEmulationLayerFloat, ConstructAndAssignFromFloat8) { checkFloat(float8_e4m3(10.5)); }
+
+TEST(MLEmulationLayerFloat, ConstructAndAssignFromFloat16) { checkFloat(float16(11.5)); }
+
+TEST(MLEmulationLayerFloat, ConstructAndAssignFromFloat32) { checkFloat(float32(12.5)); }
+
+TEST(MLEmulationLayerFloat, ConstructAndAssignFromFloat64) { checkFloat(float64(13.5)); }
+
+TEST(MLEmulationLayerFloat, CastFloat16ToFloat32) {
     auto f = float(float16(10.5));
     ASSERT_EQ(double(f), 10.5);
+}
 
+TEST(MLEmulationLayerFloat, Float16Add) {
     float16 f16;
-
     f16 = f16 + 10;
     ASSERT_EQ(double(f16), 10);
+}
 
+TEST(MLEmulationLayerFloat, Float16AddAssign) {
+    float16 f16{10};
     f16 += 10;
     ASSERT_EQ(double(f16), 20);
+}
 
+TEST(MLEmulationLayerFloat, Float16Subtract) {
+    float16 f16{20};
     f16 = f16 - 5;
     ASSERT_EQ(double(f16), 15);
+}
 
+TEST(MLEmulationLayerFloat, Float16SubtractAssign) {
+    float16 f16{15};
     f16 -= 5;
     ASSERT_EQ(double(f16), 10);
+}
 
+TEST(MLEmulationLayerFloat, Float16Multiply) {
+    float16 f16{10};
     f16 = f16 * 2;
     ASSERT_EQ(double(f16), 20);
+}
 
+TEST(MLEmulationLayerFloat, Float16MultiplyAssign) {
+    float16 f16{20};
     f16 *= 2;
     ASSERT_EQ(double(f16), 40);
+}
 
+TEST(MLEmulationLayerFloat, Float16Divide) {
+    float16 f16{40};
     f16 = f16 / 4;
     ASSERT_EQ(double(f16), 10);
+}
 
+TEST(MLEmulationLayerFloat, Float16DivideAssign) {
+    float16 f16{10};
     f16 /= 4;
     ASSERT_EQ(double(f16), 2.5);
+}
 
+TEST(MLEmulationLayerFloat, Float16Less) {
+    float16 f16{2.5};
     ASSERT_TRUE(f16 < 5);
     ASSERT_FALSE(5 < f16);
+}
 
+TEST(MLEmulationLayerFloat, Float16LessEqual) {
+    float16 f16{2.5};
     ASSERT_TRUE(f16 <= 5);
     ASSERT_FALSE(5 <= f16);
+}
 
+TEST(MLEmulationLayerFloat, Float16Greater) {
+    float16 f16{2.5};
     ASSERT_FALSE(f16 > 5);
     ASSERT_TRUE(5 > f16);
+}
 
+TEST(MLEmulationLayerFloat, Float16GreaterEqual) {
+    float16 f16{2.5};
     ASSERT_FALSE(f16 >= 5);
     ASSERT_TRUE(5 >= f16);
+}
 
+TEST(MLEmulationLayerFloat, Float16Equal) {
+    float16 f16{2.5};
     ASSERT_FALSE(f16 == 5);
     ASSERT_TRUE(f16 == 2.5);
+}
 
+TEST(MLEmulationLayerFloat, Float16NotEqual) {
+    float16 f16{2.5};
     ASSERT_TRUE(f16 != 5);
     ASSERT_FALSE(f16 != 2.5);
+}
 
-    uint32_t overflow = 0U << 31 | 250 << 23 | 1 << 22;
+TEST(MLEmulationLayerFloat, Float16OverflowBecomesInfinity) {
+    float16 f16;
+    uint32_t overflow = (250U << 23) | (1U << 22);
     void *overflowPtr = &overflow;
     f16 = *reinterpret_cast<float *>(overflowPtr);
     ASSERT_FALSE(f16.isnan());
@@ -175,7 +234,10 @@ TEST(MLEmulationLayerFloat, Formats) {
     ASSERT_FALSE(std::isnan(f16));
     ASSERT_TRUE(std::isinf(f16));
     ASSERT_FALSE(std::isnormal(float(f16)));
+}
 
+TEST(MLEmulationLayerFloat, Float16Nan) {
+    float16 f16;
     uint32_t nan = 0xffffffff;
     void *nanPtr = &nan;
     f16 = *reinterpret_cast<float *>(nanPtr);
@@ -184,8 +246,11 @@ TEST(MLEmulationLayerFloat, Formats) {
     ASSERT_TRUE(std::isnan(f16));
     ASSERT_FALSE(std::isinf(f16));
     ASSERT_FALSE(std::isnormal(float(f16)));
+}
 
-    uint32_t pinf = 0U << 31 | 0xffU << 23 | 0;
+TEST(MLEmulationLayerFloat, Float16PositiveInfinity) {
+    float16 f16;
+    uint32_t pinf = 0xffU << 23;
     void *pinfPtr = &pinf;
     f16 = *reinterpret_cast<float *>(pinfPtr);
     ASSERT_FALSE(f16.isnan());
@@ -193,8 +258,11 @@ TEST(MLEmulationLayerFloat, Formats) {
     ASSERT_FALSE(std::isnan(f16));
     ASSERT_TRUE(std::isinf(f16));
     ASSERT_FALSE(std::isnormal(float(f16)));
+}
 
-    uint32_t ninf = 1U << 31 | 0xffU << 23 | 0;
+TEST(MLEmulationLayerFloat, Float16NegativeInfinity) {
+    float16 f16;
+    uint32_t ninf = (1U << 31) | (0xffU << 23);
     void *ninfPtr = &ninf;
     f16 = *reinterpret_cast<float *>(ninfPtr);
     ASSERT_FALSE(f16.isnan());

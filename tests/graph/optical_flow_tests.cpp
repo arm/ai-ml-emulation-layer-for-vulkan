@@ -53,6 +53,13 @@ std::shared_ptr<Device> createDevice() {
     return std::make_shared<Device>(physicalDevice, extensions, &features2);
 }
 
+class MLEmulationLayerOpticalFlowSharedDevice : public testing::Test {
+  protected:
+    static void SetUpTestSuite() { device = createDevice(); }
+    static void TearDownTestSuite() { device.reset(); }
+    inline static std::shared_ptr<Device> device;
+};
+
 std::string queryPipelineTextProperty(const std::shared_ptr<Device> &device, VkPipeline pipeline,
                                       vk::DataGraphPipelinePropertyARM property) {
     const auto &vkDevice = &(*device);
@@ -263,8 +270,8 @@ class OpticalFlow {
     }
 
     ~OpticalFlow() {
-        for (auto *session : additionalSessions_) {
-            vkDevice_.getDispatcher()->vkDestroyDataGraphPipelineSessionARM(*vkDevice_, session, nullptr);
+        for (auto *additionalSession : additionalSessions_) {
+            vkDevice_.getDispatcher()->vkDestroyDataGraphPipelineSessionARM(*vkDevice_, additionalSession, nullptr);
         }
         if (session_ != VK_NULL_HANDLE) {
             vkDevice_.getDispatcher()->vkDestroyDataGraphPipelineSessionARM(*vkDevice_, session_, nullptr);
@@ -415,17 +422,17 @@ class OpticalFlow {
         createInfo.flags = enableCache ? VK_DATA_GRAPH_PIPELINE_SESSION_CREATE_OPTICAL_FLOW_CACHE_BIT_ARM : 0;
         createInfo.dataGraphPipeline = pipeline_;
 
-        VkDataGraphPipelineSessionARM session = VK_NULL_HANDLE;
-        const auto result =
-            vkDevice_.getDispatcher()->vkCreateDataGraphPipelineSessionARM(*vkDevice_, &createInfo, nullptr, &session);
+        VkDataGraphPipelineSessionARM additionalSession = VK_NULL_HANDLE;
+        const auto result = vkDevice_.getDispatcher()->vkCreateDataGraphPipelineSessionARM(*vkDevice_, &createInfo,
+                                                                                           nullptr, &additionalSession);
         if (result != VK_SUCCESS) {
             throw std::runtime_error("Failed to create additional data graph optical flow session");
         }
 
-        additionalSessions_.push_back(session);
+        additionalSessions_.push_back(additionalSession);
         additionalSessionMemories_.emplace_back();
-        allocateAndBindSessionMemory(session, additionalSessionMemories_.back());
-        return session;
+        allocateAndBindSessionMemory(additionalSession, additionalSessionMemories_.back());
+        return additionalSession;
     }
 
   private:
@@ -621,7 +628,7 @@ std::vector<uint8_t> readFlowImage(const std::shared_ptr<Device> &device, vk::Im
     }
 
     std::vector<uint8_t> out(static_cast<size_t>(byteSize));
-    void *mapped = stagingMemory.mapMemory(0, byteSize);
+    const void *mapped = stagingMemory.mapMemory(0, byteSize);
     std::memcpy(out.data(), mapped, out.size());
     stagingMemory.unmapMemory();
     return out;
@@ -732,31 +739,27 @@ void runOpticalFlowAndExpectOutputChange(const std::shared_ptr<Device> &device, 
     }
 }
 
-TEST(MLEmulationLayerOpticalFlowForVulkan, RGBToYSmokeGrid4x4) { // cppcheck-suppress syntaxError
-    const auto device = createDevice();
+TEST_F(MLEmulationLayerOpticalFlowSharedDevice, RGBToYSmokeGrid4x4) { // cppcheck-suppress syntaxError
     runOpticalFlowAndExpectOutputChange(device, OpticalFlow::Config{}, "RGBToY smoke");
 }
 
-TEST(MLEmulationLayerOpticalFlowForVulkan, UncachedSession) {
-    const auto device = createDevice();
+TEST_F(MLEmulationLayerOpticalFlowSharedDevice, UncachedSession) {
     OpticalFlow::Config cfg;
     cfg.enableCache = false;
     runOpticalFlowAndExpectOutputChange(device, cfg, "uncached session");
 }
 
-TEST(MLEmulationLayerOpticalFlowForVulkan, CachedAndUncachedSessionsSharePipeline) {
-    const auto device = createDevice();
+TEST_F(MLEmulationLayerOpticalFlowSharedDevice, CachedAndUncachedSessionsSharePipeline) {
     runOpticalFlowAndExpectOutputChange(device, OpticalFlow::Config{}, "cached and uncached sessions", 0, nullptr,
                                         true);
 }
 
-TEST(MLEmulationLayerOpticalFlowForVulkan, SessionsRecordedBeforeOverlappingSubmit) {
+TEST_F(MLEmulationLayerOpticalFlowSharedDevice, SessionsRecordedBeforeOverlappingSubmit) {
     constexpr uint32_t width = 64;
     constexpr uint32_t height = 64;
     constexpr uint32_t flowWidth = 16;
     constexpr uint32_t flowHeight = 16;
 
-    const auto device = createDevice();
     const auto makeInput = [&]() {
         return createImageResource(device, vk::Format::eR8Unorm, width, height,
                                    vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage |
@@ -812,51 +815,44 @@ TEST(MLEmulationLayerOpticalFlowForVulkan, SessionsRecordedBeforeOverlappingSubm
     }
 }
 
-TEST(MLEmulationLayerOpticalFlowForVulkan, RGBToYGrid1x1) {
-    const auto device = createDevice();
+TEST_F(MLEmulationLayerOpticalFlowSharedDevice, RGBToYGrid1x1) {
     OpticalFlow::Config cfg;
     cfg.outputGridSize = VK_DATA_GRAPH_OPTICAL_FLOW_GRID_SIZE_1X1_BIT_ARM;
     runOpticalFlowAndExpectOutputChange(device, cfg, "RGBToY class path");
 }
 
-TEST(MLEmulationLayerOpticalFlowForVulkan, DownsampleGrid8x8) {
-    const auto device = createDevice();
+TEST_F(MLEmulationLayerOpticalFlowSharedDevice, DownsampleGrid8x8) {
     OpticalFlow::Config cfg;
     cfg.outputGridSize = VK_DATA_GRAPH_OPTICAL_FLOW_GRID_SIZE_8X8_BIT_ARM;
     runOpticalFlowAndExpectOutputChange(device, cfg, "Downsample class path");
 }
 
-TEST(MLEmulationLayerOpticalFlowForVulkan, DenseWarpWithHint) {
-    const auto device = createDevice();
+TEST_F(MLEmulationLayerOpticalFlowSharedDevice, DenseWarpWithHint) {
     OpticalFlow::Config cfg;
     cfg.enableHint = true;
     runOpticalFlowAndExpectOutputChange(device, cfg, "DenseWarp class path");
 }
 
-TEST(MLEmulationLayerOpticalFlowForVulkan, MedianFilterFast) {
-    const auto device = createDevice();
+TEST_F(MLEmulationLayerOpticalFlowSharedDevice, MedianFilterFast) {
     OpticalFlow::Config cfg;
     cfg.performanceLevel = VK_DATA_GRAPH_OPTICAL_FLOW_PERFORMANCE_LEVEL_FAST_ARM;
     runOpticalFlowAndExpectOutputChange(device, cfg, "MedianFilter class path");
 }
 
-TEST(MLEmulationLayerOpticalFlowForVulkan, BilateralFilterMedium) {
-    const auto device = createDevice();
+TEST_F(MLEmulationLayerOpticalFlowSharedDevice, BilateralFilterMedium) {
     OpticalFlow::Config cfg;
     cfg.performanceLevel = VK_DATA_GRAPH_OPTICAL_FLOW_PERFORMANCE_LEVEL_MEDIUM_ARM;
     runOpticalFlowAndExpectOutputChange(device, cfg, "BilateralFilter class path");
 }
 
-TEST(MLEmulationLayerOpticalFlowForVulkan, MVReplaceWithHintAndCost) {
-    const auto device = createDevice();
+TEST_F(MLEmulationLayerOpticalFlowSharedDevice, MVReplaceWithHintAndCost) {
     OpticalFlow::Config cfg;
     cfg.enableHint = true;
     cfg.enableCost = true;
     runOpticalFlowAndExpectOutputChange(device, cfg, "MVReplace class path");
 }
 
-TEST(MLEmulationLayerOpticalFlowForVulkan, BlockMatchCostEnabled) {
-    const auto device = createDevice();
+TEST_F(MLEmulationLayerOpticalFlowSharedDevice, BlockMatchCostEnabled) {
     OpticalFlow::Config cfg;
     cfg.enableCost = true;
     runOpticalFlowAndExpectOutputChange(device, cfg, "BlockMatch class path");
