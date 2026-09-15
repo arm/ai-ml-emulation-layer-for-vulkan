@@ -377,6 +377,7 @@ class Builder:
                         sys.executable,
                         "-m",
                         "build",
+                        "--wheel",
                         "--outdir",
                         str(EMULATION_LAYER_DIR / "pip_package" / "dist"),
                         str(EMULATION_LAYER_DIR),
