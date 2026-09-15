@@ -6,6 +6,8 @@
 find_package(Git)
 
 function(mlsdk_get_git_revision SRCDIR RETURN_GIT_REVISION)
+    cmake_parse_arguments(ARGS "EXACT_TAG_ONLY" "" "" ${ARGN})
+
     set(${RETURN_GIT_REVISION} "unknown" PARENT_SCOPE)
 
     if(NOT Git_FOUND)
@@ -24,12 +26,41 @@ function(mlsdk_get_git_revision SRCDIR RETURN_GIT_REVISION)
         COMMAND ${GIT_EXECUTABLE} update-index -q --refresh
         WORKING_DIRECTORY ${SRCDIR})
 
-    execute_process(
-        COMMAND ${GIT_EXECUTABLE} describe --dirty --always --tag --broken --long
-        WORKING_DIRECTORY ${SRCDIR}
-        RESULT_VARIABLE GIT_RETURN_CODE
-        OUTPUT_VARIABLE GIT_OUTPUT
-        OUTPUT_STRIP_TRAILING_WHITESPACE)
+    set(GIT_DESCRIBE_ARGS
+        --dirty
+        --tags
+        --broken
+        --long)
+
+    if(ARGS_EXACT_TAG_ONLY)
+        execute_process(
+            COMMAND ${GIT_EXECUTABLE} describe ${GIT_DESCRIBE_ARGS} --exact-match
+            WORKING_DIRECTORY ${SRCDIR}
+            RESULT_VARIABLE GIT_RETURN_CODE
+            OUTPUT_VARIABLE GIT_OUTPUT
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET)
+
+        if(NOT GIT_RETURN_CODE)
+            string(REGEX REPLACE "-0-g[0-9a-f]+(-dirty)?$" "\\1" GIT_OUTPUT "${GIT_OUTPUT}")
+        endif()
+
+        if(GIT_RETURN_CODE)
+            execute_process(
+                COMMAND ${GIT_EXECUTABLE} describe --dirty --always --broken --long "--exclude=*"
+                WORKING_DIRECTORY ${SRCDIR}
+                RESULT_VARIABLE GIT_RETURN_CODE
+                OUTPUT_VARIABLE GIT_OUTPUT
+                OUTPUT_STRIP_TRAILING_WHITESPACE)
+        endif()
+    else()
+        execute_process(
+            COMMAND ${GIT_EXECUTABLE} describe ${GIT_DESCRIBE_ARGS} --always
+            WORKING_DIRECTORY ${SRCDIR}
+            RESULT_VARIABLE GIT_RETURN_CODE
+            OUTPUT_VARIABLE GIT_OUTPUT
+            OUTPUT_STRIP_TRAILING_WHITESPACE)
+    endif()
 
     if(GIT_RETURN_CODE)
         message(WARNING "Git command returns error for ${SRCDIR}")
@@ -52,7 +83,10 @@ function(mlsdk_generate_version_header)
     endif()
 
     set(GIT_REVISION "unknown")
-    mlsdk_get_git_revision("${CMAKE_CURRENT_SOURCE_DIR}" GIT_REVISION)
+    mlsdk_get_git_revision(
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+        GIT_REVISION
+        EXACT_TAG_ONLY)
 
     set(DEP_GIT_REVISIONS "")
     foreach(dep ${ARGS_DEPENDENCIES})
