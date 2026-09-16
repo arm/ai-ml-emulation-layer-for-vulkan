@@ -43,65 +43,60 @@ endforeach()
 # Combine all outputs into a single target
 add_custom_target(mlel_generate_all_shaders ALL DEPENDS ${GLSL_SOURCES} mlel_generate_shader_comp)
 
-# Generate C++ header file
-# ${GLSL_SOURCES} is required to regenerate this header when shader files change.
-# mlel_generate_all_shaders alone only provides build ordering; it does not track
-# file changes. Keep both dependencies to coordinate shared shader generation
-# with the SPIR-V consumers during parallel builds.
-add_custom_command(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shaders.hpp.inc
-    COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/generate_glsl_header.cmake
-        OUTPUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/shaders.hpp.inc"
-        SRCS ${GLSL_SOURCES}
-    DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/generate_glsl_header.cmake
-        ${GLSL_SOURCES}
-        mlel_generate_all_shaders)
-
-add_custom_target(mlel_generate_glsl_header DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shaders.hpp.inc)
-
 ###############################################################################
 # Generate pre-compiled shaders
 ###############################################################################
 
-# Macro for generating target
-macro(mlel_generate_spv_inc)
-    # Strip the path from the SPV files
+# Each module is compiled independently so edits to the pipeline cache do not
+# recompile the embedded binaries, and changing one module rebuilds only its data.
+macro(mlel_generate_spv_library)
+    set(SPV_SOURCES "")
     set(SHORT_SPV_FILES "")
-    foreach(f ${SPV_FILES})
-        get_filename_component(fname "${f}" NAME)
-        list(APPEND SHORT_SPV_FILES "${fname}")
+    foreach(SPV_FILE IN LISTS SPV_FILES)
+        set(SOURCE "${SPV_FILE}.cpp")
+        add_custom_command(
+            OUTPUT "${SOURCE}"
+            COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/generate_spv_source.cmake
+                OUTPUT_FILE "${SOURCE}"
+                INPUT_FILE "${SPV_FILE}"
+            DEPENDS
+                ${CMAKE_CURRENT_SOURCE_DIR}/generate_spv_source.cmake
+                "${SPV_FILE}")
+        list(APPEND SPV_SOURCES "${SOURCE}")
+        get_filename_component(NAME "${SPV_FILE}" NAME)
+        list(APPEND SHORT_SPV_FILES "${NAME}")
     endforeach()
+
+    set(REGISTRY "${CMAKE_CURRENT_BINARY_DIR}/shaders_spv.cpp")
     add_custom_command(
-        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shaders_spv.hpp.inc
-        COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/generate_spv_header.cmake
-            OUTPUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/shaders_spv.hpp.inc"
+        OUTPUT "${REGISTRY}"
+        COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/generate_spv_registry.cmake
+            OUTPUT_FILE "${REGISTRY}"
             INPUT_FILES ${SHORT_SPV_FILES}
         DEPENDS
-            ${CMAKE_CURRENT_SOURCE_DIR}/generate_spv_header.cmake
-            ${SHORT_SPV_FILES}
+            ${CMAKE_CURRENT_SOURCE_DIR}/generate_spv_registry.cmake
+            ${SPV_FILES}
             mlel_generate_all_shaders
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
-    add_custom_target(mlel_generate_spv_header DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shaders_spv.hpp.inc)
+    add_library(MLELPrecompiledShaders STATIC ${SPV_SOURCES} "${REGISTRY}")
+    target_compile_options(MLELPrecompiledShaders PRIVATE ${VMEL_COMPILE_OPTIONS})
+    target_include_directories(MLELPrecompiledShaders PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 endmacro()
 
-if(VMEL_DISABLE_PRECOMPILE_SHADERS)
-    # Generate include file with empty shader map
-    mlel_generate_spv_inc()
-    return()
+# Cross-compilation requires a compiler that runs on the build host.
+if((CMAKE_CROSSCOMPILING OR NOT TARGET glslang-standalone) AND NOT GLSLANG_EXECUTABLE)
+    find_program(GLSLANG_EXECUTABLE NAMES glslang glslangValidator NO_CMAKE_FIND_ROOT_PATH)
+    if(NOT GLSLANG_EXECUTABLE)
+        message(FATAL_ERROR "Precompiled shaders require a host glslang compiler. Set GLSLANG_EXECUTABLE to its path.")
+    endif()
 endif()
 
-# Verify that required dependencies exist, otherwise throw a warning
-if((CMAKE_CROSSCOMPILING OR NOT TARGET glslang-standalone) AND (NOT GLSLANG_EXECUTABLE))
-    # Attempt to find system glslang
-    find_program(GLSLANG_EXECUTABLE NAMES glslang glslangValidator)
-
-    if(NOT GLSLANG_EXECUTABLE)
-        message(WARNING "Cannot find or build GLSL executable, will skip shader generation")
-        # Generate include file with empty shader map
-        mlel_generate_spv_inc()
-        return()
+if(GLSLANG_EXECUTABLE)
+    execute_process(COMMAND "${GLSLANG_EXECUTABLE}" --version
+        RESULT_VARIABLE GLSLANG_RESULT OUTPUT_QUIET ERROR_QUIET)
+    if(NOT GLSLANG_RESULT STREQUAL "0")
+        message(FATAL_ERROR "Cannot run host shader compiler: ${GLSLANG_EXECUTABLE}")
     endif()
 endif()
 
@@ -120,6 +115,18 @@ set(WARPZ 1)
 
 function(mlel_generate_glsl)
     cmake_parse_arguments(ARGS "" "INPUT;OUTPUT" "REPLACE" ${ARGN})
+    # Aliases (e.g. widened i4/i48 storage) may share a module, but different
+    # shader substitutions must never silently share an output/key.
+    string(SHA256 OUTPUT_ID "${ARGS_OUTPUT}")
+    set(SIGNATURE "${ARGS_INPUT};${ARGS_REPLACE}")
+    get_property(PREVIOUS DIRECTORY PROPERTY "MLEL_SPV_${OUTPUT_ID}")
+    if(PREVIOUS)
+        if(NOT PREVIOUS STREQUAL SIGNATURE)
+            message(FATAL_ERROR "Conflicting shader variants for ${ARGS_OUTPUT}")
+        endif()
+        return()
+    endif()
+    set_property(DIRECTORY PROPERTY "MLEL_SPV_${OUTPUT_ID}" "${SIGNATURE}")
     # Generate SPV
     add_custom_command(
         OUTPUT ${ARGS_OUTPUT}
@@ -187,53 +194,6 @@ macro(mlel_spv SHADER)
         TYPES ${ARGN})
 endmacro()
 
-mlel_spv(argmax "in_t int8_t int16_t float16_t bfloat16_t float float8_e5m2_t float8_e4m3_t")
-mlel_spv(avgpool2d "in_out_t int8_t int16_t" "acc_t int")
-mlel_spv(avgpool2d "in_out_t float16_t bfloat16_t float" "acc_t float") # TODO acc_t float16_t
-mlel_spv(avgpool2d "in_out_t float8_e5m2_t float8_e4m3_t" "acc_t float16_t float")
-mlel_spv(cast "in_t float16_t bfloat16_t float float8_e5m2_t float8_e4m3_t" "out_t bool int8_t int16_t int float16_t bfloat16_t float float8_e5m2_t float8_e4m3_t")
-mlel_spv(cast "in_t int8_t int16_t int" "out_t bool int8_t int16_t int float16_t bfloat16_t float float8_e5m2_t float8_e4m3_t")
-mlel_spv(cast "in_t bool" "out_t bool int8_t int16_t int float16_t bfloat16_t float float8_e5m2_t float8_e4m3_t")
-mlel_spv(clamp "in_out_t int8_t int16_t float16_t bfloat16_t float float8_e5m2_t float8_e4m3_t")
-mlel_spv(concat "in_out_t bool int8_t int16_t int float16_t bfloat16_t float float8_e5m2_t float8_e4m3_t")
-mlel_spv(fft2d "in_out_t float")
-mlel_spv(gather "in_out_t int8_t int16_t int float16_t bfloat16_t float float8_e5m2_t float8_e4m3_t" "index_t int")
-mlel_spv(matmul "in_t int8_t" "out_t int")
-mlel_spv(matmul "in_t int16_t" "out_t int64_t")
-mlel_spv(matmul "in_t float16_t" "out_t float16_t float")
-mlel_spv(matmul "in_t bfloat16_t" "out_t bfloat16_t float")
-mlel_spv(matmul "in_t float8_e5m2_t float8_e4m3_t" "out_t float16_t float8_e5m2_t float8_e4m3_t float")
-mlel_spv(matmul "in_t float" "out_t float")
-mlel_spv(maxpool2d "in_out_t int8_t int16_t float16_t bfloat16_t float float8_e5m2_t float8_e4m3_t")
-mlel_spv(mul "in_t int8_t int16_t int" "out_t int")
-mlel_spv(mul "in_t float16_t" "out_t float16_t")
-mlel_spv(mul "in_t bfloat16_t" "out_t bfloat16_t")
-mlel_spv(mul "in_t float8_e5m2_t float8_e4m3_t" "out_t float8_e5m2_t float8_e4m3_t")
-mlel_spv(mul "in_t float" "out_t float")
-mlel_spv(negate "in_out_t int8_t int16_t int" "acc_t int")
-mlel_spv(negate "in_out_t float16_t" "acc_t float16_t")
-mlel_spv(negate "in_out_t bfloat16_t" "acc_t bfloat16_t")
-mlel_spv(negate "in_out_t float8_e5m2_t float8_e4m3_t" "acc_t float16_t")
-mlel_spv(negate "in_out_t float" "acc_t float")
-mlel_spv(pad "in_out_t bool int8_t int16_t int float16_t bfloat16_t float float8_e5m2_t float8_e4m3_t")
-mlel_spv(rescale "in_t int8_t int16_t int int64_t" "out_t int8_t int16_t int" "mul_t int16_t int")
-mlel_spv(reshape "in_out_t bool int8_t int16_t int float16_t bfloat16_t float float8_e5m2_t float8_e4m3_t")
-mlel_spv(resize "in_t int8_t" "out_t int8_t int")
-mlel_spv(resize "in_t int16_t" "out_t int16_t int64_t")
-mlel_spv(resize "in_t float16_t" "out_t float16_t")
-mlel_spv(resize "in_t bfloat16_t" "out_t bfloat16_t")
-mlel_spv(resize "in_t float8_e5m2_t float8_e4m3_t" "out_t float8_e5m2_t float8_e4m3_t")
-mlel_spv(resize "in_t float" "out_t float")
-mlel_spv(reverse "in_out_t bool int8_t int16_t int float16_t bfloat16_t float float8_e5m2_t float8_e4m3_t")
-mlel_spv(rfft2d "in_out_t float")
-mlel_spv(scatter "in_out_t int8_t int16_t int float16_t bfloat16_t float float8_e5m2_t float8_e4m3_t" "index_t int")
-mlel_spv(select "in_out_t bool int8_t int16_t int float16_t bfloat16_t float float8_e5m2_t float8_e4m3_t")
-mlel_spv(slice "in_out_t bool int8_t int16_t int float16_t bfloat16_t float float8_e5m2_t float8_e4m3_t")
-mlel_spv(table "in_t int8_t" "out_t int8_t")
-mlel_spv(table "in_t int16_t" "out_t int")
-mlel_spv(tile "in_out_t bool int8_t int16_t int float16_t bfloat16_t float float8_e5m2_t float8_e4m3_t")
-mlel_spv(transpose "in_out_t bool int8_t int16_t int float16_t bfloat16_t float float8_e5m2_t float8_e4m3_t")
-
 # Convolutions
 macro(mlel_spv_convolution OPERATION IN_T WEIGHT_T OUT_T ACC_T)
     set(INPUT "${CMAKE_CURRENT_BINARY_DIR}/${OPERATION}.comp")
@@ -258,26 +218,10 @@ macro(mlel_spv_convolution OPERATION IN_T WEIGHT_T OUT_T ACC_T)
     list(APPEND SPV_FILES ${OUTPUT})
 endmacro()
 
-foreach(OPERATION conv2d conv3d depthwise_conv2d transpose_conv2d)
-    mlel_spv_convolution(${OPERATION} float16_t float16_t float16_t float16_t)
-    mlel_spv_convolution(${OPERATION} float16_t float16_t float16_t float)
-    mlel_spv_convolution(${OPERATION} float float float float)
-    mlel_spv_convolution(${OPERATION} bfloat16_t bfloat16_t bfloat16_t float)
-    mlel_spv_convolution(${OPERATION} int8_t int8_t int int)
-    mlel_spv_convolution(${OPERATION} int16_t int8_t int64_t int64_t)
-    mlel_spv_convolution(${OPERATION} float8_e5m2_t float8_e5m2_t float16_t float16_t)
-    mlel_spv_convolution(${OPERATION} float8_e5m2_t float8_e5m2_t float16_t float)
-    mlel_spv_convolution(${OPERATION} float8_e5m2_t float8_e5m2_t float8_e5m2_t float)
-    mlel_spv_convolution(${OPERATION} float8_e4m3_t float8_e4m3_t float16_t float16_t)
-    mlel_spv_convolution(${OPERATION} float8_e4m3_t float8_e4m3_t float16_t float)
-    mlel_spv_convolution(${OPERATION} float8_e4m3_t float8_e4m3_t float8_e4m3_t float)
-endforeach()
-
 # Elementwise
 macro(mlel_spv_elementwise PIPELINE NAME OPERATION)
     foreach(IN_OUT_T ${ARGN})
         set(INPUT "${CMAKE_CURRENT_BINARY_DIR}/${PIPELINE}.comp")
-        set(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${PIPELINE}_${NAME}_${IN_OUT_T}.spv")
 
         set(IN_T ${IN_OUT_T})
         set(OUT_T ${IN_OUT_T})
@@ -285,6 +229,13 @@ macro(mlel_spv_elementwise PIPELINE NAME OPERATION)
         if(${NAME} STREQUAL "equal" OR ${NAME} STREQUAL "greater" OR ${NAME} STREQUAL "greater_equal")
             set(OUT_T "bool")
         endif()
+
+        string(TOUPPER "${NAME}" OP_NAME)
+        set(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${PIPELINE}_${OP_NAME}_${IN_T}")
+        if("${PIPELINE}" STREQUAL "elementwise_binary")
+            string(APPEND OUTPUT "_${OUT_T}")
+        endif()
+        string(APPEND OUTPUT ".spv")
 
         mlel_generate_glsl(
             INPUT ${INPUT}
@@ -299,51 +250,12 @@ macro(mlel_spv_elementwise PIPELINE NAME OPERATION)
     endforeach()
 endmacro()
 
-# Elementwise binary
-mlel_spv_elementwise(elementwise_binary add "value1 + value2" int float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-mlel_spv_elementwise(elementwise_binary bitwise_and "value1 & value2" int8_t int16_t int)
-mlel_spv_elementwise(elementwise_binary bitwise_or "value1 | value2" int8_t int16_t int)
-mlel_spv_elementwise(elementwise_binary bitwise_xor "value1 ^ value2" int8_t int16_t int)
-mlel_spv_elementwise(elementwise_binary intdiv "value1 / value2" int)
-mlel_spv_elementwise(elementwise_binary logical_and "value1 && value2" bool)
-mlel_spv_elementwise(elementwise_binary logical_left_shift "uint(value1) << uint(value2)" int8_t int16_t int)
-mlel_spv_elementwise(elementwise_binary logical_right_shift "zeroExtend(value1) >> uint(value2)" int8_t int16_t int)
-mlel_spv_elementwise(elementwise_binary logical_or "value1 || value2" bool)
-mlel_spv_elementwise(elementwise_binary logical_xor "value1 ^^ value2" bool)
-mlel_spv_elementwise(elementwise_binary maximum "applyMax(value1, value2, pushConstants.nanMode)" int float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-mlel_spv_elementwise(elementwise_binary minimum "applyMin(value1, value2, pushConstants.nanMode)" int float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-mlel_spv_elementwise(elementwise_binary pow "power(value1, value2)" float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-mlel_spv_elementwise(elementwise_binary sub "value1 - value2" int float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-
-# Elementwise unary
-mlel_spv_elementwise(elementwise_unary abs "abs(value1)" int float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-mlel_spv_elementwise(elementwise_unary bitwise_not "~value1" int8_t int16_t int)
-mlel_spv_elementwise(elementwise_unary ceil "ceil(value1)" float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-mlel_spv_elementwise(elementwise_unary clz "clz(value1)" int)
-mlel_spv_elementwise(elementwise_unary cos "cos(value1)" float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-mlel_spv_elementwise(elementwise_unary exp "exp(value1)" float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-mlel_spv_elementwise(elementwise_unary floor "floor(value1)" float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-mlel_spv_elementwise(elementwise_unary log "log(value1)" float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-mlel_spv_elementwise(elementwise_unary logical_not "!value1" bool)
-mlel_spv_elementwise(elementwise_unary reciprocal "1.0 / value1" float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-mlel_spv_elementwise(elementwise_unary rsqrt "inversesqrt(value1)" float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-mlel_spv_elementwise(elementwise_unary sin "sin_hybrid(value1)" float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-
-# Comparison
-mlel_spv_elementwise(elementwise_binary equal "value1 == value2" int float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-mlel_spv_elementwise(elementwise_binary greater "value1 > value2" int float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-mlel_spv_elementwise(elementwise_binary greater_equal "value1 >= value2" int float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-
-# Activation functions
-mlel_spv_elementwise(elementwise_unary erf "erf(value1)" float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-mlel_spv_elementwise(elementwise_unary sigmoid "1.0 / (1.0 + exp(-value1))" float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-mlel_spv_elementwise(elementwise_unary tanh "tanh_clamped(value1)" float16_t bfloat16_t float8_e5m2_t float8_e4m3_t float)
-
 # Reduce
 macro(mlel_spv_reduce NAME INIT OPERATION TYPES)
     foreach(TYPE ${TYPES})
         set(INPUT "${CMAKE_CURRENT_BINARY_DIR}/reduce.comp")
-        set(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/reduce_${NAME}_${TYPE}.spv")
+        string(TOUPPER "reduce_${NAME}" OP_NAME)
+        set(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/reduce_${OP_NAME}_${TYPE}.spv")
 
         mlel_generate_glsl(
             INPUT ${INPUT}
@@ -363,39 +275,33 @@ else()
     set(ESCAPE_CHAR "")
 endif()
 
-mlel_spv_reduce(all "true" "result && value" "bool")
-mlel_spv_reduce(any "false" "result || value" "bool")
-mlel_spv_reduce(
-    max
-    "(pushConstants.nanMode == NAN_MODE_IGNORE) ? COMP_T(NAN) : COMP_T(${ESCAPE_CHAR}%in_out_t_lowest${ESCAPE_CHAR}%)"
-    "max(result, value)"
-    "int8_t;int16_t;int;float16_t;bfloat16_t;float8_e5m2_t;float8_e4m3_t;float")
-mlel_spv_reduce(
-    min
-    "(pushConstants.nanMode == NAN_MODE_IGNORE) ? COMP_T(NAN) : COMP_T(${ESCAPE_CHAR}%in_out_t_max${ESCAPE_CHAR}%)"
-    "min(result, value)"
-    "int8_t;int16_t;int;float16_t;bfloat16_t;float8_e5m2_t;float8_e4m3_t;float")
-mlel_spv_reduce(product "1" "result * value" "float16_t;bfloat16_t;float8_e5m2_t;float8_e4m3_t;float")
-mlel_spv_reduce(sum "0" "result + value" "int;float16_t;bfloat16_t;float8_e5m2_t;float8_e4m3_t;float")
+include(tosa_shader_variants.cmake)
 
 # Block Match
-macro(mlel_spv_block_match OPERATION SEARCH_TYPE)
+macro(mlel_spv_block_match OPERATION SEARCH_TYPE COST_TYPE)
     set(INPUT "${CMAKE_CURRENT_BINARY_DIR}/${OPERATION}.comp")
-    set(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${OPERATION}_${SEARCH_TYPE}.spv")
+    set(NAME "${OPERATION}_${SEARCH_TYPE}")
+    if("${SEARCH_TYPE}" EQUAL 2)
+        string(APPEND NAME "_${COST_TYPE}")
+    endif()
+    set(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${NAME}.spv")
 
     mlel_generate_glsl(
         INPUT ${INPUT}
         OUTPUT ${OUTPUT}
         REPLACE "warpX=8"
         REPLACE "warpY=8"
-        REPLACE "search_type=${SEARCH_TYPE}")
+        REPLACE "search_type=${SEARCH_TYPE}"
+        REPLACE "cost_t=${COST_TYPE}")
 
     list(APPEND SPV_FILES ${OUTPUT})
 endmacro()
 
-mlel_spv_block_match(block_match "0")
-mlel_spv_block_match(block_match "1")
-mlel_spv_block_match(block_match "2")
+mlel_spv_block_match(block_match "0" uint16_t)
+mlel_spv_block_match(block_match "1" uint16_t)
+# RAW_SAD permits both 8-bit and 16-bit cost tensors.
+mlel_spv_block_match(block_match "2" uint8_t)
+mlel_spv_block_match(block_match "2" uint16_t)
 
 # Optical Flow
 macro(mlel_spv_optical_flow)
@@ -413,5 +319,5 @@ endmacro()
 
 mlel_spv_optical_flow()
 
-# Generate header file with SPIR-V modules
-mlel_generate_spv_inc()
+# Generate independently compiled SPIR-V modules and their lookup registry
+mlel_generate_spv_library()

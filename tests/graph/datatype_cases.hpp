@@ -89,9 +89,8 @@
  * accumulators, pooling and reductions, floating-point arithmetic, booleans beyond
  * CAST/layout, PAD and gather/scatter, packed i4 and i48, nonzero MUL shifts,
  * per-channel RESCALE and double rounding, constant operands, and broadcasting.
- * The generated cases exercise the shader path selected by the current build;
- * they do not separately force cached and runtime shader compilation. External
- * CTS/scenario-runner coverage is outside this matrix.
+ * Graph operators always use precompiled shaders; missing variants fail.
+ * External CTS/scenario-runner coverage is outside this matrix.
  */
 
 #include <vulkan/vulkan.hpp>

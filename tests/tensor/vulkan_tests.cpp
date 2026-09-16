@@ -38,14 +38,14 @@ vk::raii::ShaderModule createShaderModule(const vk::raii::Device &device, const 
 // FIXME: Temporarily disabled in Darwin due to not being able to pass SSBO's to functions
 TEST_F(MLEmulationLayerGraphForVulkan, CreateTensorComputeShader) {
 
-    const auto spirvModule = mlsdk::el::utils::glslToSpirv(fileToString("tensor_all_access.comp"));
+    const auto spirvModule = compileGlsl(fileToString("tensor_all_access.comp"));
     [[maybe_unused]] const auto shaderModule = createShaderModule((&(*device)), spirvModule);
 }
 
 // FIXME: Temporarily disabled in Darwin due to not being able to pass SSBO's to functions
 TEST_F(MLEmulationLayerGraphForVulkan, TensorArray) {
 
-    const auto spirvModule = mlsdk::el::utils::glslToSpirv(fileToString("tensor_array.comp"));
+    const auto spirvModule = compileGlsl(fileToString("tensor_array.comp"));
     [[maybe_unused]] const auto shaderModule = createShaderModule((&(*device)), spirvModule);
     std::vector<std::shared_ptr<Tensor>> inputTensors;
     std::vector<std::shared_ptr<Tensor>> outputTensors;
@@ -101,7 +101,7 @@ TEST_F(MLEmulationLayerGraphForVulkan, TensorArray) {
 // FIXME: Temporarily disabled in Darwin due to not being able to pass SSBO's to functions
 TEST_F(MLEmulationLayerGraphForVulkan, CreateTensorComputePipeline) {
 
-    const auto spirv = mlsdk::el::utils::glslToSpirv(fileToString("tensor.comp"));
+    const auto spirv = compileGlsl(fileToString("tensor.comp"));
     auto inputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 2, 2, 2}});
     auto outputTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, std::vector<int64_t>{1, 2, 2, 2}});
     const TensorComputePipeline::DescriptorMap descriptorMap = {
@@ -218,7 +218,7 @@ TEST_F(MLEmulationLayerGraphForVulkan, LinearTensorImageAliasingUsesImageRowPitc
 
     auto placeholderTensor = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Uint, dimensions});
     const TensorComputePipeline::DescriptorMap descriptorMap = {{{0, {placeholderTensor}}}};
-    const auto spirv = mlsdk::el::utils::glslToSpirv(fileToString("tensor_image_alias.comp"));
+    const auto spirv = compileGlsl(fileToString("tensor_image_alias.comp"));
     TensorComputePipeline computePipeline{device, descriptorMap, spirv};
     auto [descriptorPool, descriptorSets] = computePipeline.createDescriptorSets(descriptorMap);
 

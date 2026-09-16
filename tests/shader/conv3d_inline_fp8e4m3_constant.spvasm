@@ -4,10 +4,10 @@
 ;
                OpCapability VulkanMemoryModel
                OpCapability Shader
-               OpCapability Int8
                OpCapability TensorsARM
                OpCapability GraphARM
                OpCapability ReplicatedCompositesEXT
+               OpCapability Float16
                OpCapability Float8EXT
                OpExtension "SPV_ARM_tensors"
                OpExtension "SPV_ARM_graph"
@@ -23,17 +23,19 @@
                OpDecorate %output_var Binding 1
                OpDecorate %output_var DescriptorSet 0
        %fp8 = OpTypeFloat 8 Float8E4M3EXT
+       %fp16 = OpTypeFloat 16
        %uint = OpTypeInt 32 0
-      %uchar = OpTypeInt 8 0
        %bool = OpTypeBool
      %uint_0 = OpConstant %uint 0
      %uint_1 = OpConstant %uint 1
+     %uint_2 = OpConstant %uint 2
      %uint_3 = OpConstant %uint 3
      %uint_5 = OpConstant %uint 5
      %uint_6 = OpConstant %uint 6
-    %uchar_0 = OpConstant %uchar 0
+    %fp8_zero = OpConstant %fp8 0.0
       %false = OpConstantFalse %bool
     %fp8_one = OpConstant %fp8 1.0
+   %fp16_one = OpConstant %fp16 1.0
 %shape_rank_1 = OpTypeArray %uint %uint_1
 %shape_rank_3 = OpTypeArray %uint %uint_3
 %shape_rank_5 = OpTypeArray %uint %uint_5
@@ -42,7 +44,7 @@
 %ptr_input_tensor = OpTypePointer UniformConstant %input_tensor
   %input_var = OpVariable %ptr_input_tensor UniformConstant
 %output_shape = OpConstantComposite %shape_rank_5 %uint_1 %uint_1 %uint_1 %uint_1 %uint_1
-%output_tensor = OpTypeTensorARM %fp8 %uint_5 %output_shape
+%output_tensor = OpTypeTensorARM %fp16 %uint_5 %output_shape
 %ptr_output_tensor = OpTypePointer UniformConstant %output_tensor
  %output_var = OpVariable %ptr_output_tensor UniformConstant
 %graph_type = OpTypeGraphARM 1 %input_tensor %output_tensor
@@ -50,10 +52,10 @@
 %weight_tensor = OpTypeTensorARM %fp8 %uint_5 %weight_shape
 %weight_const = OpConstantCompositeReplicateEXT %weight_tensor %fp8_one
 %bias_shape = OpConstantComposite %shape_rank_1 %uint_1
-%bias_tensor = OpTypeTensorARM %fp8 %uint_1 %bias_shape
-%bias_const = OpConstantCompositeReplicateEXT %bias_tensor %fp8_one
-%zero_point_tensor = OpTypeTensorARM %uchar %uint_1 %bias_shape
-%zero_point = OpConstantComposite %zero_point_tensor %uchar_0
+%bias_tensor = OpTypeTensorARM %fp16 %uint_1 %bias_shape
+%bias_const = OpConstantCompositeReplicateEXT %bias_tensor %fp16_one
+%zero_point_tensor = OpTypeTensorARM %fp8 %uint_1 %bias_shape
+%zero_point = OpConstantComposite %zero_point_tensor %fp8_zero
 %vec3_shape = OpConstantComposite %shape_rank_1 %uint_3
 %vec3_tensor = OpTypeTensorARM %uint %uint_1 %vec3_shape
 %stride = OpConstantCompositeReplicateEXT %vec3_tensor %uint_1
@@ -64,6 +66,6 @@
                OpGraphEntryPointARM %graph "conv3d_inline_fp8e4m3_constant" %input_var %output_var
       %graph = OpGraphARM %graph_type
  %input = OpGraphInputARM %input_tensor %uint_0
- %output = OpExtInst %output_tensor %tosa CONV3D %pad %stride %dilation %uint_1 %false %input %weight_const %bias_const %zero_point %zero_point
+ %output = OpExtInst %output_tensor %tosa CONV3D %pad %stride %dilation %uint_2 %false %input %weight_const %bias_const %zero_point %zero_point
                OpGraphSetOutputARM %output %uint_0
                OpGraphEndARM

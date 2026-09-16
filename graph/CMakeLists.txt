@@ -32,17 +32,10 @@ target_sources(MLELGraph PRIVATE
     graph_tosa_1_0_ext_inst.cpp
     tensor.cpp)
 
-# Generated GLSL shaders dependency
-add_dependencies(MLELGraph
-    mlel_generate_glsl_header)
-
-# Pre-compiled SPIR-V modules dependency
-add_dependencies(MLELGraph
-    mlel_generate_spv_header)
-
 target_link_libraries(MLELGraph PUBLIC
     VkLayer_Common
-    nlohmann_json::nlohmann_json)
+    nlohmann_json::nlohmann_json
+    PRIVATE MLELPrecompiledShaders)
 
 target_include_directories(MLELGraph PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>

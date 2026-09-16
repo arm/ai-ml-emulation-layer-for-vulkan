@@ -420,8 +420,8 @@ For Vulkan® SDK installation and driver requirements, see the
 
 ## Cross compilation for AArch64 on x86-64 (Experimental)
 
-The shader pre-compilation step requires a glslang compiler. There are three
-ways to accomplish this when cross-compiling:
+Shader pre-compilation is required and needs a glslang compiler that runs on
+the build host. There are two ways to provide it when cross-compiling:
 
 1. Provide a custom glslang executable. You can direct CMake to a custom
    glslang executable file using the `GLSLANG_EXECUTABLE` option. First, build
@@ -432,14 +432,10 @@ ways to accomplish this when cross-compiling:
 
 2. Install glslang to the system. Under cross compilation, when no custom
    glslang executable is provided, it will be searched from the system using
-   CMake's `find_package`. On Ubuntu, you can install it with
+   CMake's `find_program`. On Ubuntu, you can install it with
    `sudo apt install glslang-tools` or from the source code following the
    previously mentioned documentation. Note that we require version > 15.4.0,
    which may not yet be available in Ubuntu’s official package repositories.
-
-3. Disable shader pre-compilation. This can be done by adding the
-   flag `--disable-precompile-shaders` to the build script command. By doing so,
-   the shaders will be compiled at runtime.
 
 An example build flow using the option 1 would be:
 

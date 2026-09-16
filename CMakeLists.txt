@@ -40,7 +40,6 @@ else()
 endif()
 
 option(VMEL_TESTS_ENABLE "Enable tests" OFF)
-option(VMEL_DISABLE_PRECOMPILE_SHADERS "Disable precompilation of SPIR-V shaders" OFF)
 option(VMEL_USE_FLOAT_AS_DOUBLE "Use float as double precision type" OFF)
 option(VMEL_BUILD_DOCS "Build documentation" OFF)
 

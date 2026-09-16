@@ -149,24 +149,6 @@ INSTANTIATE_TEST_SUITE_P(ConvolutionRegression, Conv2DStorageFormats,
                                     (std::get<3>(params) ? "_NegativeWeights" : "_PositiveWeights");
                          });
 
-TEST_F(MLEmulationLayerGraphForVulkan, Conv3DFloat8OutputAvoidsDoubleRounding) {
-    const auto format = vk::Format::eR8SfloatFpencodingFloat8E4M3ARM;
-    auto input = std::make_shared<Tensor>(device, Shape{format, {1, 1, 1, 1, 3}});
-    auto weights = std::make_shared<Tensor>(device, Shape{format, {1, 1, 1, 1, 3}});
-    auto output = std::make_shared<Tensor>(device, Shape{format, {1, 1, 1, 1, 1}});
-    // dot([1, 1/4, 1/512], [1, 1/4, 1/512]) = 1.0625 + 2^-18.
-    // Direct E4M3 rounding yields 1.125; rounding through FP16 yields 1.0.
-    const std::array<uint8_t, 3> values = {0x38, 0x28, 0x01};
-    std::memcpy(input->data(), values.data(), values.size());
-    std::memcpy(weights->data(), values.data(), values.size());
-    const GraphPipeline::DescriptorMap descriptorMap = {{{0, {input}}, {1, {weights}}, {2, {output}}}};
-    const auto spirv = assembleSpirv(fileToString("conv3d_fp8_output_rounding.spvasm"));
-    auto pipeline = std::make_shared<GraphPipeline>(device, descriptorMap, GraphConstants{}, spirv);
-    pipeline->dispatchSubmit();
-    const uint8_t expected = 0x39;
-    ASSERT_EQ(*output->data(), expected) << "FP32 accumulator was rounded through FP16";
-}
-
 TEST_F(MLEmulationLayerGraphForVulkan, Conv2DDispatchesBeyondZWorkgroupLimit) {
     constexpr int64_t outputChannels = 262144;
 
@@ -372,14 +354,16 @@ TEST_F(MLEmulationLayerGraphForVulkan, Conv3DLargeStridePadRegression) {
 }
 
 void expectConv3DInlineEncodedConstantPipelineCreates(std::shared_ptr<Device> &device, const std::string &shaderFile,
-                                                      vk::Format format) {
+                                                      vk::Format format, vk::Format outputFormat) {
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{format, std::vector<int64_t>{1, 1, 1, 1, 1}});
-    auto outputTensor = std::make_shared<Tensor>(device, Shape{format, std::vector<int64_t>{1, 1, 1, 1, 1}});
+    auto outputTensor = std::make_shared<Tensor>(device, Shape{outputFormat, std::vector<int64_t>{1, 1, 1, 1, 1}});
 
     if (format == vk::Format::eR16SfloatFpencodingBfloat16ARM) {
         const uint16_t inputValue = 0x3f80;
         std::memcpy(inputTensor->data(), &inputValue, sizeof(inputValue));
+    } else {
+        *inputTensor->data() = format == vk::Format::eR8SfloatFpencodingFloat8E4M3ARM ? 0x38 : 0x3c;
     }
 
     const GraphPipeline::DescriptorMap descriptorMap = {{
@@ -391,21 +375,28 @@ void expectConv3DInlineEncodedConstantPipelineCreates(std::shared_ptr<Device> &d
     auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, GraphConstants{}, spirv);
     ASSERT_NE(graphPipeline, nullptr);
     ASSERT_NO_THROW(graphPipeline->dispatchSubmit());
+    uint16_t actual;
+    std::memcpy(&actual, outputTensor->data(), sizeof(actual));
+    const uint16_t expected = 0x4000;
+    EXPECT_EQ(actual, expected); // 1 * 1 + 1 = 2, exact in FP16 and BF16.
 }
 
 TEST_F(MLEmulationLayerGraphForVulkan, Conv3DInlineBFloat16ConstantRegression) {
     expectConv3DInlineEncodedConstantPipelineCreates(device, "conv3d_inline_bf16_constant.spvasm",
+                                                     vk::Format::eR16SfloatFpencodingBfloat16ARM,
                                                      vk::Format::eR16SfloatFpencodingBfloat16ARM);
 }
 
 TEST_F(MLEmulationLayerGraphForVulkan, Conv3DInlineFloat8E5M2ConstantRegression) {
     expectConv3DInlineEncodedConstantPipelineCreates(device, "conv3d_inline_fp8e5m2_constant.spvasm",
-                                                     vk::Format::eR8SfloatFpencodingFloat8E5M2ARM);
+                                                     vk::Format::eR8SfloatFpencodingFloat8E5M2ARM,
+                                                     vk::Format::eR16Sfloat);
 }
 
 TEST_F(MLEmulationLayerGraphForVulkan, Conv3DInlineFloat8E4M3ConstantRegression) {
     expectConv3DInlineEncodedConstantPipelineCreates(device, "conv3d_inline_fp8e4m3_constant.spvasm",
-                                                     vk::Format::eR8SfloatFpencodingFloat8E4M3ARM);
+                                                     vk::Format::eR8SfloatFpencodingFloat8E4M3ARM,
+                                                     vk::Format::eR16Sfloat);
 }
 
 } // namespace

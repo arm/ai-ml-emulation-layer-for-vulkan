@@ -221,7 +221,6 @@ class ComputePipeline : public ComputePipelineBase {
     VkPipeline pipeline;
 
     static const uint32_t warp1D = 64;
-    static constexpr std::string_view warp1DSv = "64";
     static const uint32_t MAX_CONST_LEN = 32;
 };
 
@@ -236,6 +235,8 @@ class Argmax : public ComputePipeline {
            const std::shared_ptr<TensorDescriptor> &_output, uint32_t _axis, uint32_t _nanMode,
            const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat inputFormat);
+
   private:
     struct PushConstant {
         uint32_t axis;
@@ -246,9 +247,6 @@ class Argmax : public ComputePipeline {
 
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &input) const;
 
     PushConstant pushConstant;
 
@@ -267,6 +265,8 @@ class ArithmeticRightShift : public ComputePipeline {
                          const std::shared_ptr<TensorDescriptor> &_input2,
                          const std::shared_ptr<TensorDescriptor> &_output, bool _round, const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat outputFormat);
+
   private:
     struct PushConstant {
         uint32_t round;
@@ -277,9 +277,6 @@ class ArithmeticRightShift : public ComputePipeline {
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input1,
                                       const std::shared_ptr<TensorDescriptor> &input2,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &output) const;
 
     PushConstant pushConstant;
 
@@ -298,6 +295,9 @@ class AvgPool2D : public ComputePipeline {
               const std::vector<int32_t> &_stride, const std::vector<int32_t> &_pad, uint32_t _accType,
               int8_t _inputZeroPoint, int8_t _outputZeroPoint, const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat outputFormat,
+                                   uint32_t accType);
+
   private:
     struct PushConstant {
         int32_t kernel[2];
@@ -314,9 +314,6 @@ class AvgPool2D : public ComputePipeline {
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
 
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &output, uint32_t accType) const;
-
     PushConstant pushConstant;
 
     static constexpr std::string_view shaderName = "avgpool2d";
@@ -332,13 +329,12 @@ class Cast : public ComputePipeline {
          const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
          const std::shared_ptr<TensorDescriptor> &_output, const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat inputFormat,
+                                   VkFormat outputFormat);
+
   private:
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &input,
-                            const std::shared_ptr<TensorDescriptor> &output) const;
 
     static constexpr std::string_view shaderName = "cast";
 };
@@ -354,6 +350,8 @@ class Clamp : public ComputePipeline {
           const std::shared_ptr<TensorDescriptor> &_output, real_t _min, real_t _max, uint32_t _nanMode,
           const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat outputFormat);
+
   private:
     struct PushConstant {
         real_t min;
@@ -365,9 +363,6 @@ class Clamp : public ComputePipeline {
 
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &output) const;
 
     PushConstant pushConstant;
 
@@ -385,6 +380,8 @@ class Concat : public ComputePipeline {
            const std::shared_ptr<TensorDescriptor> &_output, uint32_t _axis, uint32_t _offset,
            const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat outputFormat);
+
   private:
     struct PushConstant {
         uint32_t axis;
@@ -395,9 +392,6 @@ class Concat : public ComputePipeline {
 
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &output) const;
 
     void cmdDispatch(VkCommandBuffer commandBuffer) override;
 
@@ -420,6 +414,9 @@ class Conv2D : public ComputePipeline {
            int8_t _weightZeroPoint, uint32_t _accType, const std::array<uint32_t, 3> &_maxGroupCount,
            const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat inputFormat,
+                                   VkFormat outputFormat, VkFormat weightsFormat, uint32_t accType);
+
   private:
     struct PushConstant {
         int32_t inputZeroPoint;
@@ -438,11 +435,6 @@ class Conv2D : public ComputePipeline {
                                       const std::shared_ptr<TensorDescriptor> &output,
                                       const std::shared_ptr<TensorDescriptor> &weights,
                                       const std::shared_ptr<TensorDescriptor> &biases) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &input,
-                            const std::shared_ptr<TensorDescriptor> &output,
-                            const std::shared_ptr<TensorDescriptor> &weights, uint32_t accType) const;
 
     void cmdDispatch(VkCommandBuffer commandBuffer) override;
 
@@ -469,6 +461,9 @@ class Conv3D : public ComputePipeline {
            const std::vector<int32_t> &_stride, const std::vector<int32_t> &_dilation, int8_t _inputZeroPoint,
            int8_t _weightZeroPoint, uint32_t _accType, const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat inputFormat,
+                                   VkFormat outputFormat, VkFormat weightsFormat, uint32_t accType);
+
   private:
     struct PushConstant {
         int32_t inputZeroPoint;
@@ -486,11 +481,6 @@ class Conv3D : public ComputePipeline {
                                       const std::shared_ptr<TensorDescriptor> &output,
                                       const std::shared_ptr<TensorDescriptor> &weights,
                                       const std::shared_ptr<TensorDescriptor> &biases) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &input,
-                            const std::shared_ptr<TensorDescriptor> &output,
-                            const std::shared_ptr<TensorDescriptor> &weights, uint32_t accType) const;
 
     PushConstant pushConstant;
 
@@ -511,6 +501,9 @@ class DepthwiseConv2D : public ComputePipeline {
                     const std::vector<int32_t> &_dilation, int8_t _inputZeroPoint, int8_t _weightZeroPoint,
                     uint32_t _accType, const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat inputFormat,
+                                   VkFormat outputFormat, VkFormat weightsFormat, uint32_t accType);
+
   private:
     struct PushConstant {
         int32_t inputZeroPoint;
@@ -529,11 +522,6 @@ class DepthwiseConv2D : public ComputePipeline {
                                       const std::shared_ptr<TensorDescriptor> &weights,
                                       const std::shared_ptr<TensorDescriptor> &biases) const;
 
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &input,
-                            const std::shared_ptr<TensorDescriptor> &output,
-                            const std::shared_ptr<TensorDescriptor> &weights, uint32_t accType) const;
-
     PushConstant pushConstant;
 
     static constexpr std::string_view shaderName = "depthwise_conv2d";
@@ -549,8 +537,11 @@ class ElementwiseBinary : public ComputePipeline {
                       VkDevice _device, const std::shared_ptr<PipelineCache> &_pipelineCache,
                       const std::shared_ptr<TensorDescriptor> &_input1,
                       const std::shared_ptr<TensorDescriptor> &_input2,
-                      const std::shared_ptr<TensorDescriptor> &_output, uint32_t _nanMode, const std::string &debugName,
-                      const std::string_view &_operation);
+                      const std::shared_ptr<TensorDescriptor> &_output, uint32_t _nanMode,
+                      const std::string &debugName);
+
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat inputFormat,
+                                   VkFormat outputFormat, const std::string &debugName);
 
   private:
     struct PushConstant {
@@ -562,11 +553,6 @@ class ElementwiseBinary : public ComputePipeline {
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input1,
                                       const std::shared_ptr<TensorDescriptor> &input2,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &input,
-                            const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName,
-                            const std::string_view &operation) const;
 
     PushConstant pushConstant;
     static constexpr std::string_view shaderName = "elementwise_binary";
@@ -581,15 +567,14 @@ class ElementwiseUnary : public ComputePipeline {
     ElementwiseUnary(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader,
                      VkDevice _device, const std::shared_ptr<PipelineCache> &_pipelineCache,
                      const std::shared_ptr<TensorDescriptor> &_input1, const std::shared_ptr<TensorDescriptor> &_output,
-                     const std::string &debugName, const std::string_view &_operation);
+                     const std::string &debugName);
+
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat outputFormat,
+                                   const std::string &debugName);
 
   private:
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input1,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName,
-                            const std::string_view &operation) const;
 
     static constexpr std::string_view shaderName = "elementwise_unary";
 };
@@ -605,6 +590,8 @@ class Fft2D : public ComputePipeline {
           const std::shared_ptr<TensorDescriptor> &_inputImag, const std::shared_ptr<TensorDescriptor> &_outputReal,
           const std::shared_ptr<TensorDescriptor> &_outputImag, bool _inverse, const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache);
+
   private:
     struct PushConstant {
         float signValue;
@@ -617,7 +604,6 @@ class Fft2D : public ComputePipeline {
                                       const std::shared_ptr<TensorDescriptor> &outputReal,
                                       const std::shared_ptr<TensorDescriptor> &outputImag) const;
 
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache) const;
     PushConstant pushConstant;
 
     static constexpr std::string_view shaderName = "fft2d";
@@ -634,14 +620,13 @@ class Gather : public ComputePipeline {
            const std::shared_ptr<TensorDescriptor> &_indices, const std::shared_ptr<TensorDescriptor> &_output,
            const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat indicesFormat,
+                                   VkFormat outputFormat);
+
   private:
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &values,
                                       const std::shared_ptr<TensorDescriptor> &indices,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &indices,
-                            const std::shared_ptr<TensorDescriptor> &output) const;
 
     static constexpr std::string_view shaderName = "gather";
 };
@@ -657,6 +642,9 @@ class Matmul : public ComputePipeline {
            const std::shared_ptr<TensorDescriptor> &_input2, const std::shared_ptr<TensorDescriptor> &_output,
            int32_t _inputZeroPoint1, int32_t _inputZeroPoint2, const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat input1Format,
+                                   VkFormat outputFormat);
+
   private:
     struct PushConstant {
         int32_t inputZeroPoint1;
@@ -668,10 +656,6 @@ class Matmul : public ComputePipeline {
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input1,
                                       const std::shared_ptr<TensorDescriptor> &input2,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &input1,
-                            const std::shared_ptr<TensorDescriptor> &output) const;
 
     PushConstant pushConstant;
 
@@ -690,6 +674,8 @@ class MaxPool2D : public ComputePipeline {
               const std::vector<int32_t> &_stride, const std::vector<int32_t> &_pad, uint32_t _nanMode,
               const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat outputFormat);
+
   private:
     struct PushConstant {
         int32_t kernel[2];
@@ -703,9 +689,6 @@ class MaxPool2D : public ComputePipeline {
 
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &output, uint32_t _nanMode) const;
 
     PushConstant pushConstant;
 
@@ -723,6 +706,9 @@ class Mul : public ComputePipeline {
         const std::shared_ptr<TensorDescriptor> &_input2, const std::shared_ptr<TensorDescriptor> &_output,
         uint32_t _shift, const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat input1Format,
+                                   VkFormat outputFormat);
+
   private:
     struct PushConstant {
         uint32_t shift;
@@ -733,10 +719,6 @@ class Mul : public ComputePipeline {
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input1,
                                       const std::shared_ptr<TensorDescriptor> &input2,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &input1,
-                            const std::shared_ptr<TensorDescriptor> &output) const;
 
     PushConstant pushConstant;
 
@@ -754,6 +736,8 @@ class Negate : public ComputePipeline {
            const std::shared_ptr<TensorDescriptor> &_output, int32_t _inputZeroPoint, int32_t _outputZeroPoint,
            const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat outputFormat);
+
   private:
     struct PushConstant {
         int32_t inputZeroPoint;
@@ -764,9 +748,6 @@ class Negate : public ComputePipeline {
 
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &output) const;
 
     PushConstant pushConstant;
 
@@ -784,6 +765,8 @@ class Pad : public ComputePipeline {
         const std::shared_ptr<TensorDescriptor> &_output, const std::shared_ptr<TensorDescriptor> &_padding,
         real_t _padConst, int32_t _padConstInt, const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat outputFormat);
+
   private:
     struct PushConstant {
         real_t padConst;
@@ -795,9 +778,6 @@ class Pad : public ComputePipeline {
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output,
                                       const std::shared_ptr<TensorDescriptor> &padding) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &output) const;
 
     PushConstant pushConstant;
 
@@ -813,7 +793,10 @@ class Reduce : public ComputePipeline {
     Reduce(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, VkDevice _device,
            const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
            const std::shared_ptr<TensorDescriptor> &_output, uint32_t _axis, uint32_t _nanMode,
-           const std::string &debugName, const std::string &_init, const std::string_view &_operation);
+           const std::string &debugName);
+
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat outputFormat,
+                                   const std::string &name);
 
   private:
     struct PushConstant {
@@ -825,10 +808,6 @@ class Reduce : public ComputePipeline {
 
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &output, const std::string &name,
-                            const std::string &init, const std::string_view &operation) const;
 
     PushConstant pushConstant;
 
@@ -848,6 +827,10 @@ class Rescale : public ComputePipeline {
             bool _scale32, bool _doubleRound, bool _perChannel, bool _inputUnsigned, bool _outputUnsigned,
             const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat inputFormat,
+                                   VkFormat outputFormat, VkFormat multiplierFormat, bool inputUnsigned,
+                                   bool outputUnsigned);
+
   private:
     struct PushConstant {
         int32_t inputZeroPoint;
@@ -860,12 +843,6 @@ class Rescale : public ComputePipeline {
                                       const std::shared_ptr<TensorDescriptor> &output,
                                       const std::shared_ptr<TensorDescriptor> &multiplier,
                                       const std::shared_ptr<TensorDescriptor> &shift) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &input,
-                            const std::shared_ptr<TensorDescriptor> &output,
-                            const std::shared_ptr<TensorDescriptor> &multiplier, bool inputUnsigned,
-                            bool outputUnsigned) const;
 
     PushConstant pushConstant;
 
@@ -882,11 +859,11 @@ class Reshape : public ComputePipeline {
             const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
             const std::shared_ptr<TensorDescriptor> &_output, const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat outputFormat);
+
   private:
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &output) const;
 
     static constexpr std::string_view shaderName = "reshape";
 };
@@ -903,6 +880,9 @@ class Resize : public ComputePipeline {
            const std::vector<int32_t> &_offset, const std::vector<int32_t> &_border, uint32_t _mode,
            const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat inputFormat,
+                                   VkFormat outputFormat);
+
   private:
     struct PushConstant {
         int32_t scale[4];
@@ -916,10 +896,6 @@ class Resize : public ComputePipeline {
 
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &input,
-                            const std::shared_ptr<TensorDescriptor> &output) const;
 
     PushConstant pushConstant;
 
@@ -936,6 +912,8 @@ class Reverse : public ComputePipeline {
             const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
             const std::shared_ptr<TensorDescriptor> &_output, uint32_t _axis, const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat outputFormat);
+
   private:
     struct PushConstant {
         uint32_t axis;
@@ -945,9 +923,6 @@ class Reverse : public ComputePipeline {
 
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &output) const;
 
     PushConstant pushConstant;
 
@@ -965,12 +940,12 @@ class Rfft2D : public ComputePipeline {
            const std::shared_ptr<TensorDescriptor> &_outputReal, const std::shared_ptr<TensorDescriptor> &_outputImag,
            const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache);
+
   private:
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &outputReal,
                                       const std::shared_ptr<TensorDescriptor> &outputImag) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache) const;
 
     static constexpr std::string_view shaderName = "rfft2d";
 };
@@ -986,15 +961,14 @@ class Scatter : public ComputePipeline {
             const std::shared_ptr<TensorDescriptor> &_values, const std::shared_ptr<TensorDescriptor> &_indices,
             const std::shared_ptr<TensorDescriptor> &_output, const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat indicesFormat,
+                                   VkFormat outputFormat);
+
   private:
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &values,
                                       const std::shared_ptr<TensorDescriptor> &indices,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &indices,
-                            const std::shared_ptr<TensorDescriptor> &output) const;
 
     static constexpr std::string_view shaderName = "scatter";
 };
@@ -1010,14 +984,13 @@ class Select : public ComputePipeline {
            const std::shared_ptr<TensorDescriptor> &_input2, const std::shared_ptr<TensorDescriptor> &_input3,
            const std::shared_ptr<TensorDescriptor> &_output, const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat outputFormat);
+
   private:
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input1,
                                       const std::shared_ptr<TensorDescriptor> &input2,
                                       const std::shared_ptr<TensorDescriptor> &input3,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &output) const;
 
     static constexpr std::string_view shaderName = "select";
 };
@@ -1033,6 +1006,8 @@ class Slice : public ComputePipeline {
           const std::shared_ptr<TensorDescriptor> &_output, const std::vector<uint32_t> &_start,
           const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat inputFormat);
+
   private:
     struct PushConstant {
         uint32_t start[MAX_CONST_LEN];
@@ -1042,9 +1017,6 @@ class Slice : public ComputePipeline {
 
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &input) const;
 
     PushConstant pushConstant;
     static constexpr std::string_view shaderName = "slice";
@@ -1061,14 +1033,13 @@ class Table : public ComputePipeline {
           const std::shared_ptr<TensorDescriptor> &_output, const std::shared_ptr<TensorDescriptor> &_table,
           const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat inputFormat,
+                                   VkFormat outputFormat);
+
   private:
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output,
                                       const std::shared_ptr<TensorDescriptor> &table) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &input,
-                            const std::shared_ptr<TensorDescriptor> &output) const;
 
     static constexpr std::string_view shaderName = "table";
 };
@@ -1083,12 +1054,11 @@ class Tile : public ComputePipeline {
          const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
          const std::shared_ptr<TensorDescriptor> &_output, const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat outputFormat);
+
   private:
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &output) const;
 
     static constexpr std::string_view shaderName = "tile";
 };
@@ -1104,6 +1074,8 @@ class Transpose : public ComputePipeline {
               const std::shared_ptr<TensorDescriptor> &_output, const std::vector<uint32_t> &_perms,
               const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat outputFormat);
+
   private:
     struct PushConstant {
         uint32_t perms[MAX_CONST_LEN];
@@ -1113,9 +1085,6 @@ class Transpose : public ComputePipeline {
 
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &output) const;
 
     PushConstant pushConstant;
 
@@ -1135,6 +1104,9 @@ class TransposeConv2D : public ComputePipeline {
                     const std::vector<int32_t> &_outPad, const std::vector<int32_t> &_stride, int8_t _inputZeroPoint,
                     int8_t _weightZeroPoint, uint32_t _accType, const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat inputFormat,
+                                   VkFormat outputFormat, VkFormat weightsFormat, uint32_t accType);
+
   private:
     struct PushConstant {
         int32_t inputZeroPoint;
@@ -1150,11 +1122,6 @@ class TransposeConv2D : public ComputePipeline {
                                       const std::shared_ptr<TensorDescriptor> &output,
                                       const std::shared_ptr<TensorDescriptor> &weights,
                                       const std::shared_ptr<TensorDescriptor> &biases) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                            const std::shared_ptr<TensorDescriptor> &input,
-                            const std::shared_ptr<TensorDescriptor> &output,
-                            const std::shared_ptr<TensorDescriptor> &weights, uint32_t accType) const;
 
     PushConstant pushConstant;
 
@@ -1179,14 +1146,15 @@ class BlockMatch : public ComputePipeline {
                const std::vector<uint32_t> &windowOffsets, const std::vector<uint32_t> &padding, uint32_t searchPattern,
                SearchType searchType, const std::string &debugName);
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, SearchType searchType,
+                                   VkFormat costFormat);
+
   private:
     DescriptorMap createDescriptorMap(const std::shared_ptr<TensorDescriptor> &inTemplate,
                                       const std::shared_ptr<TensorDescriptor> &inSearch,
                                       const std::optional<std::shared_ptr<TensorDescriptor>> &outVectors,
                                       const std::optional<std::shared_ptr<TensorDescriptor>> &outCosts,
                                       SearchType searchType) const;
-
-    SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, SearchType searchType) const;
 
     SpecConstants createSpecConstants(const std::vector<uint32_t> &kernelSizes,
                                       const std::vector<uint32_t> &searchWindowSizes,

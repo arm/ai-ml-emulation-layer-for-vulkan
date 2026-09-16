@@ -15,10 +15,9 @@
 #include <vulkan/vulkan.hpp>
 
 #include <cstdint>
-#include <map>
+#include <initializer_list>
 #include <string>
-#include <utility>
-#include <vector>
+#include <string_view>
 
 namespace mlsdk::el::compute {
 
@@ -31,22 +30,18 @@ using SpirvBinary = utils::Span<uint32_t>;
 class PipelineCache {
   public:
     using KeyList = std::initializer_list<std::string_view>;
-    using ReplaceList = std::initializer_list<std::pair<std::string_view, std::string_view>>;
 
     PipelineCache(const void *data, size_t size, VkPipelineCache _pipelineCache);
     ~PipelineCache() = default;
 
-    SpirvBinary lookup(std::string_view shaderName, const KeyList &keys, const ReplaceList &repl);
+    // Embedded SPIR-V remains valid for the layer's lifetime; missing variants throw.
+    SpirvBinary lookup(std::string_view shaderName, const KeyList &keys);
     VkPipelineCache getPipelineCache() const;
 
   private:
-    using Entry = std::pair<std::vector<uint32_t>, uint32_t>;
-
     VkPipelineCache pipelineCache;
-    std::map<std::string, Entry> cache;
 
     static std::string makeKey(std::string_view shaderName, const KeyList &keys);
-    static std::vector<uint32_t> replaceCompileGlsl(std::string_view glslSource, const ReplaceList &replaceList);
 };
 
 } // namespace mlsdk::el::compute

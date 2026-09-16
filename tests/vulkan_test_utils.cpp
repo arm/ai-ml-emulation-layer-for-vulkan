@@ -67,8 +67,18 @@ std::string fileToString(const std::string &filename) {
     return str;
 }
 
+std::vector<uint32_t> compileGlsl(const std::string &text) {
+    auto spirv = utils::glslToSpirv(text);
+    spvtools::SpirvTools tools{SPV_ENV_VULKAN_1_3};
+    tools.SetMessageConsumer(sprivMessageConsumer);
+    if (!tools.Validate(spirv)) {
+        throw std::runtime_error("Failed to validate compiled test shader for Vulkan 1.3");
+    }
+    return spirv;
+}
+
 std::vector<uint32_t> assembleSpirv(const std::string &text) {
-    spvtools::SpirvTools tools{SPV_ENV_UNIVERSAL_1_6};
+    spvtools::SpirvTools tools{SPV_ENV_VULKAN_1_3};
 
     if (!tools.IsValid()) {
         throw std::runtime_error("Failed to instantiate SPIR-V tools");

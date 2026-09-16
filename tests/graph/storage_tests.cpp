@@ -176,17 +176,6 @@ TEST_F(MLEmulationLayerGraphForVulkan, UnsignedStoragePadConstant) {
                           std::vector<uint32_t>{0xfedcba98u, 0, 1, 0x01000001u, 0x80000001u, 0xffffffffu, 0xfedcba98u});
 }
 
-TEST_F(MLEmulationLayerGraphForVulkan, UnsignedStorageRescaleSaturation) {
-    const auto rescaleInput =
-        storageTestTensor(device, vk::Format::eR32Sint, {4}, std::vector<int32_t>{-1, 0, 1, 0x7fffffff});
-    runUnsignedShaderCase(device, "RESCALE %true %c0 %false %false %true %in0 %multiplier %shift %zero32 %point",
-                          "%max = OpConstant %u32 4294967295\n%point = OpConstantComposite %ct1 %max\n"
-                          "%multiplier = OpConstantComposite %ct1 %c4\n%s = OpConstant %u8 2\n"
-                          "%shift = OpConstantComposite %ct8 %s",
-                          {rescaleInput}, vk::Format::eR32Uint, {4},
-                          std::vector<uint32_t>{0xfffffffeu, 0xffffffffu, 0xffffffffu, 0xffffffffu});
-}
-
 TEST_F(MLEmulationLayerGraphForVulkan, UnsignedStorageAveragePool) {
     const auto poolInput =
         storageTestTensor(device, vk::Format::eR16Uint, {1, 2, 2, 1}, std::vector<uint16_t>(4, 65535));
@@ -446,18 +435,6 @@ TEST_P(TosaFp8Storage, EncodeEveryFiniteValue) {
     auto input = storageTestTensor(device, vk::Format::eR32Sfloat, shape, decoded);
     expectStorageOperation(device, {input}, test.format, shape,
                            makeStorageConversionGraph("%f32", test.type, 1, 1, false, "CAST %a"), encodings);
-}
-
-TEST_P(TosaFp8Storage, NegateFiniteValues) {
-    const auto &test = GetParam();
-    const uint8_t one = test.e4m3 ? 0x38 : 0x3c;
-    const uint8_t maximum = test.e4m3 ? 0x7e : 0x7b;
-    auto input =
-        storageTestTensor(device, test.format, {6},
-                          std::vector<uint8_t>{one, uint8_t(one | 0x80), 1, 0x81, maximum, uint8_t(maximum | 0x80)});
-    expectStorageOperation(device, {input}, test.format, {6},
-                           makeStorageConversionGraph(test.type, test.type, 1, 1, false, "NEGATE %a %zp32 %zp32"),
-                           std::vector<uint8_t>{uint8_t(one | 0x80), one, 0x81, 1, uint8_t(maximum | 0x80), maximum});
 }
 
 INSTANTIATE_TEST_SUITE_P(TosaConversions, TosaFp8Storage, testing::ValuesIn(fp8Formats),

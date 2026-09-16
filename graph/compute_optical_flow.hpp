@@ -68,6 +68,8 @@ class ComputePipeline {
     ComputePipeline &operator=(const ComputePipeline &) = delete;
     virtual ~ComputePipeline();
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, std::string_view shaderName);
+
     void makePipeline();
     void setInputStorage(VkCommandBuffer cmdBuf, uint32_t binding, const std::shared_ptr<Image> &image,
                          VkSampler sampler = VK_NULL_HANDLE);
@@ -83,7 +85,6 @@ class ComputePipeline {
     void dispatchPipeline(VkCommandBuffer cmdBuf);
 
   private:
-    SpirvBinary createSpirv(std::string_view shaderName) const;
     void setCombinedImageSampler(uint32_t binding, const std::shared_ptr<Image> &image, VkSampler sampler);
     void setOutputImage(uint32_t binding, const std::shared_ptr<Image> &image);
     void setImage(uint32_t binding, const std::shared_ptr<Image> &image, VkDescriptorType descriptorType,
@@ -123,6 +124,7 @@ template <typename T> void ComputePipeline::setPushConstants(VkCommandBuffer cmd
 
 class RGBToY : public ComputePipeline {
   public:
+    static constexpr std::string_view shaderName = "rgb_to_y";
     RGBToY(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
            const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> srcRGBImage,
            const std::shared_ptr<Image> &dstDownsampledImage, std::shared_ptr<Image> dstFullImage,
@@ -153,7 +155,6 @@ class RGBToY : public ComputePipeline {
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
-    static constexpr std::string_view shaderName = "rgb_to_y";
     std::shared_ptr<Image> srcImage_;
     std::shared_ptr<Image> dstYDownsampled_;
     std::shared_ptr<Image> dstYFull_;
@@ -177,6 +178,7 @@ class RGBToY : public ComputePipeline {
 
 class Downsample : public ComputePipeline {
   public:
+    static constexpr std::string_view shaderName = "downsample";
     Downsample(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
                const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> src,
                const std::shared_ptr<Image> &dst, const std::string &debugName);
@@ -200,7 +202,6 @@ class Downsample : public ComputePipeline {
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
-    static constexpr std::string_view shaderName = "downsample";
     std::shared_ptr<Image> srcImage_;
     std::shared_ptr<Image> dstImage_;
     SpecConstants specConstants_;
@@ -219,6 +220,7 @@ class Downsample : public ComputePipeline {
 
 class MVProcessAndWarp : public ComputePipeline {
   public:
+    static constexpr std::string_view shaderName = "mv_process_and_warp";
     MVProcessAndWarp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader,
                      VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
                      std::shared_ptr<Image> srcImage, std::shared_ptr<Image> _srcFlow,
@@ -246,7 +248,6 @@ class MVProcessAndWarp : public ComputePipeline {
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
-    static constexpr std::string_view shaderName = "mv_process_and_warp";
     std::shared_ptr<Image> srcSearch_;
     std::shared_ptr<Image> srcFlow_;
     std::shared_ptr<Image> dstWarped_;
@@ -270,6 +271,7 @@ class MVProcessAndWarp : public ComputePipeline {
 
 class DenseWarp : public ComputePipeline {
   public:
+    static constexpr std::string_view shaderName = "dense_warp";
     DenseWarp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
               const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> srcImage,
               std::shared_ptr<Image> _srcFlow, const std::shared_ptr<Image> &dstImage, float inputFlowScale,
@@ -295,7 +297,6 @@ class DenseWarp : public ComputePipeline {
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
-    static constexpr std::string_view shaderName = "dense_warp";
     std::shared_ptr<Image> srcSearch_;
     std::shared_ptr<Image> srcFlow_;
     std::shared_ptr<Image> dstWarped_;
@@ -317,6 +318,7 @@ class DenseWarp : public ComputePipeline {
 
 class MedianFilter : public ComputePipeline {
   public:
+    static constexpr std::string_view shaderName = "median_filter";
     MedianFilter(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
                  const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> srcImage,
                  const std::shared_ptr<Image> &dstImage, float outputFlowScale, const std::string &debugName);
@@ -340,7 +342,6 @@ class MedianFilter : public ComputePipeline {
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
-    static constexpr std::string_view shaderName = "median_filter";
     std::shared_ptr<Image> srcFlow_;
     std::shared_ptr<Image> dstFlow_;
     SpecConstants specConstants_;
@@ -359,6 +360,7 @@ class MedianFilter : public ComputePipeline {
 
 class BilateralFilter : public ComputePipeline {
   public:
+    static constexpr std::string_view shaderName = "bilateral_filter";
     BilateralFilter(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
                     const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> srcImage,
                     std::shared_ptr<Image> srcFlow, const std::shared_ptr<Image> &dstFlow, float outputFlowScale,
@@ -383,7 +385,6 @@ class BilateralFilter : public ComputePipeline {
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
-    static constexpr std::string_view shaderName = "bilateral_filter";
     std::shared_ptr<Image> srcTemplate_;
     std::shared_ptr<Image> srcFlow_;
     std::shared_ptr<Image> dstFlow_;
@@ -404,6 +405,7 @@ class BilateralFilter : public ComputePipeline {
 
 class SubpixelME : public ComputePipeline {
   public:
+    static constexpr std::string_view shaderName = "subpixel_me";
     SubpixelME(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
                const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> srcImageSearch,
                std::shared_ptr<Image> srcImageTemplate, std::shared_ptr<Image> srcFlow,
@@ -432,7 +434,6 @@ class SubpixelME : public ComputePipeline {
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
-    static constexpr std::string_view shaderName = "subpixel_me";
     std::shared_ptr<Image> srcSearch_;
     std::shared_ptr<Image> srcTemplate_;
     std::shared_ptr<Image> srcFlow_;
@@ -459,6 +460,7 @@ class SubpixelME : public ComputePipeline {
 
 class MVReplace : public ComputePipeline {
   public:
+    static constexpr std::string_view shaderName = "mv_replace";
     MVReplace(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
               const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> mvInput,
               std::shared_ptr<Image> flowBlockMatch, std::shared_ptr<Image> costAtInput,
@@ -489,7 +491,6 @@ class MVReplace : public ComputePipeline {
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
-    static constexpr std::string_view shaderName = "mv_replace";
     std::shared_ptr<Image> srcInputMV_;
     std::shared_ptr<Image> srcBlockMatchFlow_;
     std::shared_ptr<Image> srcInputMVCost_;
@@ -521,6 +522,7 @@ class MVReplace : public ComputePipeline {
 
 class BlockMatch : public ComputePipeline {
   public:
+    static constexpr std::string_view shaderName = "block_match_of";
     using SearchType = common::BlockMatchMode;
 
     BlockMatch(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
@@ -556,7 +558,6 @@ class BlockMatch : public ComputePipeline {
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
-    static constexpr std::string_view shaderName = "block_match_of";
     std::shared_ptr<Image> srcSearch_;
     std::shared_ptr<Image> srcTemplate_;
     std::shared_ptr<Image> dstFlow_;
