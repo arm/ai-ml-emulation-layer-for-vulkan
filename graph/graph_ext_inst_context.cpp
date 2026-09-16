@@ -25,6 +25,18 @@ template <typename T, spv::FPEncoding encoding> bool isFloatEncoding(const spvto
     return f && f->width() == (8 * sizeof(T)) && f->encoding() == encoding;
 }
 
+bool isBFloat16(const spvtools::opt::analysis::Float *type) {
+    return isFloatEncoding<uint16_t, spv::FPEncoding::BFloat16KHR>(type);
+}
+
+bool isFloat8E5M2(const spvtools::opt::analysis::Float *type) {
+    return isFloatEncoding<uint8_t, spv::FPEncoding::Float8E5M2EXT>(type);
+}
+
+bool isFloat8E4M3(const spvtools::opt::analysis::Float *type) {
+    return isFloatEncoding<uint8_t, spv::FPEncoding::Float8E4M3EXT>(type);
+}
+
 template <typename T, spv::FPEncoding encoding>
 void flattenFloatComposite(const spvtools::opt::analysis::CompositeConstant *composite, std::vector<T> &values) {
     const auto &components = composite->GetComponents();
@@ -35,8 +47,15 @@ void flattenFloatComposite(const spvtools::opt::analysis::CompositeConstant *com
             continue;
         }
 
+        if (!isFloatEncoding<T, encoding>(component->type()->AsFloat())) {
+            throw std::runtime_error("Unsupported float constant encoding in composite constant");
+        }
+        if (component->AsNullConstant()) {
+            values.push_back(T(0));
+            continue;
+        }
         const auto *floatConstant = component->AsFloatConstant();
-        if (floatConstant == nullptr || !isFloatEncoding<T, encoding>(floatConstant->type()->AsFloat())) {
+        if (floatConstant == nullptr) {
             throw std::runtime_error("Unsupported float constant encoding in composite constant");
         }
 
@@ -326,9 +345,10 @@ std::shared_ptr<TensorDescriptor> GraphExtInstContext::makeCompositeTensor(const
     case VK_FORMAT_R64_SINT:
         return graphPipeline.makeConstCompositeTensor(format, std::move(dimensions),
                                                       getConstVector<int64_t>(instruction->result_id()).data());
-    case VK_FORMAT_R16_SFLOAT:
-        return graphPipeline.makeConstCompositeTensor(format, std::move(dimensions),
-                                                      getConstVector<float16>(instruction->result_id()).data());
+    case VK_FORMAT_R16_SFLOAT: {
+        const auto fp16Values = getConstVector<uint16_t, spv::FPEncoding::Max>(instruction, dimensions);
+        return graphPipeline.makeConstCompositeTensor(format, std::move(dimensions), fp16Values.data());
+    }
     case VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM: {
         const auto bf16Values = getConstVector<uint16_t, spv::FPEncoding::BFloat16KHR>(instruction, dimensions);
         return graphPipeline.makeConstCompositeTensor(format, std::move(dimensions), bf16Values.data());
@@ -421,10 +441,6 @@ bool GraphExtInstContext::getBoolConstant(const Operand &operand) {
 
     return boolConstant->value();
 }
-
-bool isBFloat16(const analysis::Float *f) { return isFloatEncoding<uint16_t, spv::FPEncoding::BFloat16KHR>(f); }
-bool isFloat8E5M2(const analysis::Float *f) { return isFloatEncoding<uint8_t, spv::FPEncoding::Float8E5M2EXT>(f); }
-bool isFloat8E4M3(const analysis::Float *f) { return isFloatEncoding<uint8_t, spv::FPEncoding::Float8E4M3EXT>(f); }
 
 size_t GraphExtInstContext::getElementCount(const uint32_t id) const {
     const auto dimensions = getConstVector<int64_t>(id);

@@ -36,33 +36,26 @@ void makeAndConnectVirtualTensor(const std::shared_ptr<TensorDescriptor> &tensor
     }
 }
 
-VkFormat accTypeVkFormat(uint32_t accType) {
-    switch (accType) {
-    case 1:
-        return VK_FORMAT_R32_SINT;
-    case 2:
-        return VK_FORMAT_R16_SFLOAT;
-    case 3:
-        return VK_FORMAT_R32_SFLOAT;
-    case 4:
-        return VK_FORMAT_R64_SINT;
-    default:
-        throw std::runtime_error("Unsupported acc type " + std::to_string(accType));
-    }
+const ArithmeticTypeInfo *getTosaArithmeticTypeInfo(VkFormat format, IntegerInterpretation interpretation) {
+    const auto *storage = getFormatInfo(format);
+    const auto type = storage->isInteger && storage->encoding != ScalarType::Bool
+                          ? getIntegerArithmeticType(storage->bitWidth, interpretation)
+                          : storage->encoding;
+    return getArithmeticTypeInfo(type);
 }
 
-std::string_view accTypeString(uint32_t accType) {
+ScalarType accScalarType(uint32_t accType) {
     switch (accType) {
     case 1:
-        return "int32_t";
+        return ScalarType::Int32;
     case 2:
-        return "float16_t";
+        return ScalarType::Float16;
     case 3:
-        return "float";
+        return ScalarType::Float32;
     case 4:
-        return "int64_t";
+        return ScalarType::Int64;
     default:
-        throw std::runtime_error("Unsupported AVG_POOL2D acc type " + std::to_string(accType));
+        throw std::runtime_error("Unsupported acc type " + std::to_string(accType));
     }
 }
 
@@ -624,7 +617,7 @@ DescriptorMap Argmax::createDescriptorMap(const std::shared_ptr<TensorDescriptor
 
 SpirvBinary Argmax::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                 const std::shared_ptr<TensorDescriptor> &input) const {
-    const auto *inType = getFormatInfo(input->getFormat());
+    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -635,6 +628,7 @@ SpirvBinary Argmax::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                       {"%in_t_type%", inType->typeId},
                                       {"%in_t_lowest%", inType->lowest},
                                       {"%in_t%", inType->glslType},
+                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
                                       {"%in_t_comp%", inType->compType},
                                   });
 }
@@ -675,7 +669,7 @@ DescriptorMap ArithmeticRightShift::createDescriptorMap(const std::shared_ptr<Te
 
 SpirvBinary ArithmeticRightShift::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                               const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getFormatInfo(output->getFormat());
+    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -684,6 +678,8 @@ SpirvBinary ArithmeticRightShift::createSpirv(const std::shared_ptr<PipelineCach
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_comp%", inOutType->compType},
+                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                   });
 }
 
@@ -740,9 +736,9 @@ DescriptorMap AvgPool2D::createDescriptorMap(const std::shared_ptr<TensorDescrip
 
 SpirvBinary AvgPool2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                    const std::shared_ptr<TensorDescriptor> &output, const uint32_t accType) const {
-    const auto *inOutType = getFormatInfo(output->getFormat());
+    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
-    const auto accTypeStr = accTypeString(accType);
+    const auto accTypeStr = getArithmeticTypeInfo(accScalarType(accType))->glslType;
     return _pipelineCache->lookup(shaderName,
                                   {
                                       inOutType->glslType,
@@ -754,6 +750,7 @@ SpirvBinary AvgPool2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipeli
                                       {"%in_out_t_lowest%", inOutType->lowest},
                                       {"%in_out_t_max%", inOutType->max},
                                       {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                       {"%in_out_t_type%", inOutType->typeId},
                                       {"%in_out_t_comp%", inOutType->compType},
                                   });
@@ -783,8 +780,8 @@ DescriptorMap Cast::createDescriptorMap(const std::shared_ptr<TensorDescriptor> 
 SpirvBinary Cast::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                               const std::shared_ptr<TensorDescriptor> &input,
                               const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inType = getFormatInfo(input->getFormat());
-    const auto *outType = getFormatInfo(output->getFormat());
+    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -800,7 +797,11 @@ SpirvBinary Cast::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCac
                                       {"%out_t_lowest%", outType->lowest},
                                       {"%out_t_max%", outType->max},
                                       {"%in_t%", inType->glslType},
+                                      {"%in_t_comp%", inType->compType},
+                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
                                       {"%out_t%", outType->glslType},
+                                      {"%out_t_comp%", outType->compType},
+                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                   });
 }
 
@@ -838,7 +839,7 @@ DescriptorMap Clamp::createDescriptorMap(const std::shared_ptr<TensorDescriptor>
 
 SpirvBinary Clamp::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getFormatInfo(output->getFormat());
+    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -847,6 +848,7 @@ SpirvBinary Clamp::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCa
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                       {"%in_out_t_type%", inOutType->typeId},
                                       {"%in_out_t_comp%", inOutType->compType},
                                   });
@@ -895,7 +897,7 @@ void Concat::cmdDispatch(VkCommandBuffer commandBuffer) {
 
 SpirvBinary Concat::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                 const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getFormatInfo(output->getFormat());
+    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -904,6 +906,7 @@ SpirvBinary Concat::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                   });
 }
 
@@ -969,10 +972,10 @@ SpirvBinary Conv2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                 const std::shared_ptr<TensorDescriptor> &input,
                                 const std::shared_ptr<TensorDescriptor> &output,
                                 const std::shared_ptr<TensorDescriptor> &weights, const uint32_t accType) const {
-    const auto *inType = getFormatInfo(input->getFormat());
-    const auto *outType = getFormatInfo(output->getFormat());
-    const auto *weightType = getFormatInfo(weights->getFormat());
-    const auto *accTypeType = getFormatInfo(accTypeVkFormat(accType));
+    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+    const auto *weightType = getTosaArithmeticTypeInfo(weights->getFormat(), IntegerInterpretation::Signed);
+    const auto *accTypeType = getArithmeticTypeInfo(accScalarType(accType));
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -986,10 +989,13 @@ SpirvBinary Conv2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                       {"%warpY%", std::to_string(warpY)},
                                       {"%warpZ%", std::to_string(warpZ)},
                                       {"%in_t%", inType->glslType},
+                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
                                       {"%in_t_type%", inType->typeId},
                                       {"%out_t%", outType->glslType},
+                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                       {"%out_t_type%", outType->typeId},
                                       {"%weight_t%", weightType->glslType},
+                                      {"%weight_t_storage%", getTensorInterfaceGlslType(weights->getFormat())},
                                       {"%weight_t_type%", weightType->typeId},
                                       {"%acc_t_type%", accTypeType->typeId},
                                       {"%acc_t%", accTypeType->glslType},
@@ -1086,10 +1092,10 @@ SpirvBinary Conv3D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                 const std::shared_ptr<TensorDescriptor> &input,
                                 const std::shared_ptr<TensorDescriptor> &output,
                                 const std::shared_ptr<TensorDescriptor> &weights, const uint32_t accType) const {
-    const auto *inType = getFormatInfo(input->getFormat());
-    const auto *outType = getFormatInfo(output->getFormat());
-    const auto *weightType = getFormatInfo(weights->getFormat());
-    const auto *accTypeType = getFormatInfo(accTypeVkFormat(accType));
+    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+    const auto *weightType = getTosaArithmeticTypeInfo(weights->getFormat(), IntegerInterpretation::Signed);
+    const auto *accTypeType = getArithmeticTypeInfo(accScalarType(accType));
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -1101,10 +1107,13 @@ SpirvBinary Conv3D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%in_t%", inType->glslType},
+                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
                                       {"%in_t_type%", inType->typeId},
                                       {"%out_t%", outType->glslType},
+                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                       {"%out_t_type%", outType->typeId},
                                       {"%weight_t%", weightType->glslType},
+                                      {"%weight_t_storage%", getTensorInterfaceGlslType(weights->getFormat())},
                                       {"%weight_t_type%", weightType->typeId},
                                       {"%acc_t_type%", accTypeType->typeId},
                                       {"%acc_t%", accTypeType->glslType},
@@ -1176,10 +1185,10 @@ SpirvBinary DepthwiseConv2D::createSpirv(const std::shared_ptr<PipelineCache> &_
                                          const std::shared_ptr<TensorDescriptor> &output,
                                          const std::shared_ptr<TensorDescriptor> &weights,
                                          const uint32_t accType) const {
-    const auto *inType = getFormatInfo(input->getFormat());
-    const auto *outType = getFormatInfo(output->getFormat());
-    const auto *weightType = getFormatInfo(weights->getFormat());
-    const auto *accTypeType = getFormatInfo(accTypeVkFormat(accType));
+    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+    const auto *weightType = getTosaArithmeticTypeInfo(weights->getFormat(), IntegerInterpretation::Signed);
+    const auto *accTypeType = getArithmeticTypeInfo(accScalarType(accType));
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -1191,10 +1200,13 @@ SpirvBinary DepthwiseConv2D::createSpirv(const std::shared_ptr<PipelineCache> &_
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%in_t%", inType->glslType},
+                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
                                       {"%in_t_type%", inType->typeId},
                                       {"%out_t%", outType->glslType},
+                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                       {"%out_t_type%", outType->typeId},
                                       {"%weight_t%", weightType->glslType},
+                                      {"%weight_t_storage%", getTensorInterfaceGlslType(weights->getFormat())},
                                       {"%weight_t_type%", weightType->typeId},
                                       {"%acc_t_type%", accTypeType->typeId},
                                       {"%acc_t%", accTypeType->glslType},
@@ -1237,8 +1249,8 @@ SpirvBinary ElementwiseBinary::createSpirv(const std::shared_ptr<PipelineCache> 
                                            const std::shared_ptr<TensorDescriptor> &input,
                                            const std::shared_ptr<TensorDescriptor> &output, const std::string &name,
                                            const std::string_view &operation) const {
-    const auto *inType = getFormatInfo(input->getFormat());
-    const auto *outType = getFormatInfo(output->getFormat());
+    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -1250,7 +1262,9 @@ SpirvBinary ElementwiseBinary::createSpirv(const std::shared_ptr<PipelineCache> 
                                       {"%warpX%", warp1DSv},
                                       {"%operation%", operation},
                                       {"%in_t%", inType->glslType},
+                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
                                       {"%out_t%", outType->glslType},
+                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                       {"%in_t_type%", inType->typeId},
                                       {"%out_t_type%", outType->typeId},
                                       {"%in_t_comp%", inType->compType},
@@ -1283,7 +1297,7 @@ DescriptorMap ElementwiseUnary::createDescriptorMap(const std::shared_ptr<Tensor
 SpirvBinary ElementwiseUnary::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                           const std::shared_ptr<TensorDescriptor> &output, const std::string &name,
                                           const std::string_view &operation) const {
-    const auto *inOutType = getFormatInfo(output->getFormat());
+    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -1294,6 +1308,7 @@ SpirvBinary ElementwiseUnary::createSpirv(const std::shared_ptr<PipelineCache> &
                                       {"%warpX%", warp1DSv},
                                       {"%operation%", operation},
                                       {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                       {"%in_out_t_type%", inOutType->typeId},
                                       {"%in_out_t_comp%", inOutType->compType},
                                   });
@@ -1368,8 +1383,8 @@ DescriptorMap Gather::createDescriptorMap(const std::shared_ptr<TensorDescriptor
 SpirvBinary Gather::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                 const std::shared_ptr<TensorDescriptor> &indices,
                                 const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getFormatInfo(output->getFormat());
-    const auto *indicesType = getFormatInfo(indices->getFormat());
+    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+    const auto *indicesType = getTosaArithmeticTypeInfo(indices->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -1379,7 +1394,9 @@ SpirvBinary Gather::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%index_t%", indicesType->glslType},
+                                      {"%index_t_storage%", getTensorInterfaceGlslType(indices->getFormat())},
                                       {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                   });
 }
 
@@ -1421,8 +1438,8 @@ DescriptorMap Matmul::createDescriptorMap(const std::shared_ptr<TensorDescriptor
 SpirvBinary Matmul::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                 const std::shared_ptr<TensorDescriptor> &input1,
                                 const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inType = getFormatInfo(input1->getFormat());
-    const auto *outType = getFormatInfo(output->getFormat());
+    const auto *inType = getTosaArithmeticTypeInfo(input1->getFormat(), IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -1432,8 +1449,11 @@ SpirvBinary Matmul::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%in_t%", inType->glslType},
+                                      {"%in_t_storage%", getTensorInterfaceGlslType(input1->getFormat())},
                                       {"%in_t_type%", inType->typeId},
                                       {"%out_t%", outType->glslType},
+                                      {"%out_t_comp%", outType->compType},
+                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                       {"%out_t_type%", outType->typeId},
                                   });
 }
@@ -1488,7 +1508,7 @@ DescriptorMap MaxPool2D::createDescriptorMap(const std::shared_ptr<TensorDescrip
 
 SpirvBinary MaxPool2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                    const std::shared_ptr<TensorDescriptor> &output, const uint32_t _nanMode) const {
-    const auto *inOutType = getFormatInfo(output->getFormat());
+    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
     const std::string_view init = (_nanMode == NanPropagationMode::Ignore ? "NAN" : inOutType->lowest);
     return _pipelineCache->lookup(shaderName,
@@ -1498,6 +1518,7 @@ SpirvBinary MaxPool2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipeli
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                       {"%in_out_t_lowest%", init},
                                       {"%in_out_t_type%", inOutType->typeId},
                                       {"%in_out_t_comp%", inOutType->compType},
@@ -1542,8 +1563,8 @@ DescriptorMap Mul::createDescriptorMap(const std::shared_ptr<TensorDescriptor> &
 SpirvBinary Mul::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                              const std::shared_ptr<TensorDescriptor> &input1,
                              const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inType = getFormatInfo(input1->getFormat());
-    const auto *outType = getFormatInfo(output->getFormat());
+    const auto *inType = getTosaArithmeticTypeInfo(input1->getFormat(), IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -1555,7 +1576,9 @@ SpirvBinary Mul::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCach
                                       {"%in_t_type%", inType->typeId},
                                       {"%out_t_type%", outType->typeId},
                                       {"%in_t%", inType->glslType},
+                                      {"%in_t_storage%", getTensorInterfaceGlslType(input1->getFormat())},
                                       {"%out_t%", outType->glslType},
+                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                   });
 }
 
@@ -1593,9 +1616,9 @@ DescriptorMap Negate::createDescriptorMap(const std::shared_ptr<TensorDescriptor
 
 SpirvBinary Negate::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                 const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getFormatInfo(output->getFormat());
+    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
-    const std::string_view accType = inOutType->isInteger ? "int32_t" : "float";
+    const std::string_view accType = inOutType->isInteger ? "int" : "float";
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -1604,6 +1627,7 @@ SpirvBinary Negate::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                       {"%in_out_t_type%", inOutType->typeId},
                                       {"%acc_t%", accType},
                                       {"%in_out_t_lowest%", inOutType->lowest},
@@ -1648,7 +1672,7 @@ DescriptorMap Pad::createDescriptorMap(const std::shared_ptr<TensorDescriptor> &
 
 SpirvBinary Pad::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                              const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getFormatInfo(output->getFormat());
+    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -1657,6 +1681,7 @@ SpirvBinary Pad::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCach
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                       {"%in_out_t_type%", inOutType->typeId},
                                   });
 }
@@ -1672,7 +1697,8 @@ Reduce::Reduce(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoade
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output), {&pushConstant, sizeof(pushConstant)},
                       _pipelineCache, createSpirv(_pipelineCache, _input, debugName, _init, _operation), debugName,
                       {_output->getRank()}),
-      pushConstant{createPushConstant(_axis, _nanMode, getFormatInfo(_input->getFormat())->isInteger)} {}
+      pushConstant{createPushConstant(
+          _axis, _nanMode, getTosaArithmeticTypeInfo(_input->getFormat(), IntegerInterpretation::Signed)->isInteger)} {}
 
 Reduce::PushConstant Reduce::createPushConstant(const uint32_t axis, const uint32_t nanMode,
                                                 const bool isInteger) const {
@@ -1698,7 +1724,7 @@ DescriptorMap Reduce::createDescriptorMap(const std::shared_ptr<TensorDescriptor
 SpirvBinary Reduce::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                 const std::shared_ptr<TensorDescriptor> &output, const std::string &name,
                                 const std::string &init, const std::string_view &operation) const {
-    const auto *inOutType = getFormatInfo(output->getFormat());
+    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -1710,6 +1736,7 @@ SpirvBinary Reduce::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                       {"%init%", init},
                                       {"%operation%", operation},
                                       {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                       {"%in_out_t_type%", inOutType->typeId},
                                       {"%in_out_t_comp%", inOutType->compType},
                                   });
@@ -1761,9 +1788,11 @@ SpirvBinary Rescale::createSpirv(const std::shared_ptr<PipelineCache> &_pipeline
                                  const std::shared_ptr<TensorDescriptor> &output,
                                  const std::shared_ptr<TensorDescriptor> &multiplier, const bool inputUnsigned,
                                  const bool outputUnsigned) const {
-    const auto *inType = getFormatInfo(input->getFormat(), inputUnsigned);
-    const auto *outType = getFormatInfo(output->getFormat(), outputUnsigned);
-    const auto *mulType = getFormatInfo(multiplier->getFormat());
+    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), inputUnsigned ? IntegerInterpretation::Unsigned
+                                                                                     : IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(
+        output->getFormat(), outputUnsigned ? IntegerInterpretation::Unsigned : IntegerInterpretation::Signed);
+    const auto *mulType = getTosaArithmeticTypeInfo(multiplier->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -1774,8 +1803,11 @@ SpirvBinary Rescale::createSpirv(const std::shared_ptr<PipelineCache> &_pipeline
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%in_t%", inType->glslType},
+                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
                                       {"%out_t%", outType->glslType},
+                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                       {"%mul_t%", mulType->glslType},
+                                      {"%mul_t_storage%", getTensorInterfaceGlslType(multiplier->getFormat())},
                                       {"%out_t_lowest%", outType->lowest},
                                       {"%out_t_max%", outType->max},
                                   });
@@ -1804,7 +1836,7 @@ DescriptorMap Reshape::createDescriptorMap(const std::shared_ptr<TensorDescripto
 
 SpirvBinary Reshape::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                  const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getFormatInfo(output->getFormat());
+    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -1813,6 +1845,7 @@ SpirvBinary Reshape::createSpirv(const std::shared_ptr<PipelineCache> &_pipeline
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                   });
 }
 
@@ -1866,8 +1899,8 @@ DescriptorMap Resize::createDescriptorMap(const std::shared_ptr<TensorDescriptor
 SpirvBinary Resize::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                 const std::shared_ptr<TensorDescriptor> &input,
                                 const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inType = getFormatInfo(input->getFormat());
-    const auto *outType = getFormatInfo(output->getFormat());
+    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -1877,8 +1910,10 @@ SpirvBinary Resize::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%in_t%", inType->glslType},
+                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
                                       {"%in_t_type%", inType->typeId},
                                       {"%out_t%", outType->glslType},
+                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                       {"%out_t_type%", outType->typeId},
                                       {"%out_t_comp%", outType->compType},
                                   });
@@ -1915,7 +1950,7 @@ DescriptorMap Reverse::createDescriptorMap(const std::shared_ptr<TensorDescripto
 
 SpirvBinary Reverse::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                  const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getFormatInfo(output->getFormat());
+    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -1924,6 +1959,7 @@ SpirvBinary Reverse::createSpirv(const std::shared_ptr<PipelineCache> &_pipeline
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                   });
 }
 
@@ -1987,8 +2023,8 @@ DescriptorMap Scatter::createDescriptorMap(const std::shared_ptr<TensorDescripto
 SpirvBinary Scatter::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                  const std::shared_ptr<TensorDescriptor> &indices,
                                  const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getFormatInfo(output->getFormat());
-    const auto *indicesType = getFormatInfo(indices->getFormat());
+    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+    const auto *indicesType = getTosaArithmeticTypeInfo(indices->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -1998,7 +2034,9 @@ SpirvBinary Scatter::createSpirv(const std::shared_ptr<PipelineCache> &_pipeline
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%index_t%", indicesType->glslType},
+                                      {"%index_t_storage%", getTensorInterfaceGlslType(indices->getFormat())},
                                       {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                   });
 }
 
@@ -2030,7 +2068,7 @@ DescriptorMap Select::createDescriptorMap(const std::shared_ptr<TensorDescriptor
 
 SpirvBinary Select::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                 const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getFormatInfo(output->getFormat());
+    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -2039,6 +2077,7 @@ SpirvBinary Select::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineC
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                   });
 }
 
@@ -2074,7 +2113,7 @@ DescriptorMap Slice::createDescriptorMap(const std::shared_ptr<TensorDescriptor>
 
 SpirvBinary Slice::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                const std::shared_ptr<TensorDescriptor> &input) const {
-    const auto *inOutType = getFormatInfo(input->getFormat());
+    const auto *inOutType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -2083,6 +2122,7 @@ SpirvBinary Slice::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCa
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
                                   });
 }
 
@@ -2113,8 +2153,8 @@ DescriptorMap Table::createDescriptorMap(const std::shared_ptr<TensorDescriptor>
 SpirvBinary Table::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                const std::shared_ptr<TensorDescriptor> &input,
                                const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inType = getFormatInfo(input->getFormat());
-    const auto *outType = getFormatInfo(output->getFormat());
+    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -2124,7 +2164,10 @@ SpirvBinary Table::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCa
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%in_t%", inType->glslType},
+                                      {"%in_t_type%", inType->typeId},
+                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
                                       {"%out_t%", outType->glslType},
+                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                   });
 }
 
@@ -2151,7 +2194,7 @@ DescriptorMap Tile::createDescriptorMap(const std::shared_ptr<TensorDescriptor> 
 
 SpirvBinary Tile::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                               const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getFormatInfo(output->getFormat());
+    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -2160,6 +2203,7 @@ SpirvBinary Tile::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCac
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                   });
 }
 
@@ -2195,7 +2239,7 @@ DescriptorMap Transpose::createDescriptorMap(const std::shared_ptr<TensorDescrip
 
 SpirvBinary Transpose::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
                                    const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getFormatInfo(output->getFormat());
+    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -2204,6 +2248,7 @@ SpirvBinary Transpose::createSpirv(const std::shared_ptr<PipelineCache> &_pipeli
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%in_out_t%", inOutType->glslType},
+                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                   });
 }
 
@@ -2266,10 +2311,10 @@ SpirvBinary TransposeConv2D::createSpirv(const std::shared_ptr<PipelineCache> &_
                                          const std::shared_ptr<TensorDescriptor> &output,
                                          const std::shared_ptr<TensorDescriptor> &weights,
                                          const uint32_t accType) const {
-    const auto *inType = getFormatInfo(input->getFormat());
-    const auto *outType = getFormatInfo(output->getFormat());
-    const auto *weightType = getFormatInfo(weights->getFormat());
-    const auto *accTypeType = getFormatInfo(accTypeVkFormat(accType));
+    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+    const auto *weightType = getTosaArithmeticTypeInfo(weights->getFormat(), IntegerInterpretation::Signed);
+    const auto *accTypeType = getArithmeticTypeInfo(accScalarType(accType));
 
     return _pipelineCache->lookup(shaderName,
                                   {
@@ -2281,10 +2326,13 @@ SpirvBinary TransposeConv2D::createSpirv(const std::shared_ptr<PipelineCache> &_
                                   {
                                       {"%warpX%", warp1DSv},
                                       {"%in_t%", inType->glslType},
+                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
                                       {"%in_t_type%", inType->typeId},
                                       {"%out_t%", outType->glslType},
+                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
                                       {"%out_t_type%", outType->typeId},
                                       {"%weight_t%", weightType->glslType},
+                                      {"%weight_t_storage%", getTensorInterfaceGlslType(weights->getFormat())},
                                       {"%weight_t_type%", weightType->typeId},
                                       {"%acc_t_type%", accTypeType->typeId},
                                       {"%acc_t%", accTypeType->glslType},
@@ -2836,18 +2884,18 @@ void GraphPipeline::makeReduceAny(const std::shared_ptr<TensorDescriptor> &input
 void GraphPipeline::makeReduceMax(const std::shared_ptr<TensorDescriptor> &input,
                                   const std::shared_ptr<TensorDescriptor> &output, const uint32_t axis,
                                   const uint32_t nanMode, const std::string &debugName) {
-    const auto *inOutType = getFormatInfo(output->getFormat());
+    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
     const std::string init =
-        "(pushConstants.nanMode == NAN_MODE_IGNORE) ? IN_OUT_T(NAN) : IN_OUT_T(" + std::string(inOutType->lowest) + ')';
+        "(pushConstants.nanMode == NAN_MODE_IGNORE) ? COMP_T(NAN) : COMP_T(" + std::string(inOutType->lowest) + ')';
     makePipeline<Reduce>(input, output, axis, nanMode, debugName, init, "max(result, value)");
 }
 
 void GraphPipeline::makeReduceMin(const std::shared_ptr<TensorDescriptor> &input,
                                   const std::shared_ptr<TensorDescriptor> &output, const uint32_t axis,
                                   const uint32_t nanMode, const std::string &debugName) {
-    const auto *inOutType = getFormatInfo(output->getFormat());
+    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
     const std::string init =
-        "(pushConstants.nanMode == NAN_MODE_IGNORE) ? IN_OUT_T(NAN) : IN_OUT_T(" + std::string(inOutType->max) + ')';
+        "(pushConstants.nanMode == NAN_MODE_IGNORE) ? COMP_T(NAN) : COMP_T(" + std::string(inOutType->max) + ')';
     makePipeline<Reduce>(input, output, axis, nanMode, debugName, init, "min(result, value)");
 }
 

@@ -12,7 +12,9 @@
 #include "mlel/log.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
+#include <limits>
 #include <numeric>
 
 #include <glslang/Include/glslang_c_interface.h>
@@ -119,44 +121,105 @@ std::vector<uint32_t> glslToSpirv(const std::string &glsl) {
 namespace {
 // Type tags are local shader constants defined in graph/shaders/graph_op/common.comp.
 // They are encoded as two ASCII bytes: kind ('b', 'i', 'u', 'f') followed by byte size or reduced-float subtype.
-constexpr FormatInfo int8Format{true, true, "-128", "127", "int8_t", "0x6931", "int8_t"};
-constexpr FormatInfo uint8Format{true, false, "0u", "255u", "uint8_t", "0x7531", "uint8_t"};
-constexpr FormatInfo boolFormat{true, false, "0", "1", "bool", "0x6231", "bool"};
-constexpr FormatInfo int16Format{true, true, "-32768", "32767", "int16_t", "0x6932", "int16_t"};
-constexpr FormatInfo uint16Format{true, false, "0u", "65535u", "uint16_t", "0x7532", "uint16_t"};
-constexpr FormatInfo float16Format{false, true, "-65504.000000", "65504.000000", "float16_t", "0x6632", "float16_t"};
-constexpr FormatInfo bfloat16Format{false,    true,   "-3.3895313892515355e+38", "3.3895313892515355e+38", "bfloat16_t",
-                                    "0x6642", "float"};
-constexpr FormatInfo float8e5m2Format{false, true, "-57344", "57344", "float8_e5m2_t", "0x664D", "float16_t"};
-constexpr FormatInfo float8e4m3Format{false, true, "-448", "448", "float8_e4m3_t", "0x664E", "float16_t"};
-constexpr FormatInfo int32Format{true, true, "-2147483648", "2147483647", "int", "0x6934", "int"};
-constexpr FormatInfo uint32Format{true, false, "0u", "4294967295u", "uint32_t", "0x7534", "uint32_t"};
-constexpr FormatInfo float32Format{false,
-                                   true,
-                                   "-340282346638528859811704183484516925440.000000",
-                                   "340282346638528859811704183484516925440.000000",
-                                   "float",
-                                   "0x6634",
-                                   "float"};
-constexpr FormatInfo int64Format{true,     true,     "-9223372036854775808ll", "9223372036854775807ll", "int64_t",
-                                 "0x6938", "int64_t"};
-constexpr FormatInfo uint64Format{true, false, "0ull", "18446744073709551615ull", "uint64_t", "0x7538", "uint64_t"};
-constexpr FormatInfo doubleFormat{false,
-                                  true,
-                                  "-179769313486231570814527423731704356798070567525844996598917476803"
-                                  "157260780028538760589558632766878171540458953514382464234321326889"
-                                  "464182768467546703537516986049910576551282076245490090389328944075"
-                                  "868508455133942304583236903222948165808559332123348274797826204144"
-                                  "723168738177180919299881250404026184124858368.000000ll",
-                                  "179769313486231570814527423731704356798070567525844996598917476803"
-                                  "157260780028538760589558632766878171540458953514382464234321326889"
-                                  "464182768467546703537516986049910576551282076245490090389328944075"
-                                  "868508455133942304583236903222948165808559332123348274797826204144"
-                                  "723168738177180919299881250404026184124858368.000000ll",
-                                  "double",
-                                  "0x6638",
-                                  "double"};
+constexpr ArithmeticTypeInfo int8Type{true, true, "-128", "127", "int8_t", "0x6931", "int8_t"};
+constexpr ArithmeticTypeInfo uint8Type{true, false, "0u", "255u", "uint8_t", "0x7531", "uint8_t"};
+constexpr ArithmeticTypeInfo boolType{true, false, "0", "1", "bool", "0x6231", "bool"};
+constexpr ArithmeticTypeInfo int16Type{true, true, "-32768", "32767", "int16_t", "0x6932", "int16_t"};
+constexpr ArithmeticTypeInfo uint16Type{true, false, "0u", "65535u", "uint16_t", "0x7532", "uint16_t"};
+constexpr ArithmeticTypeInfo float16Type{false,       true,     "-65504.000000", "65504.000000",
+                                         "float16_t", "0x6632", "float16_t"};
+constexpr ArithmeticTypeInfo bfloat16Type{
+    false, true, "-3.3895313892515355e+38", "3.3895313892515355e+38", "bfloat16_t", "0x6642", "float"};
+constexpr ArithmeticTypeInfo float8e5m2Type{false, true, "-57344", "57344", "float8_e5m2_t", "0x664D", "float16_t"};
+constexpr ArithmeticTypeInfo float8e4m3Type{false, true, "-448", "448", "float8_e4m3_t", "0x664E", "float16_t"};
+constexpr ArithmeticTypeInfo int32Type{true, true, "-2147483648", "2147483647", "int", "0x6934", "int"};
+constexpr ArithmeticTypeInfo uint32Type{true, false, "0u", "4294967295u", "uint32_t", "0x7534", "uint32_t"};
+constexpr ArithmeticTypeInfo float32Type{false,
+                                         true,
+                                         "-340282346638528859811704183484516925440.000000",
+                                         "340282346638528859811704183484516925440.000000",
+                                         "float",
+                                         "0x6634",
+                                         "float"};
+constexpr ArithmeticTypeInfo int64Type{true,     true,     "-9223372036854775808ll", "9223372036854775807ll", "int64_t",
+                                       "0x6938", "int64_t"};
+constexpr ArithmeticTypeInfo uint64Type{true,       false,    "0ull",    "18446744073709551615ull",
+                                        "uint64_t", "0x7538", "uint64_t"};
+constexpr ArithmeticTypeInfo doubleType{false,
+                                        true,
+                                        "-179769313486231570814527423731704356798070567525844996598917476803"
+                                        "157260780028538760589558632766878171540458953514382464234321326889"
+                                        "464182768467546703537516986049910576551282076245490090389328944075"
+                                        "868508455133942304583236903222948165808559332123348274797826204144"
+                                        "723168738177180919299881250404026184124858368.000000ll",
+                                        "179769313486231570814527423731704356798070567525844996598917476803"
+                                        "157260780028538760589558632766878171540458953514382464234321326889"
+                                        "464182768467546703537516986049910576551282076245490090389328944075"
+                                        "868508455133942304583236903222948165808559332123348274797826204144"
+                                        "723168738177180919299881250404026184124858368.000000ll",
+                                        "double",
+                                        "0x6638",
+                                        "double"};
+
+// Vulkan format metadata keeps the format's own signedness and encoding.
+constexpr FormatInfo boolFormat{ScalarType::Bool, 8, true, "bool"};
+constexpr FormatInfo int8Format{ScalarType::Int8, 8, true, "int8_t"};
+constexpr FormatInfo uint8Format{ScalarType::Uint8, 8, true, "uint8_t"};
+constexpr FormatInfo int16Format{ScalarType::Int16, 16, true, "int16_t"};
+constexpr FormatInfo uint16Format{ScalarType::Uint16, 16, true, "uint16_t"};
+constexpr FormatInfo int32Format{ScalarType::Int32, 32, true, "int"};
+constexpr FormatInfo uint32Format{ScalarType::Uint32, 32, true, "uint32_t"};
+constexpr FormatInfo int64Format{ScalarType::Int64, 64, true, "int64_t"};
+constexpr FormatInfo uint64Format{ScalarType::Uint64, 64, true, "uint64_t"};
+constexpr FormatInfo float16Format{ScalarType::Float16, 16, false, "float16_t"};
+constexpr FormatInfo bfloat16Format{ScalarType::BFloat16, 16, false, "bfloat16_t"};
+constexpr FormatInfo float8e4m3Format{ScalarType::Float8E4M3, 8, false, "float8_e4m3_t"};
+constexpr FormatInfo float8e5m2Format{ScalarType::Float8E5M2, 8, false, "float8_e5m2_t"};
+constexpr FormatInfo float32Format{ScalarType::Float32, 32, false, "float"};
+constexpr FormatInfo doubleFormat{ScalarType::Float64, 64, false, "double"};
 } // namespace
+
+float decodeReducedFloat(uint32_t rawValue, VkFormat format) {
+    int exponentBits;
+    int mantissaBits;
+    switch (format) {
+    case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM:
+        exponentBits = 4;
+        mantissaBits = 3;
+        break;
+    case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM:
+        exponentBits = 5;
+        mantissaBits = 2;
+        break;
+    case VK_FORMAT_R16_SFLOAT:
+        exponentBits = 5;
+        mantissaBits = 10;
+        break;
+    case VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM:
+        exponentBits = 8;
+        mantissaBits = 7;
+        break;
+    default:
+        throw std::runtime_error("Expected an FP8, FP16, or BF16 format");
+    }
+    const uint32_t exponentMask = (1u << exponentBits) - 1u;
+    const uint32_t mantissaMask = (1u << mantissaBits) - 1u;
+    const uint32_t exponent = (rawValue >> mantissaBits) & exponentMask;
+    const uint32_t mantissa = rawValue & mantissaMask;
+    const int bias = (1 << (exponentBits - 1)) - 1;
+    const bool e4m3 = format == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM;
+    float value;
+    if (e4m3 && exponent == exponentMask && mantissa == mantissaMask) {
+        value = std::numeric_limits<float>::quiet_NaN();
+    } else if (!e4m3 && exponent == exponentMask) {
+        value = mantissa ? std::numeric_limits<float>::quiet_NaN() : std::numeric_limits<float>::infinity();
+    } else if (exponent == 0) {
+        value = std::ldexp(float(mantissa), 1 - bias - mantissaBits);
+    } else {
+        value = std::ldexp(1.0f + (float(mantissa) / float(1u << mantissaBits)), int(exponent) - bias);
+    }
+    return (rawValue & (1u << (exponentBits + mantissaBits))) ? -value : value;
+}
 
 const FormatInfo *getFormatInfo(const VkFormat format) {
     switch (format) {
@@ -196,34 +259,73 @@ const FormatInfo *getFormatInfo(const VkFormat format) {
     }
 }
 
-const FormatInfo *getFormatInfo(const VkFormat format, const bool isUnsigned) {
-    if (isUnsigned) {
-        switch (format) {
-        case VK_FORMAT_R8_SINT:
-            return getFormatInfo(VK_FORMAT_R8_UINT);
-        case VK_FORMAT_R16_SINT:
-            return getFormatInfo(VK_FORMAT_R16_UINT);
-        case VK_FORMAT_R32_SINT:
-            return getFormatInfo(VK_FORMAT_R32_UINT);
-        case VK_FORMAT_R64_SINT:
-            return getFormatInfo(VK_FORMAT_R64_UINT);
-        default:
-            return getFormatInfo(format);
-        }
-    } else {
-        switch (format) {
-        case VK_FORMAT_R8_UINT:
-        case VK_FORMAT_S8_UINT:
-            return getFormatInfo(VK_FORMAT_R8_SINT);
-        case VK_FORMAT_R16_UINT:
-            return getFormatInfo(VK_FORMAT_R16_SINT);
-        case VK_FORMAT_R32_UINT:
-            return getFormatInfo(VK_FORMAT_R32_SINT);
-        case VK_FORMAT_R64_UINT:
-            return getFormatInfo(VK_FORMAT_R64_SINT);
-        default:
-            return getFormatInfo(format);
-        }
+const ArithmeticTypeInfo *getArithmeticTypeInfo(ScalarType type) {
+    switch (type) {
+    case ScalarType::Bool:
+        return &boolType;
+    case ScalarType::Int8:
+        return &int8Type;
+    case ScalarType::Uint8:
+        return &uint8Type;
+    case ScalarType::Int16:
+        return &int16Type;
+    case ScalarType::Uint16:
+        return &uint16Type;
+    case ScalarType::Int32:
+        return &int32Type;
+    case ScalarType::Uint32:
+        return &uint32Type;
+    case ScalarType::Int64:
+        return &int64Type;
+    case ScalarType::Uint64:
+        return &uint64Type;
+    case ScalarType::Float16:
+        return &float16Type;
+    case ScalarType::BFloat16:
+        return &bfloat16Type;
+    case ScalarType::Float8E4M3:
+        return &float8e4m3Type;
+    case ScalarType::Float8E5M2:
+        return &float8e5m2Type;
+    case ScalarType::Float32:
+        return &float32Type;
+    case ScalarType::Float64:
+        return &doubleType;
+    }
+    throw std::runtime_error("Unsupported arithmetic type");
+}
+
+ScalarType getIntegerArithmeticType(uint32_t bitWidth, IntegerInterpretation interpretation) {
+    switch (bitWidth) {
+    case 8:
+        return interpretation == IntegerInterpretation::Signed ? ScalarType::Int8 : ScalarType::Uint8;
+    case 16:
+        return interpretation == IntegerInterpretation::Signed ? ScalarType::Int16 : ScalarType::Uint16;
+    case 32:
+        return interpretation == IntegerInterpretation::Signed ? ScalarType::Int32 : ScalarType::Uint32;
+    case 64:
+        return interpretation == IntegerInterpretation::Signed ? ScalarType::Int64 : ScalarType::Uint64;
+    default:
+        throw std::runtime_error("Unsupported integer width: " + std::to_string(bitWidth));
+    }
+}
+
+std::string_view getTensorInterfaceGlslType(VkFormat format) {
+    const auto *storage = getFormatInfo(format);
+    if (!storage->isInteger || storage->encoding == ScalarType::Bool) {
+        return storage->glslType;
+    }
+    switch (storage->bitWidth) {
+    case 8:
+        return "uint8_t";
+    case 16:
+        return "uint16_t";
+    case 32:
+        return "uint32_t";
+    case 64:
+        return "uint64_t";
+    default:
+        throw std::runtime_error("Unsupported integer tensor width");
     }
 }
 

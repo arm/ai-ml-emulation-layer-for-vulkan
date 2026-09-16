@@ -4,7 +4,7 @@
  */
 
 
-#define IN_OUT_T %in_out_t%
+#define IN_OUT_T %in_out_t_storage%
 
 layout(local_size_x = %warpX%) in;
 

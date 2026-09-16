@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define IN_OUT_T %in_out_t%
-#define INDEX_T %index_t%
+#define IN_OUT_T %in_out_t_storage%
+#define INDEX_T %index_t_storage%
 
 layout(local_size_x = %warpX%) in;
 

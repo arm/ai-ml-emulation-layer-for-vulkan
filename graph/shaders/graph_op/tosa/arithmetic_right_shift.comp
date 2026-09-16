@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define IN_OUT_T %in_out_t%
+#define COMP_T %in_out_t_comp%
+#define IN_OUT_T %in_out_t_storage%
 
 layout(local_size_x = %warpX%) in;
 
@@ -37,13 +38,14 @@ void main() {
     IN_OUT_T value2;
     tensorReadARM(inputData2, coords2, value2);
 
-    IN_OUT_T result = value1 >> value2;
+    COMP_T signedValue = COMP_T(value1);
+    COMP_T result = signedValue >> value2;
 
     const bool round = pushConstants.round != 0;
     if (round && value2 > 0) {
-        if (((value1 >> IN_OUT_T(value2 - 1)) & 1) != 0) {
+        if (((signedValue >> COMP_T(value2 - 1)) & 1) != 0) {
             result++;
         }
     }
-    tensorWriteARM(outputData, index, result);
+    tensorWriteARM(outputData, index, IN_OUT_T(result));
 }

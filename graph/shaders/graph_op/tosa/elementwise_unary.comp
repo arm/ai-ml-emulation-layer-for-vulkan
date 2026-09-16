@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define IN_OUT_T %in_out_t%
+#define IN_OUT_T %in_out_t_storage%
 #define TYPE_IN_OUT %in_out_t_type%
 #define COMP_T %in_out_t_comp%
 
@@ -15,17 +15,19 @@ layout(set = 0, binding = 0) uniform tensorARM<IN_OUT_T, RANK> outputData;
 layout(set = 1, binding = 0) uniform tensorARM<IN_OUT_T, RANK> inputData1;
 
 // Count leading zeros
-uint clz(int32_t value) {
+uint clz(uint32_t value) {
     uint i;
 
     for (i = 0; i < 32; i++) {
-        if ((value & (1 << (31 - i))) != 0) {
+        if ((value & (1u << (31 - i))) != 0u) {
             break;
         }
     }
 
     return i;
 }
+
+uint clz(int32_t value) { return clz(uint32_t(value)); }
 
 // Gaussian error function
 // https://en.wikipedia.org/wiki/Error_function
@@ -197,7 +199,7 @@ void main() {
     COMP_T outValue = isnan(float(value1)) ? value1 : COMP_T(%operation%);
     IN_OUT_T value = ENCODE_COMP_TO_STORAGE(outValue, IN_OUT_T, TYPE_IN_OUT);
 #else
-    IN_OUT_T value1 = inValueStorage;
+    COMP_T value1 = DECODE_STORAGE_TO_COMP(inValueStorage, TYPE_IN_OUT, COMP_T);
     IN_OUT_T value = isnan(float(value1)) ? IN_OUT_T(value1) : IN_OUT_T(%operation%);
 #endif
 

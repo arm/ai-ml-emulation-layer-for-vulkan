@@ -48,7 +48,39 @@ size_t getElementCount(const std::vector<int64_t> &dimensions);
 
 std::vector<uint32_t> glslToSpirv(const std::string &glsl);
 
+// Decode FP8, FP16, and BF16 payloads, including subnormals and special values.
+float decodeReducedFloat(uint32_t rawValue, VkFormat format);
+
+// Scalar encodings and arithmetic types share names, but are selected independently.
+enum class ScalarType {
+    Bool,
+    Int8,
+    Uint8,
+    Int16,
+    Uint16,
+    Int32,
+    Uint32,
+    Int64,
+    Uint64,
+    Float8E4M3,
+    Float8E5M2,
+    Float16,
+    BFloat16,
+    Float32,
+    Float64,
+};
+
+// Properties of the actual Vulkan storage format. No operation semantics.
 struct FormatInfo {
+    ScalarType encoding;
+    uint32_t bitWidth;
+    bool isInteger;
+    std::string_view glslType;
+};
+
+// Numeric interpretation and GLSL arithmetic for an operation's scalar type.
+// Reduced floats retain their encoding type and use compType for computation.
+struct ArithmeticTypeInfo {
     bool isInteger;
     bool isSigned;
     std::string_view lowest;
@@ -58,9 +90,15 @@ struct FormatInfo {
     std::string_view compType;
 };
 
-const FormatInfo *getFormatInfo(VkFormat format);
+enum class IntegerInterpretation { Signed, Unsigned };
 
-const FormatInfo *getFormatInfo(VkFormat format, bool isUnsigned);
+const FormatInfo *getFormatInfo(VkFormat format);
+const ArithmeticTypeInfo *getArithmeticTypeInfo(ScalarType type);
+ScalarType getIntegerArithmeticType(uint32_t bitWidth, IntegerInterpretation interpretation);
+
+// Integer tensor interfaces use unsigned declarations to support both SINT and
+// UINT bindings. This choice does not determine the operation's signedness.
+std::string_view getTensorInterfaceGlslType(VkFormat format);
 
 template <typename T> class Span {
   private:

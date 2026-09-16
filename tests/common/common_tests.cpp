@@ -316,7 +316,11 @@ ExpectedFormatInfo legacyFormat(VkFormat format, std::string_view glslType, std:
 uint64_t parseTypeId(std::string_view typeId) { return std::stoull(std::string(typeId), nullptr, 0); }
 
 void expectFormatInfo(const ExpectedFormatInfo &expected) {
-    const auto *actual = getFormatInfo(expected.format);
+    const auto *storage = getFormatInfo(expected.format);
+    ASSERT_NE(storage, nullptr);
+    EXPECT_EQ(storage->glslType, expected.glslType);
+    EXPECT_EQ(storage->isInteger, expected.isInteger);
+    const auto *actual = getArithmeticTypeInfo(storage->encoding);
 
     ASSERT_NE(actual, nullptr);
     EXPECT_EQ(actual->isInteger, expected.isInteger);
@@ -328,7 +332,7 @@ void expectFormatInfo(const ExpectedFormatInfo &expected) {
     EXPECT_EQ(actual->compType, expected.compType);
 }
 
-TEST(MLEmulationLayerUtils, MakeFormatSupportedFormatsMatchLegacyFormatImplementation) {
+TEST(MLEmulationLayerUtils, StorageEncodingAndArithmeticTypesMatchNumericProperties) {
     const std::vector<ExpectedFormatInfo> expectedFormats = {
         legacyFormat<int8_t>(VK_FORMAT_R8_SINT, "int8_t"),
         legacyFormat<uint8_t>(VK_FORMAT_R8_UINT, "uint8_t", "u"),
@@ -357,8 +361,45 @@ TEST(MLEmulationLayerUtils, MakeFormatSupportedFormatsMatchLegacyFormatImplement
     }
 }
 
+TEST(MLEmulationLayerUtils, IntegerInterpretationIsIndependentOfTensorBinding) {
+    for (auto formats :
+         {std::make_pair(VK_FORMAT_R8_SINT, VK_FORMAT_R8_UINT), std::make_pair(VK_FORMAT_R16_SINT, VK_FORMAT_R16_UINT),
+          std::make_pair(VK_FORMAT_R32_SINT, VK_FORMAT_R32_UINT),
+          std::make_pair(VK_FORMAT_R64_SINT, VK_FORMAT_R64_UINT)}) {
+        const auto *signedStorage = getFormatInfo(formats.first);
+        const auto *unsignedStorage = getFormatInfo(formats.second);
+        EXPECT_NE(signedStorage->encoding, unsignedStorage->encoding);
+        EXPECT_EQ(signedStorage->bitWidth, unsignedStorage->bitWidth);
+        EXPECT_EQ(getTensorInterfaceGlslType(formats.first), getTensorInterfaceGlslType(formats.second));
+        for (auto format : {formats.first, formats.second}) {
+            const auto width = getFormatInfo(format)->bitWidth;
+            EXPECT_EQ(getIntegerArithmeticType(width, IntegerInterpretation::Signed), signedStorage->encoding);
+            EXPECT_EQ(getIntegerArithmeticType(width, IntegerInterpretation::Unsigned), unsignedStorage->encoding);
+        }
+    }
+    EXPECT_EQ(getTensorInterfaceGlslType(VK_FORMAT_R8_BOOL_ARM), "bool");
+    for (auto format : {VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM, VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM,
+                        VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM, VK_FORMAT_R16_SFLOAT}) {
+        EXPECT_EQ(getTensorInterfaceGlslType(format), getFormatInfo(format)->glslType);
+    }
+}
+
 TEST(MLEmulationLayerUtils, MakeFormatThrowsForUnsupportedFormat) {
     EXPECT_THROW(static_cast<void>(getFormatInfo(VK_FORMAT_UNDEFINED)), std::runtime_error);
+}
+
+TEST(MLEmulationLayerFloat, DecodeReducedFloatConstants) {
+    EXPECT_EQ(decodeReducedFloat(0x01, VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM), std::ldexp(1.0f, -9));
+    EXPECT_EQ(decodeReducedFloat(0x78, VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM), 256.0f);
+    EXPECT_EQ(decodeReducedFloat(0x7e, VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM), 448.0f);
+    EXPECT_TRUE(std::isnan(decodeReducedFloat(0x7f, VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM)));
+    EXPECT_EQ(decodeReducedFloat(0x01, VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM), std::ldexp(1.0f, -16));
+    EXPECT_TRUE(std::isinf(decodeReducedFloat(0x7c, VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM)));
+    EXPECT_EQ(decodeReducedFloat(0x0001, VK_FORMAT_R16_SFLOAT), std::ldexp(1.0f, -24));
+    EXPECT_EQ(decodeReducedFloat(0x3f80, VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM), 1.0f);
+    EXPECT_EQ(decodeReducedFloat(0x0001, VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM), std::ldexp(1.0f, -133));
+    EXPECT_TRUE(std::signbit(decodeReducedFloat(0x80, VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM)));
+    EXPECT_TRUE(std::signbit(decodeReducedFloat(0x8000, VK_FORMAT_R16_SFLOAT)));
 }
 
 } // namespace

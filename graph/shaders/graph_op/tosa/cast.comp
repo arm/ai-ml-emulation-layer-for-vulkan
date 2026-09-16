@@ -3,8 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define IN_T %in_t%
-#define OUT_T %out_t%
+#define IN_T %in_t_storage%
+#define OUT_T %out_t_storage%
+#define IN_COMP_T %in_t_comp%
+#define OUT_COMP_T %out_t_comp%
 #define TYPE_IN %in_t_type%
 #define TYPE_OUT %out_t_type%
 #define TYPE_IN_MIN %in_t_lowest%
@@ -22,82 +24,45 @@ layout(set = 1, binding = 0) uniform tensorARM<IN_T, RANK> inputData;
 void main() {
     uint[RANK] index;
     getIndex(outputData, index);
-
-    IN_T value;
-    tensorReadARM(inputData, index, value);
+    IN_T rawValue;
+    tensorReadARM(inputData, index, rawValue);
+    IN_COMP_T value = DECODE_STORAGE_TO_COMP(rawValue, TYPE_IN, IN_COMP_T);
 
 #if IS_BOOL(TYPE_OUT)
-    #if IS_FLOAT8(TYPE_IN)
-        OUT_T outValue = OUT_T(float(decode_float8_to_f16(uint8_t(value), TYPE_IN)) != 0.0);
-    #elif IS_BFLOAT(TYPE_IN)
-        OUT_T outValue = OUT_T(decode_to_f32(value) != 0.0);
-    #else
-        OUT_T outValue = OUT_T(value);
-    #endif
-#elif IS_BFLOAT(TYPE_OUT)
-    #if IS_BOOL(TYPE_IN)
-        OUT_T outValue = encode_from_f32_rne(value ? 1.0 : 0.0, OUT_T(0));
-    #elif IS_FLOAT8(TYPE_IN)
-        OUT_T outValue = encode_from_f32_rne(float(decode_float8_to_f16(uint8_t(value), TYPE_IN)), OUT_T(0));
-    #elif IS_BFLOAT(TYPE_IN)
-        OUT_T outValue = value;
-    #else
-        OUT_T outValue = encode_from_f32_rne(float(value), OUT_T(0));
-    #endif
-#elif IS_FLOAT8(TYPE_OUT)
-    #if IS_BOOL(TYPE_IN)
-        OUT_T outValue = OUT_T(encode_from_f16_to_float8_trunc_by_type(value ? float16_t(1.0) : float16_t(0.0), TYPE_OUT));
-    #elif IS_FLOAT8(TYPE_IN)
-        OUT_T outValue = OUT_T(encode_from_f16_to_float8_trunc_by_type(decode_float8_to_f16(uint8_t(value), TYPE_IN), TYPE_OUT));
-    #elif IS_BFLOAT(TYPE_IN)
-        OUT_T outValue = OUT_T(encode_from_f32_to_float8_trunc_by_type(decode_to_f32(value), TYPE_OUT));
-    #else
-        OUT_T outValue = OUT_T(encode_from_f32_to_float8_trunc_by_type(float(value), TYPE_OUT));
-    #endif
-#elif IS_FLOAT(TYPE_OUT)
-    #if IS_BOOL(TYPE_IN)
-        OUT_T outValue = OUT_T(value ? 1.0 : 0.0);
-    #elif IS_FLOAT8(TYPE_IN)
-        OUT_T outValue = OUT_T(decode_float8_to_f16(uint8_t(value), TYPE_IN));
-    #elif IS_BFLOAT(TYPE_IN)
-        OUT_T outValue = OUT_T(decode_to_f32(value));
-    #else
-        OUT_T outValue = OUT_T(0.0);
-        if (TYPE_IN_MIN < TYPE_OUT_MIN && TYPE_IN_MAX > TYPE_OUT_MAX) {
-            if (value > IN_T(TYPE_OUT_MAX)) {
-                outValue = OUT_T(1.0 / 0.0); // +Inf
-            } else if (value < IN_T(TYPE_OUT_MIN)) {
-                outValue = OUT_T(-1.0 / 0.0); // -Inf
-            } else {
-                outValue = OUT_T(value);
-            }
-        } else {
-            outValue = OUT_T(value);
-        }
-    #endif
-#else // TYPE_OUT: Int
-    #if IS_BOOL(TYPE_IN)
-        OUT_T outValue = OUT_T(value ? 1 : 0);
-    #elif IS_FLOAT(TYPE_IN)
-        float fvalue = float(value);
-    #elif IS_FLOAT8(TYPE_IN)
-        float fvalue = float(decode_float8_to_f16(uint8_t(value), TYPE_IN));
-    #elif IS_BFLOAT(TYPE_IN)
-        float fvalue = decode_to_f32(value);
-    #else
-        OUT_T outValue = OUT_T(value);
-    #endif
-    #if IS_FLOAT(TYPE_IN) || IS_FLOAT8(TYPE_IN) || IS_BFLOAT(TYPE_IN)
-        OUT_T outValue = OUT_T(0);
-        if (fvalue <= float(TYPE_OUT_MIN)) {
-            outValue = OUT_T(TYPE_OUT_MIN);
-        } else if (fvalue >= float(TYPE_OUT_MAX)) {
-            outValue = OUT_T(TYPE_OUT_MAX);
-        } else {
-            outValue = OUT_T(roundEven(fvalue));
-        }
-    #endif
+    OUT_T outValue = OUT_T(value != IN_COMP_T(0));
+#elif TYPE_OUT == TYPE_HALF
+    // Native FP16 conversions can saturate on overflow. TOSA requires infinity
+    // after rounding overflows the destination range. The RNE boundary is 65520,
+    // halfway between the largest finite FP16 value (65504) and 65536.
+    OUT_T outValue;
+    if (float(value) >= 65520.0) {
+        outValue = OUT_T(INF);
+    } else if (float(value) <= -65520.0) {
+        outValue = OUT_T(-INF);
+    } else {
+#if IS_INTEGER(TYPE_IN)
+        // Every integer in this range is exact in FP32. Round its 23 fraction
+        // bits to FP16's 10 using RNE, so the final native conversion is exact
+        // even on devices that convert integers to FP16 using round-to-zero.
+        uint rawFloatValue = floatBitsToUint(float(value));
+        uint roundedValue = (rawFloatValue + 0xFFFu + ((rawFloatValue >> 13) & 1u)) & ~0x1FFFu;
+        outValue = OUT_T(uintBitsToFloat(roundedValue));
+#else
+        outValue = OUT_T(value);
 #endif
-
+    }
+#elif IS_INTEGER(TYPE_OUT) && (IS_FLOAT(TYPE_IN) || IS_REDUCED_FLOAT(TYPE_IN))
+    float fvalue = float(value);
+    OUT_T outValue;
+    if (fvalue <= float(TYPE_OUT_MIN)) {
+        outValue = OUT_T(OUT_COMP_T(TYPE_OUT_MIN));
+    } else if (fvalue >= float(TYPE_OUT_MAX)) {
+        outValue = OUT_T(OUT_COMP_T(TYPE_OUT_MAX));
+    } else {
+        outValue = OUT_T(OUT_COMP_T(roundEven(fvalue)));
+    }
+#else
+    OUT_T outValue = ENCODE_COMP_TO_STORAGE_RNE(value, OUT_T, TYPE_OUT);
+#endif
     tensorWriteARM(outputData, index, outValue);
 }

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define IN_OUT_T %in_out_t%
+#define IN_OUT_T %in_out_t_storage%
 #define TYPE_IN_OUT %in_out_t_type%
 
 layout(local_size_x = %warpX%) in;
@@ -17,7 +17,7 @@ layout(constant_id = 0) const uint32_t RANK = RANK_MAX;
 
 layout(set = 0, binding = 0) uniform tensorARM<IN_OUT_T, RANK> outputData;
 layout(set = 1, binding = 0) uniform tensorARM<IN_OUT_T, RANK> inputData;
-layout(set = 2, binding = 0) uniform tensorARM<int32_t, 1> paddingData;
+layout(set = 2, binding = 0) uniform tensorARM<uint32_t, 1> paddingData;
 
 void main() {
     uint[RANK] index;
@@ -29,7 +29,7 @@ void main() {
     uint[RANK] inputIndex;
     bool isPad = false;
     for (uint i = 0; i < RANK; i++) {
-        int32_t padding;
+        uint32_t padding;
         tensorReadARM(paddingData, uint[1](2*i), padding);
 
         inputIndex[i] = index[i] - padding;
@@ -42,7 +42,7 @@ void main() {
     IN_OUT_T value;
 
     if (isPad) {
-#if (TYPE_IN_OUT == TYPE_INT32)
+#if (TYPE_IN_OUT == TYPE_INT32) || (TYPE_IN_OUT == TYPE_UINT32)
     value = IN_OUT_T(pushConstants.padConstInt);
 #else
     value = ENCODE_COMP_TO_STORAGE(pushConstants.padConst, IN_OUT_T, TYPE_IN_OUT);

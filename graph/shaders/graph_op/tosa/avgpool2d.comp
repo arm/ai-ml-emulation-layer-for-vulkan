@@ -3,13 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define STORAGE_T %in_out_t%
+#define STORAGE_T %in_out_t_storage%
 #define TYPE_IN_OUT %in_out_t_type%
 #define ACC_T %acc_t%
 #define MIN %in_out_t_lowest%
 #define MAX %in_out_t_max%
 
-#define IN_OUT_T %in_out_t_comp%
+#define COMP_T %in_out_t_comp%
 
 layout(local_size_x = %warpX%) in;
 
@@ -49,7 +49,7 @@ void main() {
                 STORAGE_T valueRaw;
                 tensorReadARM(inputData, index, valueRaw);
 
-                IN_OUT_T value = DECODE_STORAGE_TO_COMP(valueRaw, TYPE_IN_OUT, IN_OUT_T);
+                COMP_T value = DECODE_STORAGE_TO_COMP(valueRaw, TYPE_IN_OUT, COMP_T);
 
                 acc += ACC_T(value) - ACC_T(pushConstants.inputZeroPoint);
                 count++;
@@ -68,7 +68,7 @@ void main() {
     acc += ACC_T(pushConstants.outputZeroPoint);
 
     // Clamp to output range
-    acc = clamp(acc, MIN, MAX);
+    acc = clamp(acc, ACC_T(MIN), ACC_T(MAX));
 #endif
 
     tensorWriteARM(outputData, index, ENCODE_COMP_TO_STORAGE(float(acc), STORAGE_T, TYPE_IN_OUT));

@@ -3,9 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define IN_T %in_t%
-#define MUL_T %mul_t%
-#define OUT_T %out_t%
+#define IN_COMP_T %in_t%
+#define OUT_COMP_T %out_t%
+#define MUL_COMP_T %mul_t%
+#define IN_T %in_t_storage%
+#define MUL_T %mul_t_storage%
+#define OUT_T %out_t_storage%
 
 layout(local_size_x = %warpX%) in;
 
@@ -22,7 +25,7 @@ layout(constant_id = 3) const uint32_t PER_CHANNEL = 0;
 layout(set = 0, binding = 0) uniform tensorARM<OUT_T, RANK> outputData;
 layout(set = 1, binding = 0) uniform tensorARM<IN_T, RANK> inputData;
 layout(set = 2, binding = 0) uniform tensorARM<MUL_T, 1> multiplier;
-layout(set = 3, binding = 0) uniform tensorARM<int8_t, 1> shiftData;
+layout(set = 3, binding = 0) uniform tensorARM<uint8_t, 1> shiftData;
 
 int32_t applyScale(int64_t value, int32_t multiplier, int8_t shift, bool doubleRound) {
     int64_t round = int64_t(1) << (shift - 1);
@@ -56,17 +59,18 @@ void main() {
 
     IN_T val;
     tensorReadARM(inputData, index, val);
-    int64_t value = int64_t(val) - int64_t(IN_T(pushConstants.inputZeroPoint));
+    int64_t value = int64_t(IN_COMP_T(val)) - int64_t(IN_COMP_T(pushConstants.inputZeroPoint));
 
     MUL_T mulVal;
     tensorReadARM(multiplier, uint[1](c), mulVal);
 
-    int8_t shiftVal;
+    uint8_t shiftVal;
     tensorReadARM(shiftData, uint[1](c), shiftVal);
 
-    int32_t result = applyScale(value, int32_t(mulVal), shiftVal, scale32 && doubleRound);
-    result += OUT_T(pushConstants.outputZeroPoint);
-    result = int32_t(clamp(result, OUT_T(%out_t_lowest%), OUT_T(%out_t_max%)));
+    // Widen before adding the zero point and clamping, including the full uint32_t range.
+    int64_t result = int64_t(applyScale(value, int32_t(MUL_COMP_T(mulVal)), int8_t(shiftVal), scale32 && doubleRound));
+    result += int64_t(OUT_COMP_T(pushConstants.outputZeroPoint));
+    result = clamp(result, int64_t(%out_t_lowest%), int64_t(%out_t_max%));
 
     tensorWriteARM(outputData, index, OUT_T(result));
 }
