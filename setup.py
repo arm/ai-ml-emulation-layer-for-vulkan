@@ -8,6 +8,7 @@ import platform
 import shutil
 import sys
 
+from setuptools import Distribution
 from setuptools import setup
 from setuptools.command.build import build as setuptools_build
 from setuptools.command.build_py import build_py
@@ -75,6 +76,10 @@ class BuildPy(build_py):
                 str(native_build_dir),
                 "--install",
                 str(native_install_dir),
+                "--package-version",
+                self.distribution.get_version(),
+                "--threads",
+                os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL", str(os.cpu_count() or 1)),
             ]
         )
         if result:
@@ -89,21 +94,16 @@ class BDistWheel(bdist_wheel):
         self.root_is_pure = False
 
     def get_tag(self):
-        system = platform.system()
-        machine = platform.machine()
-        if system == "Windows":
-            assert machine == "AMD64"
-            platformName = "win_amd64"
-        elif system == "Linux":
-            if machine == "aarch64":
-                platformName = "manylinux2014_aarch64"
-            else:
-                assert machine == "x86_64"
-                platformName = "manylinux2014_x86_64"
-        elif system == "Darwin":
-            assert machine == "arm64"
-            platformName = "macosx_11_0_arm64"
-        return ("py3", "none", platformName)
+        _, _, platform_tag = super().get_tag()
+        return ("py3", "none", platform_tag)
 
 
-setup(cmdclass={"build": Build, "build_py": BuildPy, "bdist_wheel": BDistWheel})
+class BinaryDistribution(Distribution):
+    def has_ext_modules(self):
+        return True
+
+
+setup(
+    distclass=BinaryDistribution,
+    cmdclass={"build": Build, "build_py": BuildPy, "bdist_wheel": BDistWheel},
+)
