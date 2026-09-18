@@ -280,21 +280,30 @@ TEST(PipelineCache, MotionShadersAvailableWithoutGlslCompilation) {
             EXPECT_EQ(selected.size(), expected.size());
         }
     }
-    const std::map<std::string, std::string_view> opticalShaders{
-        {"rgb_to_y", optical_flow::RGBToY::shaderName},
-        {"downsample", optical_flow::Downsample::shaderName},
-        {"mv_process_and_warp", optical_flow::MVProcessAndWarp::shaderName},
-        {"dense_warp", optical_flow::DenseWarp::shaderName},
-        {"median_filter", optical_flow::MedianFilter::shaderName},
-        {"bilateral_filter", optical_flow::BilateralFilter::shaderName},
-        {"subpixel_me", optical_flow::SubpixelME::shaderName},
-        {"mv_replace", optical_flow::MVReplace::shaderName},
-        {"block_match_of", optical_flow::BlockMatch::shaderName},
+    const std::map<std::string, SpirvBinary> opticalShaders{
+        {"rgb_to_y_img", optical_flow::RGBToY::createSpirv(cache, false, true)},
+        {"rgb_to_y_full_buf", optical_flow::RGBToY::createSpirv(cache, true, false)},
+        {"downsample_img", optical_flow::Downsample::createSpirv(cache)},
+        {"mv_process_and_warp_buf", optical_flow::MVProcessAndWarp::createSpirv(cache)},
+        {"dense_warp_img", optical_flow::DenseWarp::createSpirv(cache)},
+        {"median_filter_img", optical_flow::MedianFilter::createSpirv(cache)},
+        {"bilateral_filter_img", optical_flow::BilateralFilter::createSpirv(cache, true)},
+        {"bilateral_filter_buf", optical_flow::BilateralFilter::createSpirv(cache, false)},
+        {"subpixel_me_buf", optical_flow::SubpixelME::createSpirv(cache, false)},
+        {"subpixel_me_acc_buf", optical_flow::SubpixelME::createSpirv(cache, true)},
+        {"mv_replace_img", optical_flow::MVReplace::createSpirv(cache, false)},
+        {"mv_replace_cost_img", optical_flow::MVReplace::createSpirv(cache, true)},
+        {"block_match_of_flow", optical_flow::BlockMatch::createSpirv(cache, common::BlockMatchMode::MIN_SAD, false)},
+        {"block_match_of_flow_cost_buf",
+         optical_flow::BlockMatch::createSpirv(cache, common::BlockMatchMode::MIN_SAD_COST, false)},
+        {"block_match_of_flow_cost_img",
+         optical_flow::BlockMatch::createSpirv(cache, common::BlockMatchMode::MIN_SAD_COST, true)},
+        {"block_match_of_cost_buf",
+         optical_flow::BlockMatch::createSpirv(cache, common::BlockMatchMode::RAW_SAD, false)},
     };
-    for (const auto &[expectedName, selectedName] : opticalShaders) {
+    for (const auto &[expectedName, selected] : opticalShaders) {
         SCOPED_TRACE(expectedName);
         const auto expected = cache->lookup(expectedName, {});
-        const auto selected = optical_flow::ComputePipeline::createSpirv(cache, selectedName);
         EXPECT_EQ(selected.data(), expected.data());
         EXPECT_EQ(selected.size(), expected.size());
     }

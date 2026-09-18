@@ -13,22 +13,13 @@ precision mediump image2D;
 // Local Work Size set as Specialization Constants
 layout (local_size_x_id = 0, local_size_y_id = 1, local_size_z = 1) in;
 
-// Supported : VECTORIZE_X: 1 or 2, VECTORIZE_Y: 1 or 2
-layout(constant_id = 2) const int VECTORIZE_X = 1;
-layout(constant_id = 3) const int VECTORIZE_Y = 1;
-
-layout(constant_id = 4) const bool IMAGE_STORE = false;
-layout(constant_id = 5) const float OUTPUT_FLOW_SCALE = 1.f;
-layout(constant_id = 6) const int OUTPUT_SIZE_X = 480;
-layout(constant_id = 7) const int OUTPUT_SIZE_Y = 270;
-layout(constant_id = 8) const uint STRIDE_DST = 480;   // The number of elements in a row (x-axis) including padding
+layout(constant_id = 2) const float OUTPUT_FLOW_SCALE = 1.f;
+layout(constant_id = 3) const int OUTPUT_SIZE_X = 480;
+layout(constant_id = 4) const int OUTPUT_SIZE_Y = 270;
 
 layout (binding = 0) uniform mediump sampler2D imageSampler;
 
 layout (set=0, binding = 1, rg16f) uniform writeonly image2D dst_img;
-layout (set = 0, binding = 2, std430) buffer _dst_buf{
-    f16vec2 dst_buf[];
-};
 
 
 /** Sorts element-wise two vectors.
@@ -72,10 +63,10 @@ f16vec2 sort9(f16vec2 p0, f16vec2 p1, f16vec2 p2, f16vec2 p3, f16vec2 p4, f16vec
 #define READ_QUAD(_SAMP, _POS, _COMP) \
     textureGather(_SAMP, _POS + vec2(1.f), _COMP).wzxy
 
-void calc(ivec2 _pos, out f16vec2 filtered[VECTORIZE_Y][VECTORIZE_X])
+f16vec2 calc(ivec2 _pos)
 {
     vec2 pos = vec2(_pos);
-    // Load 3x3 neighbours. e.g. load 4x4 in case VECTORIZE = (2, 2)
+    // Load 3x3 neighbours.
     /*
         + + + -
         + P + -     "P" : pos
@@ -107,40 +98,17 @@ void calc(ivec2 _pos, out f16vec2 filtered[VECTORIZE_Y][VECTORIZE_X])
     read_2x2_v2(0, 2);
     read_2x2_v2(2, 2);
 
-    // Compute median
-    for (int vy = 0; vy < VECTORIZE_Y; ++vy) {
-        for (int vx = 0; vx < VECTORIZE_X; ++vx) {
-            filtered[vy][vx] = sort9(p[0 + vy][0 + vx], p[0 + vy][1 + vx], p[0 + vy][2 + vx],
-                                     p[1 + vy][0 + vx], p[1 + vy][1 + vx], p[1 + vy][2 + vx],
-                                     p[2 + vy][0 + vx], p[2 + vy][1 + vx], p[2 + vy][2 + vx]);
-            filtered[vy][vx] *= f16vec2(OUTPUT_FLOW_SCALE);
-        }
-    }
-    return;
+    f16vec2 filtered = sort9(p[0][0], p[0][1], p[0][2],
+                             p[1][0], p[1][1], p[1][2],
+                             p[2][0], p[2][1], p[2][2]);
+    return filtered * f16vec2(OUTPUT_FLOW_SCALE);
 }
 
 
 void main()
 {
-    const ivec2 pos = ivec2(gl_GlobalInvocationID.x * VECTORIZE_X,
-                            gl_GlobalInvocationID.y * VECTORIZE_Y);
+    const ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
     if (any(greaterThanEqual(pos, ivec2(OUTPUT_SIZE_X, OUTPUT_SIZE_Y)))) return;
 
-    f16vec2 dst_val[VECTORIZE_Y][VECTORIZE_X];
-    calc(pos, dst_val);
-
-    for (int vy = 0; vy < VECTORIZE_Y; ++vy) {
-
-        // This shader accepts the VECTORIZE_Y which is not a divisor of OUTPUT_SIZE_Y,
-        // so the boundary check below is necessary.
-        if (OUTPUT_SIZE_Y % 2 == 1 && pos.y + vy >= OUTPUT_SIZE_Y)
-            break;
-
-        for (int vx = 0; vx < VECTORIZE_X; ++vx) {
-            if (IMAGE_STORE)
-                imageStore(dst_img, pos + ivec2(vx, vy), f16vec4(dst_val[vy][vx], 0, 0));
-            else
-                dst_buf[STRIDE_DST * (pos.y + vy) + pos.x + vx] = dst_val[vy][vx];
-        }
-    }
+    imageStore(dst_img, pos, f16vec4(calc(pos), 0, 0));
 }

@@ -21,10 +21,10 @@ namespace mlsdk::el::compute::optical_flow {
 
 ComputePipeline::ComputePipeline(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader,
                                  const VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
-                                 const std::string_view shaderName, const DescriptorConfigs &descriptorConfigs,
+                                 const SpirvBinary spirv, const DescriptorConfigs &descriptorConfigs,
                                  const SpecConstants &specConstants, uint32_t pushConstantsSize,
                                  const ScheduleHelper &schedule, const std::string &debugName)
-    : loader_(loader), device_(device), pipelineCache_(pipelineCache), spirv_(createSpirv(pipelineCache, shaderName)),
+    : loader_(loader), device_(device), pipelineCache_(pipelineCache), spirv_(spirv),
       descriptorConfigs_(descriptorConfigs), specConstants_(specConstants), pushConstantsSize_(pushConstantsSize),
       scheduler_(schedule), debugName_(debugName) {}
 
@@ -65,8 +65,8 @@ void ComputePipeline::makePipeline() {
     const VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {
         VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         nullptr,
-        VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT, // flags
-        3,                                               // maxSets
+        0, // flags
+        3, // maxSets
         static_cast<uint32_t>(poolSizes.size()),
         poolSizes.data(),
     };
@@ -76,11 +76,8 @@ void ComputePipeline::makePipeline() {
     }
 
     // Create descriptor set layout
-    // Assuming descriptorBindingPartiallyBound from DescriptorIndexingFeatures
     std::vector<VkDescriptorSetLayoutBinding> bindings;
     bindings.reserve(descriptorConfigs_.size());
-    std::vector<VkDescriptorBindingFlags> bindingFlags;
-    bindingFlags.reserve(descriptorConfigs_.size());
     for (const auto &dconf : descriptorConfigs_) {
         bindings.emplace_back(VkDescriptorSetLayoutBinding{
             dconf.index,
@@ -89,20 +86,12 @@ void ComputePipeline::makePipeline() {
             VK_SHADER_STAGE_COMPUTE_BIT,
             nullptr,
         });
-        bindingFlags.emplace_back(dconf.flags);
     }
-
-    const VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsCreateInfo{
-        VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,
-        nullptr,
-        static_cast<uint32_t>(bindingFlags.size()),
-        bindingFlags.data(),
-    };
 
     const VkDescriptorSetLayoutCreateInfo dsetLayoutCreateInfo = {
         VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        &bindingFlagsCreateInfo, // pNext
-        0,                       // flags
+        nullptr,
+        0,
         static_cast<uint32_t>(bindings.size()),
         bindings.data(),
     };
@@ -174,11 +163,6 @@ void ComputePipeline::setOutputStorage(VkCommandBuffer cmdBuf, uint32_t binding,
     } else {
         setOutputImage(binding, image);
     }
-}
-
-SpirvBinary ComputePipeline::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
-                                         const std::string_view shaderName) {
-    return pipelineCache->lookup(shaderName, {});
 }
 
 void ComputePipeline::setCombinedImageSampler(uint32_t binding, const std::shared_ptr<Image> &image,
@@ -265,39 +249,45 @@ void ComputePipeline::dispatchPipeline(VkCommandBuffer cmdBuf) {
 RGBToY::RGBToY(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader,
                const VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
                std::shared_ptr<Image> srcRGBImage, const std::shared_ptr<Image> &dstDownsampledImage,
-               std::shared_ptr<Image> dstFullImage, bool outputDownsample, bool outputFullRes, float downsampleScale,
+               std::shared_ptr<Image> dstFullImage, bool outputFullRes, float downsampleScale,
                const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
-                      {&specConstants_, sizeof(specConstants_)}, 0,
+    : ComputePipeline(loader, device, pipelineCache,
+                      createSpirv(pipelineCache, outputFullRes, dstDownsampledImage->isImageStore()),
+                      descriptorConfigs_, {&specConstants_, sizeof(specConstants_)}, 0,
                       {dstDownsampledImage->width(), dstDownsampledImage->height()}, debugName),
       srcImage_(std::move(srcRGBImage)), dstYDownsampled_(dstDownsampledImage), dstYFull_(std::move(dstFullImage)),
-      outputDS_(outputDownsample), outputFull_(outputFullRes), specConstants_{makeSpecConstants(downsampleScale)},
-      linearSampler_{createSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
+      outputFull_(outputFullRes), specConstants_{makeSpecConstants(downsampleScale)},
+      linearSampler_{createSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {
+    assert(!outputFull_ || dstYFull_);
+    assert(!outputFull_ || dstYDownsampled_->isImageStore() == dstYFull_->isImageStore());
+}
+
+SpirvBinary RGBToY::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, bool outputFull, bool imageStore) {
+    return pipelineCache->lookup(makeShaderName(outputFull, imageStore), {});
+}
+
+std::string RGBToY::makeShaderName(bool outputFull, bool imageStore) {
+    std::string shaderName{shaderBaseName};
+    if (outputFull) {
+        shaderName += "_full";
+    }
+    shaderName += imageStore ? "_img" : "_buf";
+
+    return shaderName;
+}
 
 RGBToY::SpecConstants RGBToY::makeSpecConstants(float downsampleScale) const {
-    VkBool32 isLumaInput = srcImage_->componentCount() == 1;
-    VkBool32 isImageStore = true;
-    if (outputDS_) {
-        isImageStore = dstYDownsampled_->isImageStore();
-    } else if (outputFull_) {
-        isImageStore = dstYFull_->isImageStore();
-    }
-    assert((outputDS_ & outputFull_) ? dstYFull_->isImageStore() == dstYDownsampled_->isImageStore() : true);
+    const VkBool32 isLumaInput = srcImage_->componentCount() == 1;
 
     SpecConstants specConstants = {
         32,
         8,
-        1,
-        1,
         isLumaInput,
-        outputDS_,
-        outputFull_,
-        isImageStore,
         downsampleScale,
         downsampleScale,
-        outputDS_ ? dstYDownsampled_->width() : 1,
-        outputDS_ ? dstYDownsampled_->height() : 1,
-        outputDS_ ? dstYDownsampled_->stride() : 1,
+        dstYDownsampled_->width(),
+        dstYDownsampled_->height(),
+        dstYDownsampled_->stride(),
         outputFull_ ? dstYFull_->width() : 1,
         outputFull_ ? dstYFull_->height() : 1,
         outputFull_ ? dstYFull_->stride() : 1,
@@ -312,11 +302,9 @@ void RGBToY::setInput(std::shared_ptr<Image> src) {
 
 void RGBToY::bindAndDispatch(VkCommandBuffer cmdBuf) {
     setInputStorage(cmdBuf, 0, srcImage_, linearSampler_);
-    if (outputDS_) {
-        setOutputStorage(cmdBuf, dstYDownsampled_->isImageStore() ? 1 : 2, dstYDownsampled_);
-    }
+    setOutputStorage(cmdBuf, dstYDownsampled_->isImageStore() ? 1 : 2, dstYDownsampled_);
     if (outputFull_) {
-        setOutputStorage(cmdBuf, dstYFull_->isImageStore() ? 3 : 4, dstYFull_);
+        setOutputStorage(cmdBuf, 3, dstYFull_);
     }
 
     bindPipeline(cmdBuf);
@@ -330,30 +318,32 @@ void RGBToY::bindAndDispatch(VkCommandBuffer cmdBuf) {
 Downsample::Downsample(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader,
                        const VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
                        std::shared_ptr<Image> src, const std::shared_ptr<Image> &dst, const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
+    : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache), descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dst->width(), dst->height()}, debugName),
       srcImage_(std::move(src)), dstImage_(dst), specConstants_{makeSpecConstants()},
       linearSampler_{createSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
+SpirvBinary Downsample::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache) {
+    return pipelineCache->lookup(shaderName, {});
+}
+
 Downsample::SpecConstants Downsample::makeSpecConstants() const {
+    assert(dstImage_->isImageStore());
+
     SpecConstants specConstants = {
         32,
         8,
-        1,
-        1,
-        dstImage_->isImageStore(),
         srcImage_->width() != dstImage_->width() * 2,
         srcImage_->height() != dstImage_->height() * 2,
         dstImage_->width(),
         dstImage_->height(),
-        dstImage_->stride(),
     };
     return specConstants;
 }
 
 void Downsample::bindAndDispatch(VkCommandBuffer cmdBuf) {
     setInputStorage(cmdBuf, 0, srcImage_, linearSampler_);
-    setOutputStorage(cmdBuf, dstImage_->isImageStore() ? 1 : 2, dstImage_);
+    setOutputStorage(cmdBuf, 1, dstImage_);
 
     bindPipeline(cmdBuf);
     dispatchPipeline(cmdBuf);
@@ -368,28 +358,23 @@ MVProcessAndWarp::MVProcessAndWarp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::d
                                    std::shared_ptr<Image> srcImage, std::shared_ptr<Image> srcFlow,
                                    const std::shared_ptr<Image> &dstImage, std::shared_ptr<Image> dstFlow,
                                    const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
+    : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache), descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstImage->width(), dstImage->height()}, debugName),
       srcSearch_(std::move(srcImage)), srcFlow_(std::move(srcFlow)), dstWarped_(dstImage),
       // Output flow and specialization state.
       dstFlow_(std::move(dstFlow)), specConstants_{makeSpecConstants()},
       linearSampler_{createSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
+SpirvBinary MVProcessAndWarp::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache) {
+    return pipelineCache->lookup(shaderName, {});
+}
+
 MVProcessAndWarp::SpecConstants MVProcessAndWarp::makeSpecConstants() const {
+    assert(dstWarped_->isBufferStore());
+    assert(dstFlow_->isBufferStore());
+
     SpecConstants specConstants = {
-        32,
-        8,
-        1,
-        1,
-        dstWarped_->isImageStore(),
-        2.0f,
-        2.0f,
-        0.5f,
-        0.5f,
-        dstFlow_->width(),
-        dstFlow_->height(),
-        dstWarped_->stride(),
-        dstFlow_->stride(),
+        32, 8, 2.0f, 2.0f, 0.5f, 0.5f, dstFlow_->width(), dstFlow_->height(), dstWarped_->stride(), dstFlow_->stride(),
     };
     return specConstants;
 }
@@ -397,8 +382,8 @@ MVProcessAndWarp::SpecConstants MVProcessAndWarp::makeSpecConstants() const {
 void MVProcessAndWarp::bindAndDispatch(VkCommandBuffer cmdBuf) {
     setInputStorage(cmdBuf, 0, srcSearch_, linearSampler_);
     setInputStorage(cmdBuf, 1, srcFlow_, linearSampler_);
-    setOutputStorage(cmdBuf, dstWarped_->isImageStore() ? 2 : 3, dstWarped_);
-    setOutputStorage(cmdBuf, dstFlow_->isImageStore() ? 4 : 5, dstFlow_);
+    setOutputStorage(cmdBuf, 2, dstWarped_);
+    setOutputStorage(cmdBuf, 3, dstFlow_);
 
     bindPipeline(cmdBuf);
     dispatchPipeline(cmdBuf);
@@ -412,7 +397,7 @@ DenseWarp::DenseWarp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispatc
                      const VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
                      std::shared_ptr<Image> srcImage, std::shared_ptr<Image> srcFlow,
                      const std::shared_ptr<Image> &dstImage, float inputFlowScale, const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
+    : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache), descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstImage->width(), dstImage->height()}, debugName),
       srcSearch_(std::move(srcImage)), srcFlow_(std::move(srcFlow)),
       // Output image and specialization state.
@@ -420,17 +405,15 @@ DenseWarp::DenseWarp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispatc
       linearSampler_{createSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)},
       nearestSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
+SpirvBinary DenseWarp::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache) {
+    return pipelineCache->lookup(shaderName, {});
+}
+
 DenseWarp::SpecConstants DenseWarp::makeSpecConstants(float inputFlowScale) const {
+    assert(dstWarped_->isImageStore());
+
     SpecConstants specConstants = {
-        32,
-        8,
-        1,
-        1,
-        dstWarped_->isImageStore(),
-        inputFlowScale,
-        dstWarped_->width(),
-        dstWarped_->height(),
-        dstWarped_->stride(),
+        32, 8, inputFlowScale, dstWarped_->width(), dstWarped_->height(),
     };
     return specConstants;
 }
@@ -443,7 +426,7 @@ void DenseWarp::setInputFlow(std::shared_ptr<Image> srcFlow) {
 void DenseWarp::bindAndDispatch(VkCommandBuffer cmdBuf) {
     setInputStorage(cmdBuf, 0, srcSearch_, linearSampler_);
     setInputStorage(cmdBuf, 1, srcFlow_, nearestSampler_);
-    setOutputStorage(cmdBuf, dstWarped_->isImageStore() ? 2 : 3, dstWarped_);
+    setOutputStorage(cmdBuf, 2, dstWarped_);
 
     bindPipeline(cmdBuf);
     dispatchPipeline(cmdBuf);
@@ -457,22 +440,20 @@ MedianFilter::MedianFilter(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::D
                            const VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
                            std::shared_ptr<Image> srcImage, const std::shared_ptr<Image> &dstImage,
                            float outputFlowScale, const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
+    : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache), descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstImage->width(), dstImage->height()}, debugName),
       srcFlow_(std::move(srcImage)), dstFlow_(dstImage), specConstants_{makeSpecConstants(outputFlowScale)},
       nearestSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
+SpirvBinary MedianFilter::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache) {
+    return pipelineCache->lookup(shaderName, {});
+}
+
 MedianFilter::SpecConstants MedianFilter::makeSpecConstants(float outputFlowScale) const {
+    assert(dstFlow_->isImageStore());
+
     SpecConstants specConstants = {
-        32,
-        8,
-        1,
-        1,
-        dstFlow_->isImageStore(),
-        outputFlowScale,
-        dstFlow_->width(),
-        dstFlow_->height(),
-        dstFlow_->stride(),
+        32, 8, outputFlowScale, dstFlow_->width(), dstFlow_->height(),
     };
     return specConstants;
 }
@@ -484,7 +465,7 @@ void MedianFilter::setOutput(std::shared_ptr<Image> dstImage) {
 
 void MedianFilter::bindAndDispatch(VkCommandBuffer cmdBuf) {
     setInputStorage(cmdBuf, 0, srcFlow_, nearestSampler_);
-    setOutputStorage(cmdBuf, dstFlow_->isImageStore() ? 1 : 2, dstFlow_);
+    setOutputStorage(cmdBuf, 1, dstFlow_);
 
     bindPipeline(cmdBuf);
     dispatchPipeline(cmdBuf);
@@ -499,24 +480,28 @@ BilateralFilter::BilateralFilter(const std::shared_ptr<VULKAN_HPP_NAMESPACE::det
                                  std::shared_ptr<Image> srcImage, std::shared_ptr<Image> srcFlow,
                                  const std::shared_ptr<Image> &dstFlow, float outputFlowScale,
                                  const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
-                      {&specConstants_, sizeof(specConstants_)}, 0, {dstFlow->width(), dstFlow->height()}, debugName),
+    : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache, dstFlow->isImageStore()),
+                      descriptorConfigs_, {&specConstants_, sizeof(specConstants_)}, 0,
+                      {dstFlow->width(), dstFlow->height()}, debugName),
       srcTemplate_(std::move(srcImage)), srcFlow_(std::move(srcFlow)),
       // Output flow and specialization state.
       dstFlow_(dstFlow), specConstants_{makeSpecConstants(outputFlowScale)},
       nearestSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
+SpirvBinary BilateralFilter::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, bool imageStore) {
+    return pipelineCache->lookup(makeShaderName(imageStore), {});
+}
+
+std::string BilateralFilter::makeShaderName(bool imageStore) {
+    std::string shaderName{shaderBaseName};
+    shaderName += imageStore ? "_img" : "_buf";
+    return shaderName;
+}
+
 BilateralFilter::SpecConstants BilateralFilter::makeSpecConstants(float outputFlowScale) const {
+    assert(dstFlow_->isImageStore() || dstFlow_->isBufferStore());
     SpecConstants specConstants = {
-        32,
-        8,
-        1,
-        1,
-        dstFlow_->isImageStore(),
-        outputFlowScale,
-        dstFlow_->width(),
-        dstFlow_->height(),
-        dstFlow_->stride(),
+        32, 8, outputFlowScale, dstFlow_->width(), dstFlow_->height(), dstFlow_->stride(),
     };
     return specConstants;
 }
@@ -544,42 +529,49 @@ SubpixelME::SubpixelME(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispa
                        std::shared_ptr<Image> srcImageSearch, std::shared_ptr<Image> srcImageTemplate,
                        std::shared_ptr<Image> srcFlow, std::shared_ptr<Image> prevLevelFlow,
                        const std::shared_ptr<Image> &dstFlow, bool doAccumulate, const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
+    : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache, doAccumulate), descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstFlow->width(), dstFlow->height()}, debugName),
       srcSearch_(std::move(srcImageSearch)), srcTemplate_(std::move(srcImageTemplate)), srcFlow_(std::move(srcFlow)),
-      srcPrevLevelFlow_(std::move(prevLevelFlow)), dstFlow_(dstFlow), specConstants_{makeSpecConstants(doAccumulate)},
+      srcPrevLevelFlow_(std::move(prevLevelFlow)), dstFlow_(dstFlow), doAccumulate_(doAccumulate),
+      specConstants_{makeSpecConstants()},
       nearestZeroPadSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER)},
       nearestRepeatPadSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
-SubpixelME::SpecConstants SubpixelME::makeSpecConstants(bool doAccumulate) const {
+SpirvBinary SubpixelME::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, bool doAccumulate) {
+    return pipelineCache->lookup(makeShaderName(doAccumulate), {});
+}
+
+std::string SubpixelME::makeShaderName(bool doAccumulate) {
+    std::string shaderName{shaderBaseName};
+    shaderName += doAccumulate ? "_acc_buf" : "_buf";
+    return shaderName;
+}
+
+SubpixelME::SpecConstants SubpixelME::makeSpecConstants() const {
+    assert(srcFlow_->isBufferLoad());
+    assert(dstFlow_->isBufferStore());
+    assert(!doAccumulate_ || srcPrevLevelFlow_->isBufferLoad());
+
     SpecConstants specConstants = {
         32,
         8,
-        1,
-        1,
-        doAccumulate,
-        doAccumulate ? srcPrevLevelFlow_->isBufferLoad() : false,
-        dstFlow_->isImageStore(),
         dstFlow_->width(),
         dstFlow_->height(),
         srcFlow_->stride(),
-        doAccumulate ? srcPrevLevelFlow_->stride() : 1,
+        doAccumulate_ ? srcPrevLevelFlow_->stride() : 1,
         dstFlow_->stride(),
     };
     return specConstants;
-}
-
-void SubpixelME::setOutput(std::shared_ptr<Image> dstFlow) {
-    assert(Image::isCompatible(dstFlow, dstFlow_));
-    dstFlow_ = std::move(dstFlow);
 }
 
 void SubpixelME::bindAndDispatch(VkCommandBuffer cmdBuf) {
     setInputStorage(cmdBuf, 0, srcSearch_, nearestZeroPadSampler_);
     setInputStorage(cmdBuf, 1, srcTemplate_, nearestRepeatPadSampler_);
     setInputStorage(cmdBuf, 2, srcFlow_, nearestZeroPadSampler_);
-    setInputStorage(cmdBuf, srcPrevLevelFlow_->isBufferLoad() ? 4 : 3, srcPrevLevelFlow_, nearestZeroPadSampler_);
-    setOutputStorage(cmdBuf, dstFlow_->isImageStore() ? 5 : 6, dstFlow_);
+    if (doAccumulate_) {
+        setInputStorage(cmdBuf, 3, srcPrevLevelFlow_, nearestZeroPadSampler_);
+    }
+    setOutputStorage(cmdBuf, 4, dstFlow_);
 
     bindPipeline(cmdBuf);
     dispatchPipeline(cmdBuf);
@@ -595,27 +587,39 @@ MVReplace::MVReplace(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispatc
                      std::shared_ptr<Image> costAtInput, std::shared_ptr<Image> minCostBlockMatch,
                      const std::shared_ptr<Image> &dstFlow, std::shared_ptr<Image> dstCost, bool outputCost,
                      const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
+    : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache, outputCost), descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dstFlow->width(), dstFlow->height()}, debugName),
       srcInputMV_(std::move(mvInput)), srcBlockMatchFlow_(std::move(flowBlockMatch)),
       srcInputMVCost_(std::move(costAtInput)), srcBlockMatchCost_(std::move(minCostBlockMatch)), dstFlow_(dstFlow),
       dstCost_(std::move(dstCost)), outputCost_(outputCost), specConstants_{makeSpecConstants()},
       nearestSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
+SpirvBinary MVReplace::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, bool outputCost) {
+    return pipelineCache->lookup(makeShaderName(outputCost), {});
+}
+
+std::string MVReplace::makeShaderName(bool outputCost) {
+    std::string shaderName{shaderBaseName};
+    if (outputCost) {
+        shaderName += "_cost";
+    }
+    shaderName += "_img";
+    return shaderName;
+}
+
 MVReplace::SpecConstants MVReplace::makeSpecConstants() const {
+    assert(srcInputMV_->isImageSample());
+    assert(srcBlockMatchFlow_->isImageSample());
+    assert(srcInputMVCost_->isImageSample());
+    assert(srcBlockMatchCost_->isImageSample());
+    assert(dstFlow_->isImageStore());
+    assert(!outputCost_ || (dstCost_ && dstCost_->isImageStore()));
+
     SpecConstants specConstants = {
         32,
         8,
-        1,
-        1,
-        outputCost_,
-        srcInputMVCost_->isBufferLoad(),
-        dstFlow_->isImageStore(),
         dstFlow_->width(),
         dstFlow_->height(),
-        srcInputMVCost_->stride(),
-        dstFlow_->stride(),
-        outputCost_ ? dstCost_->stride() : 1,
     };
     return specConstants;
 }
@@ -638,12 +642,12 @@ void MVReplace::setOutputCost(std::shared_ptr<Image> dstCost) {
 void MVReplace::bindAndDispatch(VkCommandBuffer cmdBuf) {
     setInputStorage(cmdBuf, 0, srcInputMV_, nearestSampler_);
     setInputStorage(cmdBuf, 1, srcBlockMatchFlow_, nearestSampler_);
-    setInputStorage(cmdBuf, srcInputMVCost_->isBufferLoad() ? 3 : 2, srcInputMVCost_, nearestSampler_);
-    setInputStorage(cmdBuf, srcBlockMatchCost_->isBufferLoad() ? 5 : 4, srcBlockMatchCost_, nearestSampler_);
-    setOutputStorage(cmdBuf, dstFlow_->isImageStore() ? 6 : 7, dstFlow_);
+    setInputStorage(cmdBuf, 2, srcInputMVCost_, nearestSampler_);
+    setInputStorage(cmdBuf, 3, srcBlockMatchCost_, nearestSampler_);
+    setOutputStorage(cmdBuf, 4, dstFlow_);
 
     if (outputCost_) {
-        setOutputStorage(cmdBuf, dstCost_->isImageStore() ? 8 : 9, dstCost_);
+        setOutputStorage(cmdBuf, 5, dstCost_);
     }
 
     bindPipeline(cmdBuf);
@@ -659,7 +663,8 @@ BlockMatch::BlockMatch(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispa
                        SearchType searchType, int32_t maxSearchRange, const std::shared_ptr<Image> &srcSearch,
                        std::shared_ptr<Image> srcTemplate, std::shared_ptr<Image> dstFlow,
                        std::shared_ptr<Image> dstCost, const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache, shaderName, descriptorConfigs_,
+    : ComputePipeline(loader, device, pipelineCache,
+                      createSpirv(pipelineCache, searchType, dstCost && dstCost->isImageStore()), descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, sizeof(PushConstants),
                       {srcSearch->width(), srcSearch->height()}, debugName),
       srcSearch_(srcSearch), srcTemplate_(std::move(srcTemplate)), dstFlow_(std::move(dstFlow)),
@@ -672,19 +677,43 @@ BlockMatch::BlockMatch(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispa
     assert(searchType_ != SearchType::RAW_SAD || maxSearchRange_ == 0);
 }
 
+SpirvBinary BlockMatch::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, SearchType searchType,
+                                    bool costImageStore) {
+    return pipelineCache->lookup(makeShaderName(searchType, costImageStore), {});
+}
+
+std::string BlockMatch::makeShaderName(SearchType searchType, bool costImageStore) {
+    std::string shaderName{shaderBaseName};
+    switch (searchType) {
+    case SearchType::MIN_SAD:
+        shaderName += "_flow";
+        break;
+    case SearchType::MIN_SAD_COST:
+        shaderName += costImageStore ? "_flow_cost_img" : "_flow_cost_buf";
+        break;
+    case SearchType::RAW_SAD:
+        shaderName += "_cost_buf";
+        break;
+    default:
+        throw std::runtime_error("Unsupported BlockMatch search type");
+    }
+    return shaderName;
+}
+
 BlockMatch::SpecConstants BlockMatch::makeSpecConstants() const {
+    assert(!hasFlowOutput() || (dstFlow_ && dstFlow_->isBufferStore()));
+    assert(!hasCostOutput() || (dstCost_ && (dstCost_->isImageStore() || dstCost_->isBufferStore())));
+    assert(searchType_ != SearchType::MIN_SAD || !dstCost_);
+    assert(searchType_ != SearchType::RAW_SAD || (!dstFlow_ && dstCost_->isBufferStore()));
+
     SpecConstants specConstants = {
         32,
         8,
-        1,
-        1,
         static_cast<int32_t>(searchType_),
-        maxSearchRange_,
         hasFlowOutput() ? dstFlow_->width() : dstCost_->width(),
         hasFlowOutput() ? dstFlow_->height() : dstCost_->height(),
         hasFlowOutput() ? dstFlow_->stride() : 0,
         hasCostOutput() ? dstCost_->stride() : 0,
-        hasCostOutput() && dstCost_->isImageStore(),
     };
     return specConstants;
 }

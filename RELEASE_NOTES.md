@@ -39,6 +39,8 @@
   floating-point inputs on affected devices by preserving operation order.
 - Fixed optical-flow session independence, moving internal resource ownership to
   the session level, enabling safe parallel execution and per-session memory.
+- Fixed optical-flow pipelines failing on drivers without descriptor partial
+  binding support.
 
 ## Version 0.10.0 – *Optical Flow, Graph Profiling & Runtime Refinement*
 

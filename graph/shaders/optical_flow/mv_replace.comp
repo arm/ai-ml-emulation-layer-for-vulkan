@@ -11,46 +11,25 @@ precision mediump image2D;
 #extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
 #extension GL_EXT_shader_16bit_storage : require
 
+#ifndef OUTPUT_COST
+#error OUTPUT_COST must be defined
+#endif
+
 // Local Work Size set as Specialization Constants
 layout (local_size_x_id = 0, local_size_y_id = 1, local_size_z = 1) in;
 
-// Supported : VECTORIZE_X: 1 or 2, VECTORIZE_Y: 1 or 2
-layout(constant_id = 2) const int VECTORIZE_X = 1;
-layout(constant_id = 3) const int VECTORIZE_Y = 1;
-
-layout(constant_id = 4) const bool OUTPUT_COST = false;
-layout(constant_id = 5) const bool COST_BUFFER_LOAD = false;
-layout(constant_id = 6) const bool IMAGE_STORE = false;
-layout(constant_id = 7) const int OUTPUT_SIZE_X = 480;
-layout(constant_id = 8) const int OUTPUT_SIZE_Y = 270;
-layout(constant_id = 9) const uint STRIDE_SRC_COST = 480;   // The number of elements in a row (x-axis) including padding
-layout(constant_id = 10) const uint STRIDE_DST_FLOW = 480;   // The number of elements in a row (x-axis) including padding
-layout(constant_id = 11) const uint STRIDE_DST_COST = 480;   // The number of elements in a row (x-axis) including padding
-
+layout(constant_id = 2) const int OUTPUT_SIZE_X = 480;
+layout(constant_id = 3) const int OUTPUT_SIZE_Y = 270;
 
 layout (binding = 0) uniform mediump sampler2D mvInputSampler;
 layout (binding = 1) uniform mediump sampler2D flowBlockMatchSampler;
 
 layout (binding = 2) uniform usampler2D costAtInputMvSampler;
-layout (set = 0, binding = 3, std430) buffer _cost_at_input_mv_buf{
-    uint16_t cost_at_input_mv_buf[];
-};
-
-layout (binding = 4) uniform usampler2D minCostBlockMatchSampler;
-layout (set = 0, binding = 5, std430) buffer _min_cost_block_match_buf{
-    uint16_t min_cost_block_match_buf[];
-};
-
-layout (set=0, binding=6, rg16f) uniform writeonly image2D dst_flow_img;
-layout (set = 0, binding = 7, std430) buffer _dst_flow_buf{
-    f16vec2 dst_flow_buf[];
-};
-
-layout (set=0, binding=8, r16ui) uniform writeonly uimage2D dst_cost_img;
-layout (set = 0, binding = 9, std430) buffer _dst_cost_buf{
-    uint16_t dst_cost_buf[];
-};
-
+layout (binding = 3) uniform usampler2D minCostBlockMatchSampler;
+layout (set=0, binding=4, rg16f) uniform writeonly image2D dst_flow_img;
+#if OUTPUT_COST
+layout (set=0, binding=5, r16ui) uniform writeonly uimage2D dst_cost_img;
+#endif
 
 void replace_flow(ivec2 pos, uint16_t cost_at_input_mv, uint16_t min_cost_block_match,
                   out f16vec2 flow_out, out uint16_t cost_out)
@@ -67,62 +46,18 @@ void replace_flow(ivec2 pos, uint16_t cost_at_input_mv, uint16_t min_cost_block_
 
 void main()
 {
-     const ivec2 pos = ivec2(gl_GlobalInvocationID.x * VECTORIZE_X,
-                             gl_GlobalInvocationID.y * VECTORIZE_Y);
+    const ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
     if (any(greaterThanEqual(pos, ivec2(OUTPUT_SIZE_X, OUTPUT_SIZE_Y)))) return;
 
-    // Load all costs, expecting vectorization by compiler
-    uint16_t cost_at_input_mv[VECTORIZE_Y][VECTORIZE_X];
-    uint16_t min_cost_block_match[VECTORIZE_Y][VECTORIZE_X];
+    const uint16_t cost_at_input_mv = uint16_t(texelFetch(costAtInputMvSampler, pos, 0).x);
+    const uint16_t min_cost_block_match = uint16_t(texelFetch(minCostBlockMatchSampler, pos, 0).x);
 
-    for (int vy = 0; vy < VECTORIZE_Y; ++vy) {
-        int vpos_y = pos.y + vy;
-        for (int vx = 0; vx < VECTORIZE_X; ++vx) {
-            if (COST_BUFFER_LOAD) {
-                const uint vpos_1d = STRIDE_SRC_COST * vpos_y + pos.x + vx;
-                cost_at_input_mv[vy][vx]     = cost_at_input_mv_buf[vpos_1d];
-                min_cost_block_match[vy][vx] = min_cost_block_match_buf[vpos_1d];
-            } else {
-                const ivec2 vpos = ivec2(pos.x + vx, vpos_y);
-                cost_at_input_mv[vy][vx]     = uint16_t(texelFetch(costAtInputMvSampler, vpos, 0).x);
-                min_cost_block_match[vy][vx] = uint16_t(texelFetch(minCostBlockMatchSampler, vpos, 0).x);
-            }
-        }
-    }
+    f16vec2 flow;
+    uint16_t cost;
+    replace_flow(pos, cost_at_input_mv, min_cost_block_match, flow, cost);
 
-    // Perform replacement
-    f16vec2 flow[VECTORIZE_Y][VECTORIZE_X];
-    uint16_t cost[VECTORIZE_Y][VECTORIZE_X];
-
-    for (int vy = 0; vy < VECTORIZE_Y; ++vy) {
-        for (int vx = 0; vx < VECTORIZE_X; ++vx) {
-            replace_flow(ivec2(pos.x + vx, pos.y + vy), cost_at_input_mv[vy][vx], min_cost_block_match[vy][vx],
-                         flow[vy][vx], cost[vy][vx]);
-        }
-    }
-
-    // Store output
-    for (int vy = 0; vy < VECTORIZE_Y; ++vy) {
-        int vpos_y = pos.y + vy;
-
-        // This shader accepts the VECTORIZE_Y which is not a divisor of OUTPUT_SIZE_Y,
-        // so the boundary check below is necessary.
-        if (OUTPUT_SIZE_Y % 2 == 1 && vpos_y >= OUTPUT_SIZE_Y)
-            break;
-
-        for (int vx = 0; vx < VECTORIZE_X; ++vx) {
-            if (IMAGE_STORE) {
-                imageStore(dst_flow_img, ivec2(pos.x + vx, vpos_y), f16vec4(flow[vy][vx], 0, 0));
-                if (OUTPUT_COST) {
-                    imageStore(dst_cost_img, ivec2(pos.x + vx, vpos_y), u16vec4(cost[vy][vx], 0, 0, 0));
-                }
-            } else {
-                // Compiler vectorizes this data type
-                dst_flow_buf[STRIDE_DST_FLOW * vpos_y + pos.x + vx] = flow[vy][vx];
-                if (OUTPUT_COST) {
-                    dst_cost_buf[STRIDE_DST_COST * vpos_y + pos.x + vx] = cost[vy][vx];
-                }
-            }
-        }
-    }
+    imageStore(dst_flow_img, pos, f16vec4(flow, 0, 0));
+#if OUTPUT_COST
+    imageStore(dst_cost_img, pos, u16vec4(cost, 0, 0, 0));
+#endif
 }

@@ -107,7 +107,7 @@ foreach(i RANGE 3 ${COUNT})
 endforeach()
 
 # Parse command line arguments
-cmake_parse_arguments(ARGS "" "INPUT_FILE;OUTPUT_FILE;GLSLANG" "REPLACE" ${ARGV})
+cmake_parse_arguments(ARGS "" "INPUT_FILE;OUTPUT_FILE;GLSLANG" "DEFINE;REPLACE" ${ARGV})
 
 # Read source file into memory
 file(READ ${ARGS_INPUT_FILE} GLSL)
@@ -136,6 +136,12 @@ set(GLSLANG_FLAGS -V --target-env vulkan1.3)
 if(USE_FLOAT_AS_DOUBLE)
     list(APPEND GLSLANG_FLAGS "-DUSE_FLOAT_AS_DOUBLE=ON")
 endif()
+foreach(DEFINITION IN LISTS ARGS_DEFINE)
+    if(NOT DEFINITION MATCHES "^[A-Za-z_][A-Za-z0-9_]*=.*$")
+        message(FATAL_ERROR "Invalid shader definition: ${DEFINITION}")
+    endif()
+    list(APPEND GLSLANG_FLAGS "-D${DEFINITION}")
+endforeach()
 
 execute_process(
     COMMAND ${ARGS_GLSLANG} ${GLSLANG_FLAGS} -o ${ARGS_OUTPUT_FILE} ${ARGS_OUTPUT_FILE}.comp

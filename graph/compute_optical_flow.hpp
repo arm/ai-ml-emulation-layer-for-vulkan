@@ -26,13 +26,8 @@
 namespace mlsdk::el::compute::optical_flow {
 
 struct DescriptorConfig {
-    uint32_t index = 0;
-    VkDescriptorType type = VK_DESCRIPTOR_TYPE_MAX_ENUM;
-    VkDescriptorBindingFlags flags{};
-    DescriptorConfig(uint32_t index_in, VkDescriptorType type_in, VkDescriptorBindingFlags flags_in)
-        : index(index_in), type(type_in), flags(flags_in) {}
-
-    DescriptorConfig() = delete;
+    uint32_t index;
+    VkDescriptorType type;
 };
 using DescriptorConfigs = std::vector<DescriptorConfig>;
 
@@ -61,14 +56,12 @@ class ScheduleHelper {
 class ComputePipeline {
   public:
     ComputePipeline(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
-                    const std::shared_ptr<PipelineCache> &pipelineCache, std::string_view shaderName,
+                    const std::shared_ptr<PipelineCache> &pipelineCache, SpirvBinary spirv,
                     const DescriptorConfigs &descriptorConfigs, const SpecConstants &specConstants,
                     uint32_t pushConstantsSize, const ScheduleHelper &schedule, const std::string &debugName);
     ComputePipeline(const ComputePipeline &) = delete;
     ComputePipeline &operator=(const ComputePipeline &) = delete;
     virtual ~ComputePipeline();
-
-    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, std::string_view shaderName);
 
     void makePipeline();
     void setInputStorage(VkCommandBuffer cmdBuf, uint32_t binding, const std::shared_ptr<Image> &image,
@@ -124,22 +117,19 @@ template <typename T> void ComputePipeline::setPushConstants(VkCommandBuffer cmd
 
 class RGBToY : public ComputePipeline {
   public:
-    static constexpr std::string_view shaderName = "rgb_to_y";
     RGBToY(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
            const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> srcRGBImage,
-           const std::shared_ptr<Image> &dstDownsampledImage, std::shared_ptr<Image> dstFullImage,
-           bool outputDownsample, bool outputFullRes, float downsampleScale, const std::string &debugName);
+           const std::shared_ptr<Image> &dstDownsampledImage, std::shared_ptr<Image> dstFullImage, bool outputFullRes,
+           float downsampleScale, const std::string &debugName);
     ~RGBToY() override = default;
+
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, bool outputFull,
+                                   bool imageStore);
 
     struct SpecConstants {
         uint32_t threadGroupSizeX;
         uint32_t threadGroupSizeY;
-        uint32_t vectorisationfactorX;
-        uint32_t vectorisationfactorY;
         VkBool32 isLumaInput;
-        VkBool32 outputDownsampledImage;
-        VkBool32 outputFullImage;
-        VkBool32 isImageStore;
         float downsampleScaleX;
         float downsampleScaleY;
         uint32_t downsampledImageWidth;
@@ -155,20 +145,20 @@ class RGBToY : public ComputePipeline {
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
+    static constexpr std::string_view shaderBaseName = "rgb_to_y";
+    static std::string makeShaderName(bool outputFull, bool imageStore);
     std::shared_ptr<Image> srcImage_;
     std::shared_ptr<Image> dstYDownsampled_;
     std::shared_ptr<Image> dstYFull_;
-    bool outputDS_;
     bool outputFull_;
     SpecConstants specConstants_;
     VkSampler linearSampler_;
 
     inline static const DescriptorConfigs descriptorConfigs_{
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {}},                                // Src
-        {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT},  // DstDs
-        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT}, // DstDs
-        {3, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT},  // DstFull
-        {4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT}  // DstFull
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // Src
+        {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // DstDs
+        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // DstDs
+        {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // DstFull
     };
 };
 
@@ -178,23 +168,20 @@ class RGBToY : public ComputePipeline {
 
 class Downsample : public ComputePipeline {
   public:
-    static constexpr std::string_view shaderName = "downsample";
     Downsample(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
                const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> src,
                const std::shared_ptr<Image> &dst, const std::string &debugName);
     ~Downsample() override = default;
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache);
+
     struct SpecConstants {
         uint32_t threadGroupSizeX;
         uint32_t threadGroupSizeY;
-        uint32_t vectorisationfactorX;
-        uint32_t vectorisationfactorY;
-        VkBool32 isImageStore;
         VkBool32 padX;
         VkBool32 padY;
         uint32_t outputImageWidth;
         uint32_t outputImageHeight;
-        uint32_t outputImageStride;
     };
 
     SpecConstants makeSpecConstants() const;
@@ -202,15 +189,15 @@ class Downsample : public ComputePipeline {
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
+    static constexpr std::string_view shaderName = "downsample_img";
     std::shared_ptr<Image> srcImage_;
     std::shared_ptr<Image> dstImage_;
     SpecConstants specConstants_;
     VkSampler linearSampler_;
 
     inline static const DescriptorConfigs descriptorConfigs_{
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {}},                               // Src
-        {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT}, // Dst
-        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT} // Dst
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // Src
+        {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // Dst
     };
 };
 
@@ -220,7 +207,6 @@ class Downsample : public ComputePipeline {
 
 class MVProcessAndWarp : public ComputePipeline {
   public:
-    static constexpr std::string_view shaderName = "mv_process_and_warp";
     MVProcessAndWarp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader,
                      VkDevice device, const std::shared_ptr<PipelineCache> &pipelineCache,
                      std::shared_ptr<Image> srcImage, std::shared_ptr<Image> _srcFlow,
@@ -228,12 +214,11 @@ class MVProcessAndWarp : public ComputePipeline {
                      const std::string &debugName);
     ~MVProcessAndWarp() override = default;
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache);
+
     struct SpecConstants {
         uint32_t threadGroupSizeX;
         uint32_t threadGroupSizeY;
-        uint32_t vectorisationfactorX;
-        uint32_t vectorisationfactorY;
-        VkBool32 isImageStore;
         float downsampleScaleX;
         float downsampleScaleY;
         float upsampleScaleX;
@@ -248,6 +233,7 @@ class MVProcessAndWarp : public ComputePipeline {
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
+    static constexpr std::string_view shaderName = "mv_process_and_warp_buf";
     std::shared_ptr<Image> srcSearch_;
     std::shared_ptr<Image> srcFlow_;
     std::shared_ptr<Image> dstWarped_;
@@ -256,12 +242,10 @@ class MVProcessAndWarp : public ComputePipeline {
     VkSampler linearSampler_;
 
     inline static const DescriptorConfigs descriptorConfigs_{
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {}},                                // Src
-        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {}},                                // SrcFlow
-        {2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT},  // Dst
-        {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT}, // Dst
-        {4, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT},  // DstFlow
-        {5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT}  // DstFlow
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // Src
+        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // SrcFlow
+        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // Dst
+        {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // DstFlow
     };
 };
 
@@ -271,23 +255,20 @@ class MVProcessAndWarp : public ComputePipeline {
 
 class DenseWarp : public ComputePipeline {
   public:
-    static constexpr std::string_view shaderName = "dense_warp";
     DenseWarp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
               const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> srcImage,
               std::shared_ptr<Image> _srcFlow, const std::shared_ptr<Image> &dstImage, float inputFlowScale,
               const std::string &debugName);
     ~DenseWarp() override = default;
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache);
+
     struct SpecConstants {
         uint32_t threadGroupSizeX;
         uint32_t threadGroupSizeY;
-        uint32_t vectorisationfactorX;
-        uint32_t vectorisationfactorY;
-        VkBool32 isImageStore;
         float inputFlowScale;
         uint32_t outputImageWidth;
         uint32_t outputImageHeight;
-        uint32_t outputImageStride;
     };
 
     SpecConstants makeSpecConstants(float inputFlowScale) const;
@@ -297,6 +278,7 @@ class DenseWarp : public ComputePipeline {
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
+    static constexpr std::string_view shaderName = "dense_warp_img";
     std::shared_ptr<Image> srcSearch_;
     std::shared_ptr<Image> srcFlow_;
     std::shared_ptr<Image> dstWarped_;
@@ -305,10 +287,9 @@ class DenseWarp : public ComputePipeline {
     VkSampler nearestSampler_;
 
     inline static const DescriptorConfigs descriptorConfigs_{
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {}},                                // Src
-        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {}},                                // SrcFlow
-        {2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT},  // Dst
-        {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT}, // Dst
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // Src
+        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // SrcFlow
+        {2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // Dst
     };
 };
 
@@ -318,22 +299,19 @@ class DenseWarp : public ComputePipeline {
 
 class MedianFilter : public ComputePipeline {
   public:
-    static constexpr std::string_view shaderName = "median_filter";
     MedianFilter(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
                  const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> srcImage,
                  const std::shared_ptr<Image> &dstImage, float outputFlowScale, const std::string &debugName);
     ~MedianFilter() override = default;
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache);
+
     struct SpecConstants {
         uint32_t threadGroupSizeX;
         uint32_t threadGroupSizeY;
-        uint32_t vectorisationfactorX;
-        uint32_t vectorisationfactorY;
-        VkBool32 isImageStore;
         float outputFlowScale;
         uint32_t outputImageWidth;
         uint32_t outputImageHeight;
-        uint32_t outputImageStride;
     };
 
     SpecConstants makeSpecConstants(float outputFlowScale) const;
@@ -342,15 +320,15 @@ class MedianFilter : public ComputePipeline {
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
+    static constexpr std::string_view shaderName = "median_filter_img";
     std::shared_ptr<Image> srcFlow_;
     std::shared_ptr<Image> dstFlow_;
     SpecConstants specConstants_;
     VkSampler nearestSampler_;
 
     inline static const DescriptorConfigs descriptorConfigs_{
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {}},                               // Src
-        {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT}, // Dst
-        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT} // Dst
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // Src
+        {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // Dst
     };
 };
 
@@ -360,19 +338,17 @@ class MedianFilter : public ComputePipeline {
 
 class BilateralFilter : public ComputePipeline {
   public:
-    static constexpr std::string_view shaderName = "bilateral_filter";
     BilateralFilter(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
                     const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> srcImage,
                     std::shared_ptr<Image> srcFlow, const std::shared_ptr<Image> &dstFlow, float outputFlowScale,
                     const std::string &debugName);
     ~BilateralFilter() override = default;
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, bool imageStore);
+
     struct SpecConstants {
         uint32_t threadGroupSizeX;
         uint32_t threadGroupSizeY;
-        uint32_t vectorisationfactorX;
-        uint32_t vectorisationfactorY;
-        VkBool32 isImageStore;
         float outputFlowScale;
         uint32_t outputImageWidth;
         uint32_t outputImageHeight;
@@ -381,10 +357,12 @@ class BilateralFilter : public ComputePipeline {
 
     SpecConstants makeSpecConstants(float outputFlowScale) const;
 
-    void setOutput(std::shared_ptr<Image> _dstFlow);
+    void setOutput(std::shared_ptr<Image> dstFlow);
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
+    static constexpr std::string_view shaderBaseName = "bilateral_filter";
+    static std::string makeShaderName(bool imageStore);
     std::shared_ptr<Image> srcTemplate_;
     std::shared_ptr<Image> srcFlow_;
     std::shared_ptr<Image> dstFlow_;
@@ -392,10 +370,10 @@ class BilateralFilter : public ComputePipeline {
     VkSampler nearestSampler_;
 
     inline static const DescriptorConfigs descriptorConfigs_{
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {}},                               // Src
-        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {}},                               // SrcFlow
-        {2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT}, // DstFlow
-        {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT} // DstFlow
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // Src
+        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // SrcFlow
+        {2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // DstFlow
+        {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // DstFlow
     };
 };
 
@@ -405,7 +383,6 @@ class BilateralFilter : public ComputePipeline {
 
 class SubpixelME : public ComputePipeline {
   public:
-    static constexpr std::string_view shaderName = "subpixel_me";
     SubpixelME(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
                const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> srcImageSearch,
                std::shared_ptr<Image> srcImageTemplate, std::shared_ptr<Image> srcFlow,
@@ -413,14 +390,11 @@ class SubpixelME : public ComputePipeline {
                const std::string &debugName);
     ~SubpixelME() override = default;
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, bool doAccumulate);
+
     struct SpecConstants {
         uint32_t threadGroupSizeX;
         uint32_t threadGroupSizeY;
-        uint32_t vectorisationfactorX;
-        uint32_t vectorisationfactorY;
-        VkBool32 doAccumulate;
-        VkBool32 isFlowBufferLoad;
-        VkBool32 isImageStore;
         uint32_t outputWidth;
         uint32_t outputHeight;
         uint32_t inputFlowStride;
@@ -428,29 +402,29 @@ class SubpixelME : public ComputePipeline {
         uint32_t outputFlowStride;
     };
 
-    SpecConstants makeSpecConstants(bool doAccumulate) const;
+    SpecConstants makeSpecConstants() const;
 
-    void setOutput(std::shared_ptr<Image> _dstFlow);
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
+    static constexpr std::string_view shaderBaseName = "subpixel_me";
+    static std::string makeShaderName(bool doAccumulate);
     std::shared_ptr<Image> srcSearch_;
     std::shared_ptr<Image> srcTemplate_;
     std::shared_ptr<Image> srcFlow_;
     std::shared_ptr<Image> srcPrevLevelFlow_;
     std::shared_ptr<Image> dstFlow_;
+    bool doAccumulate_;
     SpecConstants specConstants_;
     VkSampler nearestZeroPadSampler_;
     VkSampler nearestRepeatPadSampler_;
 
     inline static const DescriptorConfigs descriptorConfigs_{
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {}},                                        // SrcSearch
-        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {}},                                        // SrcTemplate
-        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, {}},                                                // SrcFlow
-        {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT}, // PrevFlow
-        {4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT},         // PrevFlow
-        {5, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT},          // DstFlow
-        {6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT}          // DstFlow
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // SrcSearch
+        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // SrcTemplate
+        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // SrcFlow
+        {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // PrevFlow
+        {4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // DstFlow
     };
 };
 
@@ -460,7 +434,6 @@ class SubpixelME : public ComputePipeline {
 
 class MVReplace : public ComputePipeline {
   public:
-    static constexpr std::string_view shaderName = "mv_replace";
     MVReplace(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
               const std::shared_ptr<PipelineCache> &pipelineCache, std::shared_ptr<Image> mvInput,
               std::shared_ptr<Image> flowBlockMatch, std::shared_ptr<Image> costAtInput,
@@ -468,19 +441,13 @@ class MVReplace : public ComputePipeline {
               std::shared_ptr<Image> dstCost, bool outputCost, const std::string &debugName);
     ~MVReplace() override = default;
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, bool outputCost);
+
     struct SpecConstants {
         uint32_t threadGroupSizeX;
         uint32_t threadGroupSizeY;
-        uint32_t vectorisationfactorX;
-        uint32_t vectorisationfactorY;
-        VkBool32 outputCost;
-        VkBool32 isCostBufferLoad;
-        VkBool32 isImageStore;
         uint32_t outputWidth;
         uint32_t outputHeight;
-        uint32_t inputCostStride;
-        uint32_t outputFlowStride;
-        uint32_t outputCostStride;
     };
 
     SpecConstants makeSpecConstants() const;
@@ -491,6 +458,8 @@ class MVReplace : public ComputePipeline {
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
+    static constexpr std::string_view shaderBaseName = "mv_replace";
+    static std::string makeShaderName(bool outputCost);
     std::shared_ptr<Image> srcInputMV_;
     std::shared_ptr<Image> srcBlockMatchFlow_;
     std::shared_ptr<Image> srcInputMVCost_;
@@ -502,17 +471,12 @@ class MVReplace : public ComputePipeline {
     VkSampler nearestSampler_;
 
     inline static const DescriptorConfigs descriptorConfigs_{
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {}},                                        // MvInput
-        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {}},                                        // FlowBlockMatch
-        {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT}, // CostAtInputMv
-        {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT},         // CostAtInputMv
-        {4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT},                                       // MinCostBlockMatchMem
-        {5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT}, // MinCostBlockMatchMem
-        {6, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT},  // DstFlow
-        {7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT}, // DstFlow
-        {8, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT},  // DstCost
-        {9, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT}, // DstCost
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // MvInput
+        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // FlowBlockMatch
+        {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // CostAtInputMv
+        {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // MinCostBlockMatchMem
+        {4, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // DstFlow
+        {5, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // DstCost
     };
 };
 
@@ -522,7 +486,6 @@ class MVReplace : public ComputePipeline {
 
 class BlockMatch : public ComputePipeline {
   public:
-    static constexpr std::string_view shaderName = "block_match_of";
     using SearchType = common::BlockMatchMode;
 
     BlockMatch(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &loader, VkDevice device,
@@ -531,18 +494,17 @@ class BlockMatch : public ComputePipeline {
                std::shared_ptr<Image> dstFlow, std::shared_ptr<Image> dstCost, const std::string &debugName);
     ~BlockMatch() override = default;
 
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, SearchType searchType,
+                                   bool costImageStore);
+
     struct SpecConstants {
         uint32_t threadGroupSizeX;
         uint32_t threadGroupSizeY;
-        uint32_t vectorisationfactorX;
-        uint32_t vectorisationfactorY;
         int32_t searchType;
-        int32_t maxSearchRange;
         uint32_t outputWidth;
         uint32_t outputHeight;
         uint32_t outputFlowStride;
         uint32_t outputCostStride;
-        VkBool32 isCostImageStore;
     };
 
     struct PushConstants {
@@ -558,6 +520,8 @@ class BlockMatch : public ComputePipeline {
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
+    static constexpr std::string_view shaderBaseName = "block_match_of";
+    static std::string makeShaderName(SearchType searchType, bool costImageStore);
     std::shared_ptr<Image> srcSearch_;
     std::shared_ptr<Image> srcTemplate_;
     std::shared_ptr<Image> dstFlow_;
@@ -569,11 +533,11 @@ class BlockMatch : public ComputePipeline {
     VkSampler nearestSampler_;
 
     inline static const DescriptorConfigs descriptorConfigs_{
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {}},                                // SrcSearch
-        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {}},                                // SrcTemplate
-        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT}, // DstFlow
-        {3, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT},  // DstCost
-        {4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT}, // DstCost
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // SrcTemplate
+        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // SrcSearch
+        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // DstFlow
+        {3, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // DstCost
+        {4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // DstCost
     };
 };
 
