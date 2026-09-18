@@ -10,6 +10,7 @@
 - Enabled building and installing the native Emulation Layer with
   `pip install .` from the repository root.
 - Enabled KosmicKrisp compatibility automatically based on selected driver.
+- Added support for Android™ devices using 16KiB pages.
 
 ### Tensor Shader Support
 
