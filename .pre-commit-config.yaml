@@ -31,11 +31,10 @@ repos:
     hooks:
       - id: remove-tabs
         args: [--whitespaces-count, '4']
-  - repo: https://github.com/asottile/reorder_python_imports
-    rev: v3.16.0
+  - repo: https://github.com/PyCQA/isort
+    rev: 8.0.1
     hooks:
-      - id: reorder-python-imports
-        pass_filenames: true
+      - id: isort
         stages: [pre-commit]
   - repo: https://github.com/psf/black
     rev: 26.1.0
