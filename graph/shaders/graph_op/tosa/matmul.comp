@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define IN_T %in_t%
-#define OUT_T %out_t%
+#define IN_T %in_t_storage%
+#define OUT_T %out_t_storage%
 #define TYPE_IN %in_t_type%
 #define TYPE_OUT %out_t_type%
 
@@ -13,7 +13,7 @@
 #elif IS_BFLOAT(TYPE_IN) || IS_BFLOAT(TYPE_OUT)
     #define COMP_T float
 #else
-    #define COMP_T OUT_T
+    #define COMP_T %out_t_comp%
 #endif
 
 layout(local_size_x = %warpX%) in;

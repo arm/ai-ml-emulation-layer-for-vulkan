@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define STORAGE_T %in_out_t%
+#define STORAGE_T %in_out_t_storage%
 #define TYPE_IN_OUT %in_out_t_type%
 
 layout(local_size_x = %warpX%) in;

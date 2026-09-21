@@ -11,6 +11,7 @@
 #define RANK_MAX 6
 
 #define NAN (0.0 / 0.0)
+#define INF (1.0 / 0.0)
 #define PI 3.141592653589793238462643383279502884197
 
 // NAN Modes
@@ -23,6 +24,7 @@
 #define TYPE_INT16 0x6932  // "i2"
 #define TYPE_INT32 0x6934  // "i4"
 #define TYPE_INT64 0x6938  // "i8"
+#define TYPE_UINT32 0x7534 // "u4"
 #define TYPE_UINT8 0x7531  // "u1"
 #define TYPE_HALF 0x6632   // "f2"
 #define TYPE_FLOAT 0x6634  // "f4"
@@ -189,7 +191,7 @@ float decode_to_f32(bfloat16_t x)
     return uintBitsToFloat(u);
 }
 
-float16_t decode_to_f16(float8_e5m2_t x)
+float16_t decode_float8_e5m2_to_f16(uint8_t x)
 {
     const uint packed = uint(x) << 8;
     return float16_t(unpackHalf2x16(packed).x);
@@ -220,7 +222,7 @@ float16_t decode_float8_to_f16(uint8_t x, uint typeTag)
     if (typeTag == TYPE_FLOAT8_E4M3) {
         return decode_float8_e4m3_to_f16(x);
     }
-    return decode_to_f16(x);
+    return decode_float8_e5m2_to_f16(x);
 }
 
 float16_t decode_to_f16(bfloat16_t x)
@@ -310,89 +312,43 @@ bfloat16_t encode_from_f32_trunc(float x, bfloat16_t)
     return encode_from_f32_trunc(x);
 }
 
-float8_e5m2_t encode_from_f32_to_float8_e5m2_trunc(float x)
+// Round directly from FP32 to FP8, including subnormals and non-saturating
+// overflow. Going through FP16 can round across an FP8 midpoint first.
+uint8_t encode_float8_rne(float x, uint typeTag)
 {
-    uint sign = (floatBitsToUint(x) >> 24) & 0x80u;
-
-    if (isnan(x)) {
-        // Use a quiet NaN payload in e5m2 format.
-        return float8_e5m2_t(sign | 0x7Du);
+    uint bits = floatBitsToUint(x);
+    uint sign = (bits >> 24) & 0x80u;
+    uint exponent = (bits >> 23) & 0xffu;
+    uint fraction = bits & 0x7fffffu;
+    bool e4m3 = typeTag == TYPE_FLOAT8_E4M3;
+    uint overflow = e4m3 ? 0x7fu : 0x7cu;
+    if (exponent == 0xffu) {
+        return uint8_t(sign | (fraction != 0u ? 0x7fu : overflow));
     }
-
-    if (isinf(x) || x > 57344.0 || x < -57344.0) {
-        return float8_e5m2_t(sign | 0x7Cu);
+    uint mantissaBits = e4m3 ? 3u : 2u;
+    int targetExponent = int(exponent) - 127 + (e4m3 ? 7 : 15);
+    if (targetExponent > (e4m3 ? 15 : 30)) {
+        return uint8_t(sign | overflow);
     }
-
-    uint packed = packHalf2x16(vec2(x, 0.0));
-    return float8_e5m2_t(packed >> 8);
-}
-
-float8_e4m3_t encode_from_f32_to_float8_e4m3_trunc(float x)
-{
-    uint sign = (floatBitsToUint(x) >> 24) & 0x80u;
-    float ax = abs(x);
-
-    if (isnan(x) || isinf(x) || ax > 448.0) {
-        return float8_e4m3_t(sign | 0x7Fu);
-    }
-
-    if (ax == 0.0) {
-        return float8_e4m3_t(sign);
-    }
-
-    // Subnormal region: value = mantissa * 2^-9 with mantissa in [1,7].
-    if (ax < exp2(-6.0)) {
-        uint mantissa = uint(clamp(roundEven(ax * 512.0), 0.0, 8.0));
-        if (mantissa == 0u) {
-            return float8_e4m3_t(sign);
+    uint shift = 23u - mantissaBits;
+    uint significand = fraction;
+    uint result;
+    if (targetExponent <= 0) {
+        shift += uint(1 - targetExponent);
+        if (shift > 24u) {
+            return uint8_t(sign);
         }
-        if (mantissa >= 8u) {
-            return float8_e4m3_t(sign | 0x08u); // Smallest normalized value.
-        }
-        return float8_e4m3_t(sign | mantissa);
+        significand |= 0x800000u;
+        result = significand >> shift;
+    } else {
+        result = (uint(targetExponent) << mantissaBits) | (significand >> shift);
     }
-
-    int exponent = int(floor(log2(ax)));
-    float scaled = ax * exp2(float(-exponent));
-    uint mantissa = uint(clamp(roundEven((scaled - 1.0) * 8.0), 0.0, 8.0));
-    if (mantissa == 8u) {
-        mantissa = 0u;
-        exponent += 1;
+    uint remainder = significand & ((1u << shift) - 1u);
+    uint halfway = 1u << (shift - 1u);
+    if (remainder > halfway || (remainder == halfway && (result & 1u) != 0u)) {
+        result++;
     }
-
-    if (exponent > 8) {
-        return float8_e4m3_t(sign | 0x7Fu);
-    }
-
-    uint exponentField = uint(exponent + 7);
-    if (exponentField == 0xFu && mantissa == 0x7u) {
-        mantissa = 0x6u; // Reserve 0x7F for NaN / non-finite encode path.
-    }
-    return float8_e4m3_t(sign | (exponentField << 3) | mantissa);
-}
-
-float8_e5m2_t encode_from_f32_trunc(float x, float8_e5m2_t)
-{
-    return encode_from_f32_to_float8_e5m2_trunc(x);
-}
-
-float8_e5m2_t encode_from_f16_trunc(float16_t x, float8_e5m2_t)
-{
-    uint packed = packHalf2x16(vec2(float(x), 0.0));
-    return float8_e5m2_t(packed >> 8);
-}
-
-uint8_t encode_from_f32_to_float8_trunc_by_type(float x, uint typeTag)
-{
-    if (typeTag == TYPE_FLOAT8_E4M3) {
-        return uint8_t(encode_from_f32_to_float8_e4m3_trunc(x));
-    }
-    return uint8_t(encode_from_f32_to_float8_e5m2_trunc(x));
-}
-
-uint8_t encode_from_f16_to_float8_trunc_by_type(float16_t x, uint typeTag)
-{
-    return encode_from_f32_to_float8_trunc_by_type(float(x), typeTag);
+    return uint8_t(sign | min(result, overflow));
 }
 
 float16_t encode_from_f32_trunc(float x, float16_t)
@@ -432,23 +388,6 @@ bfloat16_t encode_from_f32_rne(float x, bfloat16_t)
 float16_t encode_from_f32_rne(float x, float16_t)
 {
     return float16_t(x);
-}
-
-float8_e5m2_t encode_from_f32_rne(float x, float8_e5m2_t)
-{
-    // Keep matching current float8 policy: truncation conversion.
-    return encode_from_f32_to_float8_e5m2_trunc(x);
-}
-
-float8_e5m2_t encode_from_f16_rne(float16_t x, float8_e5m2_t)
-{
-    return encode_from_f16_trunc(x, float8_e5m2_t(0));
-}
-
-uint8_t encode_from_f16_to_float8_rne_by_type(float16_t x, uint typeTag)
-{
-    // Keep matching current float8 policy: truncation conversion.
-    return encode_from_f16_to_float8_trunc_by_type(x, typeTag);
 }
 
 bfloat16_t encode_from_f16_rne(float16_t x, bfloat16_t)
@@ -526,16 +465,6 @@ bfloat16_t encode_from_f32(float x, bfloat16_t)
     return encode_from_f32_trunc(x);
 }
 
-float8_e5m2_t encode_from_f32(float x, float8_e5m2_t)
-{
-    return encode_from_f32_to_float8_e5m2_trunc(x);
-}
-
-float8_e5m2_t encode_from_f16(float16_t x, float8_e5m2_t)
-{
-    return encode_from_f16_trunc(x, float8_e5m2_t(0));
-}
-
 bfloat16_t encode_from_f16(float16_t x, bfloat16_t)
 {
     return encode_from_f32(float(x), bfloat16_t(0));
@@ -611,44 +540,38 @@ bool encode_from_f32(float x, bool)
     return x != 0.0;
 }
 
-// Decode a storage scalar into compute type.
-#define DECODE_STORAGE_TO_COMP(rawValue, typeTag, compType)                                                           \
-    ((typeTag) == TYPE_FLOAT8_E5M2 || (typeTag) == TYPE_FLOAT8_E4M3                                                   \
-                            ? compType(decode_float8_to_f16(uint8_t(rawValue), typeTag))                              \
-                        : ((IS_BFLOAT(typeTag)) ? compType(decode_to_f32(rawValue)) : compType(rawValue)))
+// Interpret integer bits at their original width before widening. Type tags
+// describe TOSA arithmetic; tensor storage may use either SINT or UINT formats.
+#define DECODE_STORAGE_TO_COMP(rawValue, typeTag, compType) \
+    (IS_FLOAT8(typeTag) ? compType(decode_float8_to_f16(uint8_t(rawValue), typeTag)) : \
+     IS_BFLOAT(typeTag) ? compType(decode_to_f32(bfloat16_t(rawValue))) : \
+     (typeTag) == TYPE_INT8 ? compType(int8_t(rawValue)) : \
+     (typeTag) == TYPE_INT16 ? compType(int16_t(rawValue)) : \
+     (typeTag) == TYPE_INT32 ? compType(int32_t(rawValue)) : \
+     (typeTag) == TYPE_INT64 ? compType(int64_t(rawValue)) : compType(rawValue))
 
-// Encode a compute scalar into storage type with truncation semantics for bf16.
-#define ENCODE_COMP_TO_STORAGE(compValue, storageType, typeTag)                                                       \
-    ((typeTag) == TYPE_FLOAT8_E5M2 || (typeTag) == TYPE_FLOAT8_E4M3                                                   \
-                            ? storageType(encode_from_f16_to_float8_trunc_by_type(float16_t(compValue), typeTag))    \
-                        : ((IS_BFLOAT(typeTag))                                                                       \
-                               ? storageType(encode_from_f32(float(compValue), storageType(0)))                      \
-                               : storageType(compValue)))
+// Both variants round FP8 to nearest-even directly from FP32. This variant
+// truncates BF16; ENCODE_COMP_TO_STORAGE_RNE rounds BF16 to nearest-even.
+// Explicit storage casts keep inactive branches valid for integer and bool
+// shaders too; overload resolution must never select a reduced-float encoding.
+#define ENCODE_COMP_TO_STORAGE(compValue, storageType, typeTag) \
+    (IS_FLOAT8(typeTag) ? storageType(encode_float8_rne(float(compValue), typeTag)) : \
+     IS_BFLOAT(typeTag) ? storageType(encode_from_f32(float(compValue), bfloat16_t(0))) : \
+     (typeTag) == TYPE_INT8 ? storageType(int8_t(compValue)) : \
+     (typeTag) == TYPE_INT16 ? storageType(int16_t(compValue)) : \
+     (typeTag) == TYPE_INT32 ? storageType(int32_t(compValue)) : \
+     (typeTag) == TYPE_INT64 ? storageType(int64_t(compValue)) : storageType(compValue))
 
-// Encode a compute scalar into storage type with RNE semantics for bf16.
-#define ENCODE_COMP_TO_STORAGE_RNE(compValue, storageType, typeTag)                                                   \
-    ((typeTag) == TYPE_FLOAT8_E5M2 || (typeTag) == TYPE_FLOAT8_E4M3                                                   \
-                            ? storageType(encode_from_f16_to_float8_rne_by_type(float16_t(compValue), typeTag))      \
-                        : ((IS_BFLOAT(typeTag))                                                                       \
-                               ? storageType(encode_from_f32_rne(float(compValue), storageType(0)))                  \
-                               : storageType(compValue)))
+// Same storage conversions as above, except BF16 uses round-to-nearest-even.
+#define ENCODE_COMP_TO_STORAGE_RNE(compValue, storageType, typeTag) \
+    (IS_FLOAT8(typeTag) ? storageType(encode_float8_rne(float(compValue), typeTag)) : \
+     IS_BFLOAT(typeTag) ? storageType(encode_from_f32_rne(float(compValue), bfloat16_t(0))) : \
+     (typeTag) == TYPE_INT8 ? storageType(int8_t(compValue)) : \
+     (typeTag) == TYPE_INT16 ? storageType(int16_t(compValue)) : \
+     (typeTag) == TYPE_INT32 ? storageType(int32_t(compValue)) : \
+     (typeTag) == TYPE_INT64 ? storageType(int64_t(compValue)) : storageType(compValue))
 
-#define DECODE_CONV_OPERAND_TO_ACC(rawValue, typeTag, accTypeTag, compType)                                          \
-    (IS_FLOAT8(typeTag)                                                                                               \
-         ? compType(decode_float8_to_f16(uint8_t(rawValue), typeTag))                                                 \
-         : ((typeTag) == TYPE_UINT8 && IS_INTEGER(accTypeTag)                                                         \
-                ? compType(int8_t(rawValue))                                                                          \
-                : ((IS_BFLOAT(typeTag)) ? compType(decode_to_f32(bfloat16_t(rawValue))) : compType(rawValue))))
-
-// Conversion helpers for convolution-family shaders.
-#define CONV_TO_ACC_INPUT(value) DECODE_CONV_OPERAND_TO_ACC(value, TYPE_IN, TYPE_ACC, ACC_T)
-#define CONV_TO_ACC_WEIGHT(value) DECODE_CONV_OPERAND_TO_ACC(value, TYPE_WEIGHT, TYPE_ACC, ACC_T)
-// Use explicit storage types in reduced-float branches: GLSL also type-checks
-// inactive branches, including when the actual bias/output storage is uint32_t.
-#define CONV_TO_ACC_BIAS(value)                                                                                      \
-    (IS_FLOAT8(TYPE_OUT) ? ACC_T(decode_float8_to_f16(uint8_t(value), TYPE_OUT))                                     \
-                        : (IS_BFLOAT(TYPE_OUT) ? ACC_T(decode_to_f32(bfloat16_t(value))) : ACC_T(value)))
-// Keep FP32 accumulators at FP32 precision until the final FP8 conversion.
-#define CONV_ACC_TO_OUT(value)                                                                                       \
-    (IS_FLOAT8(TYPE_OUT) ? OUT_T(encode_from_f32_to_float8_trunc_by_type(float(value), TYPE_OUT))                    \
-                        : (IS_BFLOAT(TYPE_OUT) ? OUT_T(encode_from_f32(float(value), bfloat16_t(0))) : OUT_T(value)))
+#define CONV_TO_ACC_INPUT(value) DECODE_STORAGE_TO_COMP(value, TYPE_IN, ACC_T)
+#define CONV_TO_ACC_WEIGHT(value) DECODE_STORAGE_TO_COMP(value, TYPE_WEIGHT, ACC_T)
+#define CONV_TO_ACC_BIAS(value) DECODE_STORAGE_TO_COMP(value, TYPE_OUT, ACC_T)
+#define CONV_ACC_TO_OUT(value) ENCODE_COMP_TO_STORAGE(value, OUT_T, TYPE_OUT)

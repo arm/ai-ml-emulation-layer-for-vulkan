@@ -367,12 +367,12 @@ mlel_spv_reduce(all "true" "result && value" "bool")
 mlel_spv_reduce(any "false" "result || value" "bool")
 mlel_spv_reduce(
     max
-    "(pushConstants.nanMode == NAN_MODE_IGNORE) ? IN_OUT_T(NAN) : IN_OUT_T(${ESCAPE_CHAR}%in_out_t_lowest${ESCAPE_CHAR}%)"
+    "(pushConstants.nanMode == NAN_MODE_IGNORE) ? COMP_T(NAN) : COMP_T(${ESCAPE_CHAR}%in_out_t_lowest${ESCAPE_CHAR}%)"
     "max(result, value)"
     "int8_t;int16_t;int;float16_t;bfloat16_t;float8_e5m2_t;float8_e4m3_t;float")
 mlel_spv_reduce(
     min
-    "(pushConstants.nanMode == NAN_MODE_IGNORE) ? IN_OUT_T(NAN) : IN_OUT_T(${ESCAPE_CHAR}%in_out_t_max${ESCAPE_CHAR}%)"
+    "(pushConstants.nanMode == NAN_MODE_IGNORE) ? COMP_T(NAN) : COMP_T(${ESCAPE_CHAR}%in_out_t_max${ESCAPE_CHAR}%)"
     "min(result, value)"
     "int8_t;int16_t;int;float16_t;bfloat16_t;float8_e5m2_t;float8_e4m3_t;float")
 mlel_spv_reduce(product "1" "result * value" "float16_t;bfloat16_t;float8_e5m2_t;float8_e4m3_t;float")

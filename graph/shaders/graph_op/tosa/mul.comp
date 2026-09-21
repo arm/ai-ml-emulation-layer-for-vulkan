@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define IN_T %in_t%
-#define OUT_T %out_t%
+#define IN_T %in_t_storage%
+#define OUT_T %out_t_storage%
 #define TYPE_IN %in_t_type%
 #define TYPE_OUT %out_t_type%
 
@@ -41,14 +41,15 @@ void main() {
     applyBroadcast(inputShape2, index, inputIndex2);
     tensorReadARM(inputData2, inputIndex2, value2);
 
-#if IS_BFLOAT(TYPE_IN)
+#if IS_BFLOAT(TYPE_IN) || IS_FLOAT8(TYPE_IN)
     float f1 = DECODE_STORAGE_TO_COMP(value1, TYPE_IN, float);
     float f2 = DECODE_STORAGE_TO_COMP(value2, TYPE_IN, float);
     OUT_T result = ENCODE_COMP_TO_STORAGE_RNE(f1 * f2, OUT_T, TYPE_OUT);
 #elif IS_FLOAT(TYPE_IN)
     OUT_T result = OUT_T(value1) * OUT_T(value2);
 #else
-    int64_t result = int64_t(value1) * int64_t(value2);
+    int64_t result = DECODE_STORAGE_TO_COMP(value1, TYPE_IN, int64_t) *
+                     DECODE_STORAGE_TO_COMP(value2, TYPE_IN, int64_t);
 
     if (pushConstants.shift > 0) {
         result = (result + (int64_t(1) << (pushConstants.shift - 1))) >> pushConstants.shift;

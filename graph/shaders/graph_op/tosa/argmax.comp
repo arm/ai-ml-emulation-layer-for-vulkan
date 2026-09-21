@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define IN_T %in_t%
+#define IN_T %in_t_storage%
 #define TYPE_IN %in_t_type%
 
 #define COMP_T %in_t_comp%
@@ -18,7 +18,7 @@ layout(push_constant) uniform PushConstants {
 layout(constant_id = 0) const uint32_t RANK_IN = RANK_MAX;
 layout(constant_id = 1) const uint32_t RANK_OUT = RANK_MAX;
 
-layout(set = 0, binding = 0) uniform tensorARM<int32_t, RANK_OUT> outputData;
+layout(set = 0, binding = 0) uniform tensorARM<uint32_t, RANK_OUT> outputData;
 layout(set = 1, binding = 0) uniform tensorARM<IN_T, RANK_IN> inputData;
 
 void main() {
@@ -63,5 +63,5 @@ void main() {
         }
     }
 
-    tensorWriteARM(outputData, index, maxIndex);
+    tensorWriteARM(outputData, index, uint32_t(maxIndex));
 }

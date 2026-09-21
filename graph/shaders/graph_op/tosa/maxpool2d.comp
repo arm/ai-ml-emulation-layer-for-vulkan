@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define STORAGE_T %in_out_t%
+#define STORAGE_T %in_out_t_storage%
 #define TYPE_IN_OUT %in_out_t_type%
 
-#define IN_OUT_T %in_out_t_comp%
+#define COMP_T %in_out_t_comp%
 
 layout(local_size_x = %warpX%) in;
 
@@ -24,7 +24,7 @@ void main() {
     uint[4] index;
     getIndex4(outputData, index);
 
-    IN_OUT_T acc = IN_OUT_T(%in_out_t_lowest%);
+    COMP_T acc = COMP_T(%in_out_t_lowest%);
     uint on = index[0];
     uint oy = index[1];
     uint ox = index[2];
@@ -48,7 +48,7 @@ void main() {
                 STORAGE_T valueRaw;
                 tensorReadARM(inputData, uint[](on, uint(y), uint(x), oc), valueRaw);
 
-                IN_OUT_T value = DECODE_STORAGE_TO_COMP(valueRaw, TYPE_IN_OUT, IN_OUT_T);
+                COMP_T value = DECODE_STORAGE_TO_COMP(valueRaw, TYPE_IN_OUT, COMP_T);
 
 #if IS_FLOAT(TYPE_IN_OUT) || IS_REDUCED_FLOAT(TYPE_IN_OUT)
                 if (isnan(value)) {

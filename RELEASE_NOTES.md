@@ -21,6 +21,9 @@
 
 ### Bug Fixes
 
+- Fixed signed TOSA arithmetic and conversions with unsigned integer tensor
+  storage across graph operations. Corrected FP8 rounding, overflow handling,
+  and reduced-float constant decoding.
 - Fixed convolution input and weight decoding to preserve signed TOSA values in
   `uint8_t` storage during integer accumulation, while retaining FP8 decoding and
   avoiding intermediate FP16 rounding of FP32 accumulators for FP8 outputs.

@@ -3,8 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define IN_T %in_t%
-#define OUT_T %out_t%
+#define IN_T %in_t_storage%
+#define OUT_T %out_t_storage%
+#define TYPE_IN %in_t_type%
+
+// TOSA table indices and entries are signed, regardless of the tensor storage format.
+#if TYPE_IN == TYPE_INT8 || TYPE_IN == TYPE_UINT8
+    #define COMP_T int8_t
+#else
+    #define COMP_T int16_t
+#endif
 
 layout(local_size_x = %warpX%) in;
 
@@ -18,7 +26,7 @@ int32_t lookup(int8_t value) {
     IN_T tableValue;
     tensorReadARM(tableData, uint[](value + 128), tableValue);
 
-    return tableValue;
+    return int32_t(COMP_T(tableValue));
 }
 
 int32_t lookup(int16_t value) {
@@ -28,8 +36,8 @@ int32_t lookup(int16_t value) {
     IN_T tableValue[2];
     tensorReadARM(tableData, uint[](index), tableValue);
 
-    int32_t base = tableValue[0];
-    int32_t next = tableValue[1];
+    int32_t base = int32_t(COMP_T(tableValue[0]));
+    int32_t next = int32_t(COMP_T(tableValue[1]));
     int32_t slope = next - base;
     int32_t result = (base << 7) + slope * fraction;
 
@@ -44,9 +52,9 @@ void main() {
     tensorReadARM(inputData, index, value);
 
 #ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
-    OUT_T outValue = OUT_T(lookup(value));
+    OUT_T outValue = OUT_T(lookup(COMP_T(value)));
     tensorWriteARM(outputData, index, outValue);
 #else
-    tensorWriteARM(outputData, index, OUT_T(lookup(value)));
+    tensorWriteARM(outputData, index, OUT_T(lookup(COMP_T(value))));
 #endif
 }

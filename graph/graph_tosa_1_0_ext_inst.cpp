@@ -383,25 +383,9 @@ void GraphTosa10ExtInst::handleClamp(const Instruction *opExtInst, const std::st
     // OpExtInst <result id> <OpExtInstImport id> CLAMP minVal maxVal nanMode input
     assert(opExtInst->NumInOperands() == 6);
 
-    auto getClampBound = [&](const Operand &operand) {
-        const auto *constant = context.findConstant(operand.AsId());
-        const auto *floatConstant = constant->AsFloatConstant();
-        if (floatConstant != nullptr) {
-            const auto *type = floatConstant->type()->AsFloat();
-            if (isBFloat16(type)) {
-                const uint32_t bits = uint32_t(uint16_t(floatConstant->words()[0])) << 16;
-                float value = 0.0F;
-                std::memcpy(&value, &bits, sizeof(value));
-                return real_t(value);
-            }
-        }
-
-        return context.getConstScalar<real_t>(constant);
-    };
-
     const auto &resultId = opExtInst->result_id();
-    const auto minVal = getClampBound(opExtInst->GetInOperand(2));
-    const auto maxVal = getClampBound(opExtInst->GetInOperand(3));
+    const auto minVal = context.getConstScalar<real_t>(opExtInst->GetInOperand(2));
+    const auto maxVal = context.getConstScalar<real_t>(opExtInst->GetInOperand(3));
     const auto nanMode = context.getConstScalar<uint32_t>(opExtInst->GetInOperand(4));
     const auto &inputId = opExtInst->GetInOperand(5);
 
@@ -700,68 +684,13 @@ void GraphTosa10ExtInst::handlePad(const Instruction *opExtInst, const std::stri
     int32_t padConstInt = 0;
 
     const auto vkFormat = output->getFormat();
-    // Reduced-float constants are stored as raw payload bits.
-    if (vkFormat == VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM ||
-        vkFormat == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM ||
-        vkFormat == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM) {
-        const auto *constant = context.findConstant(opExtInst->GetInOperand(4).AsId());
-        const auto *scalar = constant;
-
-        const auto *composite = constant->AsCompositeConstant();
-        if (composite != nullptr) {
-            assert(composite->GetComponents().size() == 1);
-            scalar = composite->GetComponents()[0];
-        }
-
-        if (scalar->AsNullConstant() != nullptr) {
-            padConst = 0.0;
-        } else {
-            const auto *floatConstant = scalar->AsFloatConstant();
-            if (floatConstant == nullptr) {
-                throw std::runtime_error(
-                    "Unsupported PAD constant encoding, expected scalar, null, or composite constant. Format: " +
-                    std::to_string(vkFormat) + ", is composite: " + (composite != nullptr ? "true" : "false"));
-            }
-            const auto *floatType = floatConstant->type()->AsFloat();
-            if (vkFormat == VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM) {
-                if (!isBFloat16(floatType)) {
-                    throw std::runtime_error("Unsupported BF16 PAD constant encoding, floatType: " +
-                                             std::string(floatType->str()));
-                }
-
-                const auto bf16 = uint16_t(floatConstant->words()[0]);
-                const uint32_t fp32Bits = uint32_t(bf16) << 16;
-                float fp32Value = 0.0f;
-                std::memcpy(&fp32Value, &fp32Bits, sizeof(fp32Bits));
-                padConst = real_t(fp32Value);
-            } else if (vkFormat == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM) {
-                if (!isFloat8E5M2(floatType)) {
-                    throw std::runtime_error("Unsupported FLOAT8E5M2 PAD constant encoding, floatType: " +
-                                             std::string(floatType->str()));
-                }
-
-                const auto f8 = uint8_t(floatConstant->words()[0]);
-                const auto &fp = reinterpret_cast<const float8_e5m2 &>(f8);
-                padConst = real_t(fp);
-            } else if (vkFormat == VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM) {
-                if (!isFloat8E4M3(floatType)) {
-                    throw std::runtime_error("Unsupported FLOAT8E4M3 PAD constant encoding, floatType: " +
-                                             std::string(floatType->str()));
-                }
-
-                const auto f8 = uint8_t(floatConstant->words()[0]);
-                const auto &fp = reinterpret_cast<const float8_e4m3 &>(f8);
-                padConst = real_t(fp);
-            }
-        }
-    } else if (vkFormat == VK_FORMAT_R32_SINT) {
+    if (mlsdk::el::utils::getFormatInfo(vkFormat)->isInteger) {
         const auto &padConstVector = context.getConstVector<int32_t>(opExtInst->GetInOperand(4));
         padConstInt = padConstVector[0];
         padConst = real_t(padConstInt);
     } else {
         const auto &padConstVector = context.getConstVector<real_t>(opExtInst->GetInOperand(4));
         padConst = padConstVector[0];
-        padConstInt = int32_t(padConst);
     }
 
     graphLog(Severity::Info) << "OpExtInst result=" << resultId << ',' << debugName << ", padding=" << padding

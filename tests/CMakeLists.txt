@@ -83,6 +83,7 @@ endfunction()
 
 set(MLEL_CPU_TEST_SOURCES
     common/common_tests.cpp
+    graph/datatype_reference_tests.cpp
     graph/graph_ext_inst_context_tests.cpp
     graph/interval_memory_planner_tests.cpp
     tensor/descriptor_binding_tests.cpp
@@ -94,10 +95,13 @@ set(MLEL_VULKAN_TEST_SOURCES
     vulkan/initialization_tests.cpp
     graph/block_match_tests.cpp
     graph/convolution_tests.cpp
+    graph/datatype_tests.cpp
     graph/operator_tests.cpp
     graph/pipeline_tests.cpp
     graph/profiling_tests.cpp
     graph/properties_tests.cpp
+    graph/storage_test_utils.cpp
+    graph/storage_tests.cpp
     tensor/vulkan_tests.cpp)
 if(NOT APPLE)
     list(APPEND MLEL_VULKAN_TEST_SOURCES graph/optical_flow_tests.cpp)
@@ -121,7 +125,15 @@ endif()
 # scheduled; grouping them would serialize cases without sharing device setup.
 set(MLEL_VULKAN_GROUPED_SUITES
     MLEmulationLayerGraphForVulkan
-    ConvolutionRegression/Conv2DStorageFormats)
+    ConvolutionRegression/Conv2DStorageFormats
+    TosaConversions/TosaIntegerStorage
+    TosaConversions/TosaPoolingStorage
+    TosaConversions/TosaFp8Storage
+    TosaConversions/TosaFp8Pad
+    DatatypeCoverage/GeneratedDatatypeCast
+    DatatypeCoverage/GeneratedDatatypeRescale
+    DatatypeCoverage/GeneratedDatatypeLayout
+    DatatypeCoverage/GeneratedDatatypeInteger)
 if(NOT APPLE)
     list(APPEND MLEL_VULKAN_GROUPED_SUITES MLEmulationLayerOpticalFlowSharedDevice)
 endif()
@@ -132,6 +144,7 @@ set(MLEL_CPU_GROUPED_SUITES
     MLEmulationLayerLog
     MLEmulationLayerFloat
     MLEmulationLayerUtils
+    DatatypeReference
     GraphExtInstContext
     IntervalMemoryPlanner
     TensorDescriptors

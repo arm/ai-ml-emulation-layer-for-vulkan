@@ -58,10 +58,6 @@ template <typename T> bool tryExpandReplicatedPattern(std::vector<T> &values, co
     return true;
 }
 
-bool isBFloat16(const analysis::Float *type);
-bool isFloat8E5M2(const analysis::Float *type);
-bool isFloat8E4M3(const analysis::Float *type);
-
 class GraphExtInstContext {
   public:
     GraphExtInstContext(IRContext &_irContext, GraphPipeline &_graphPipeline)
@@ -84,6 +80,9 @@ class GraphExtInstContext {
     }
 
     template <typename T> T getConstScalar(const analysis::Constant *constant) const {
+        if (constant->AsNullConstant()) {
+            return T(0);
+        }
         const auto *intConstant = constant->AsIntConstant();
         if (intConstant) {
             const auto *type = intConstant->type()->AsInteger();
@@ -112,25 +111,9 @@ class GraphExtInstContext {
             const auto *type = floatConstant->type()->AsFloat();
 
             switch (type->width()) {
-            case 8: {
-                if (type->encoding() == spv::FPEncoding::Float8E5M2EXT) {
-                    const auto value = uint8_t(floatConstant->words()[0]);
-                    const auto &fp = reinterpret_cast<const float8_e5m2 &>(value);
-                    return T(fp);
-                }
-                if (type->encoding() == spv::FPEncoding::Float8E4M3EXT) {
-                    const auto value = uint8_t(floatConstant->words()[0]);
-                    const auto &fp = reinterpret_cast<const float8_e4m3 &>(value);
-                    return T(fp);
-                }
-                throw std::runtime_error(std::string("Unsupported 8-bit float encoding: ") +
-                                         std::to_string(static_cast<uint32_t>(type->encoding())));
-            }
-            case 16: {
-                const auto value = uint16_t(floatConstant->words()[0]);
-                const auto &fp = reinterpret_cast<const float16 &>(value);
-                return T(fp);
-            }
+            case 8:
+            case 16:
+                return T(mlsdk::el::utils::decodeReducedFloat(floatConstant->words()[0], getVkFormat(type)));
             case 32:
                 return T(floatConstant->GetFloatValue());
             case 64:

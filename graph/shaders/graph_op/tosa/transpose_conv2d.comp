@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define IN_T %in_t%
-#define OUT_T %out_t%
-#define WEIGHT_T %weight_t%
+#define IN_T %in_t_storage%
+#define OUT_T %out_t_storage%
+#define WEIGHT_T %weight_t_storage%
 #define TYPE_IN %in_t_type%
 #define TYPE_WEIGHT %weight_t_type%
 #define TYPE_OUT %out_t_type%
