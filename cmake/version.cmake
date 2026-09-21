@@ -42,7 +42,8 @@ function(mlsdk_get_git_revision SRCDIR RETURN_GIT_REVISION)
             ERROR_QUIET)
 
         if(NOT GIT_RETURN_CODE)
-            string(REGEX REPLACE "-0-g[0-9a-f]+(-dirty)?$" "\\1" GIT_OUTPUT "${GIT_OUTPUT}")
+            string(REGEX REPLACE "-0-g[0-9a-f]+-dirty$" "-dirty" GIT_OUTPUT "${GIT_OUTPUT}")
+            string(REGEX REPLACE "-0-g[0-9a-f]+$" "" GIT_OUTPUT "${GIT_OUTPUT}")
         endif()
 
         if(GIT_RETURN_CODE)
