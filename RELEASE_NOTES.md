@@ -35,6 +35,8 @@
 - Fixed interval memory planning to preserve tensor live ranges across multiple
   graph dispatches.
 - Fixed ambiguous shader conversion overloads for `uint32_t` convolution outputs.
+- Fixed MoltenVK shader compilation for TOSA `CLZ` by avoiding a helper-name
+  collision with Metal's built-in `clz` overloads.
 - Prevented Resize interpolation from producing `Inf` or `NaN` for extreme
   floating-point inputs on affected devices by preserving operation order.
 - Fixed optical-flow session independence, moving internal resource ownership to
