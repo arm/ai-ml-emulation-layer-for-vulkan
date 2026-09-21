@@ -86,6 +86,7 @@ set(MLEL_CPU_TEST_SOURCES
     graph/datatype_reference_tests.cpp
     graph/graph_ext_inst_context_tests.cpp
     graph/interval_memory_planner_tests.cpp
+    graph/pipeline_cache_tests.cpp
     tensor/descriptor_binding_tests.cpp
     tensor/tensor_arm_tests.cpp
     tensor/shape_tests.cpp)
@@ -149,7 +150,9 @@ set(MLEL_CPU_GROUPED_SUITES
     IntervalMemoryPlanner
     TensorDescriptors
     TensorARM
-    TensorShape)
+    TensorShape
+    PipelineCache
+    PipelineCache/PrecompiledShader)
 
 if(ANDROID)
     list(APPEND MLEL_VULKAN_TEST_SOURCES ${MLEL_CPU_TEST_SOURCES})

@@ -39,7 +39,6 @@ class Builder:
         self.install = args.install
         self.target_platform = args.target_platform
         self.cmake_toolchain_for_android = args.cmake_toolchain_for_android
-        self.disable_precompile_shaders = args.disable_precompile_shaders
         self.use_float_as_double = args.use_float_as_double
         self.doc_only = args.doc_only
         self.doc = args.doc or self.doc_only
@@ -196,8 +195,6 @@ class Builder:
             cmake_setup_cmd.append("-DVMEL_TESTS_ENABLE=ON")
         if self.lint:
             cmake_setup_cmd.append("-DCMAKE_EXPORT_COMPILE_COMMANDS=ON")
-        if self.disable_precompile_shaders:
-            cmake_setup_cmd.append("-DVMEL_DISABLE_PRECOMPILE_SHADERS=ON")
         cmake_setup_cmd.append(
             "-DVMEL_USE_FLOAT_AS_DOUBLE="
             + ("ON" if self.use_float_as_double else "OFF")
@@ -277,6 +274,8 @@ class Builder:
                     f"-j{str(self.threads)}",
                     "--std=c++17",
                     "--library=googletest",
+                    # Resolve generated shader cases included by the graph tests.
+                    f"-I{self.build_dir}/graph",
                     "--error-exitcode=1",
                     "--inline-suppr",
                     f"--cppcheck-build-dir={self.build_dir}/cppcheck",
@@ -559,12 +558,6 @@ def parse_arguments(argv=None):
         default=False,
     )
     # Extras
-    parser.add_argument(
-        "--disable-precompile-shaders",
-        help="Disable precompilation of SPIR-V shaders",
-        action="store_true",
-        default=False,
-    )
     parser.add_argument(
         "--use-float-as-double",
         help="Use float as double precision in shader compilation.",

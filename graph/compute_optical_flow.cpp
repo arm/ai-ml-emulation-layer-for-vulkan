@@ -24,7 +24,7 @@ ComputePipeline::ComputePipeline(const std::shared_ptr<VULKAN_HPP_NAMESPACE::det
                                  const std::string_view shaderName, const DescriptorConfigs &descriptorConfigs,
                                  const SpecConstants &specConstants, uint32_t pushConstantsSize,
                                  const ScheduleHelper &schedule, const std::string &debugName)
-    : loader_(loader), device_(device), pipelineCache_(pipelineCache), spirv_(createSpirv(shaderName)),
+    : loader_(loader), device_(device), pipelineCache_(pipelineCache), spirv_(createSpirv(pipelineCache, shaderName)),
       descriptorConfigs_(descriptorConfigs), specConstants_(specConstants), pushConstantsSize_(pushConstantsSize),
       scheduler_(schedule), debugName_(debugName) {}
 
@@ -176,8 +176,9 @@ void ComputePipeline::setOutputStorage(VkCommandBuffer cmdBuf, uint32_t binding,
     }
 }
 
-SpirvBinary ComputePipeline::createSpirv(const std::string_view shaderName) const {
-    return pipelineCache_->lookup(shaderName, {}, {});
+SpirvBinary ComputePipeline::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache,
+                                         const std::string_view shaderName) {
+    return pipelineCache->lookup(shaderName, {});
 }
 
 void ComputePipeline::setCombinedImageSampler(uint32_t binding, const std::shared_ptr<Image> &image,

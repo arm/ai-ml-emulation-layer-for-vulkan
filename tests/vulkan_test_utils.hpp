@@ -22,7 +22,9 @@ using utilities::Device;
 using utilities::GraphPipeline;
 
 std::string fileToString(const std::string &filename);
+// Test modules must pass SPIR-V validation for the Vulkan target environment.
 std::vector<uint32_t> assembleSpirv(const std::string &text);
+std::vector<uint32_t> compileGlsl(const std::string &text);
 std::shared_ptr<Device> createDevice();
 
 struct ProfilingGraph {

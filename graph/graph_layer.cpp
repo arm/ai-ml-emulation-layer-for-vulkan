@@ -2253,7 +2253,7 @@ class GraphLayer : public VulkanLayerImpl {
         if (handle != VK_NULL_HANDLE) {
             graphLog(Severity::Warning) << "Using an externally provided pipeline cache is not supported" << std::endl;
         }
-        // Null handle means no (persistent) pipeline caching
+        // Each wrapper retains its Vulkan pipeline-cache handle.
         return std::make_shared<PipelineCache>(nullptr, 0, handle);
     }
 };

@@ -15,6 +15,7 @@
 #include "mlel/utils.hpp"
 #include "tensor.hpp"
 
+#include <map>
 #include <set>
 #include <type_traits>
 #include <vulkan/vulkan.hpp>

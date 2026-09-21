@@ -4,7 +4,6 @@
 ;
                OpCapability VulkanMemoryModel
                OpCapability Shader
-               OpCapability Int8
                OpCapability TensorsARM
                OpCapability GraphARM
                OpCapability ReplicatedCompositesEXT
@@ -24,14 +23,13 @@
                OpDecorate %output_var DescriptorSet 0
        %bf16 = OpTypeFloat 16 BFloat16KHR
        %uint = OpTypeInt 32 0
-      %uchar = OpTypeInt 8 0
        %bool = OpTypeBool
      %uint_0 = OpConstant %uint 0
      %uint_1 = OpConstant %uint 1
      %uint_3 = OpConstant %uint 3
      %uint_5 = OpConstant %uint 5
      %uint_6 = OpConstant %uint 6
-    %uchar_0 = OpConstant %uchar 0
+    %bf16_zero = OpConstant %bf16 0.0
       %false = OpConstantFalse %bool
    %bf16_one = OpConstant %bf16 1.0
 %shape_rank_1 = OpTypeArray %uint %uint_1
@@ -52,8 +50,7 @@
 %bias_shape = OpConstantComposite %shape_rank_1 %uint_1
 %bias_tensor = OpTypeTensorARM %bf16 %uint_1 %bias_shape
 %bias_const = OpConstantCompositeReplicateEXT %bias_tensor %bf16_one
-%zero_point_tensor = OpTypeTensorARM %uchar %uint_1 %bias_shape
-%zero_point = OpConstantComposite %zero_point_tensor %uchar_0
+%zero_point = OpConstantComposite %bias_tensor %bf16_zero
 %vec3_shape = OpConstantComposite %shape_rank_1 %uint_3
 %vec3_tensor = OpTypeTensorARM %uint %uint_1 %vec3_shape
 %stride = OpConstantCompositeReplicateEXT %vec3_tensor %uint_1
@@ -64,6 +61,6 @@
                OpGraphEntryPointARM %graph "conv3d_inline_bf16_constant" %input_var %output_var
       %graph = OpGraphARM %graph_type
  %input = OpGraphInputARM %input_tensor %uint_0
- %output = OpExtInst %output_tensor %tosa CONV3D %pad %stride %dilation %uint_1 %false %input %weight_const %bias_const %zero_point %zero_point
+ %output = OpExtInst %output_tensor %tosa CONV3D %pad %stride %dilation %uint_3 %false %input %weight_const %bias_const %zero_point %zero_point
                OpGraphSetOutputARM %output %uint_0
                OpGraphEndARM

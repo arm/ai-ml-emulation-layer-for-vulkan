@@ -524,7 +524,6 @@ ComputePipeline::ComputePipeline(const std::shared_ptr<VULKAN_HPP_NAMESPACE::det
       loader{_loader}, device{_device}, pipelineCache{_pipelineCache},
       // Vulkan objects created from the provided SPIR-V.
       shaderModule{createShaderModule(_spirv)}, pipeline{createComputePipeline(_constants)} {
-    assert(std::to_string(warp1D) == warp1DSv);
     connectPipelines();
     setDebugUtilsObjectName(loader, device, VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<uint64_t>(pipeline), debugName);
 }
@@ -591,7 +590,7 @@ Argmax::Argmax(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoade
                const std::shared_ptr<TensorDescriptor> &_output, const uint32_t _axis, const uint32_t _nanMode,
                const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output), {&pushConstant, sizeof(pushConstant)},
-                      _pipelineCache, createSpirv(_pipelineCache, _input), debugName,
+                      _pipelineCache, createSpirv(_pipelineCache, _input->getFormat()), debugName,
                       {_input->getRank(), _output->getRank()}),
       pushConstant{createPushConstant(_axis, _nanMode)} {}
 
@@ -615,22 +614,10 @@ DescriptorMap Argmax::createDescriptorMap(const std::shared_ptr<TensorDescriptor
     return descriptorMap;
 }
 
-SpirvBinary Argmax::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                const std::shared_ptr<TensorDescriptor> &input) const {
-    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Argmax::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat inputFormat) {
+    const auto *inType = getTosaArithmeticTypeInfo(inputFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_t_type%", inType->typeId},
-                                      {"%in_t_lowest%", inType->lowest},
-                                      {"%in_t%", inType->glslType},
-                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
-                                      {"%in_t_comp%", inType->compType},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inType->glslType});
 }
 
 /*******************************************************************************
@@ -643,8 +630,9 @@ ArithmeticRightShift::ArithmeticRightShift(
     const std::shared_ptr<TensorDescriptor> &_input2, const std::shared_ptr<TensorDescriptor> &_output,
     const bool _round, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input1, _input2, _output),
-                      {&pushConstant, sizeof(pushConstant)}, _pipelineCache, createSpirv(_pipelineCache, _output),
-                      debugName, {_input1->getRank(), _output->getRank()}),
+                      {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
+                      createSpirv(_pipelineCache, _output->getFormat()), debugName,
+                      {_input1->getRank(), _output->getRank()}),
       pushConstant{createPushConstant(_round)} {}
 
 ArithmeticRightShift::PushConstant ArithmeticRightShift::createPushConstant(const bool round) const {
@@ -668,19 +656,10 @@ DescriptorMap ArithmeticRightShift::createDescriptorMap(const std::shared_ptr<Te
 }
 
 SpirvBinary ArithmeticRightShift::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                              const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+                                              VkFormat outputFormat) {
+    const auto *inOutType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inOutType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_out_t%", inOutType->glslType},
-                                      {"%in_out_t_comp%", inOutType->compType},
-                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inOutType->glslType});
 }
 
 /*******************************************************************************
@@ -694,7 +673,7 @@ AvgPool2D::AvgPool2D(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispatc
                      const std::vector<int32_t> &_pad, const uint32_t _accType, const int8_t _inputZeroPoint,
                      const int8_t _outputZeroPoint, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output), {&pushConstant, sizeof(pushConstant)},
-                      _pipelineCache, createSpirv(_pipelineCache, _output, _accType), debugName),
+                      _pipelineCache, createSpirv(_pipelineCache, _output->getFormat(), _accType), debugName),
       pushConstant{createPushConstant(_kernel, _stride, _pad, _inputZeroPoint, _outputZeroPoint)} {}
 
 AvgPool2D::PushConstant AvgPool2D::createPushConstant(const std::vector<int32_t> &kernel,
@@ -734,26 +713,12 @@ DescriptorMap AvgPool2D::createDescriptorMap(const std::shared_ptr<TensorDescrip
     return descriptorMap;
 }
 
-SpirvBinary AvgPool2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                   const std::shared_ptr<TensorDescriptor> &output, const uint32_t accType) const {
-    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary AvgPool2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat outputFormat,
+                                   const uint32_t accType) {
+    const auto *inOutType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
     const auto accTypeStr = getArithmeticTypeInfo(accScalarType(accType))->glslType;
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inOutType->glslType,
-                                      accTypeStr,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%acc_t%", accTypeStr},
-                                      {"%in_out_t_lowest%", inOutType->lowest},
-                                      {"%in_out_t_max%", inOutType->max},
-                                      {"%in_out_t%", inOutType->glslType},
-                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                      {"%in_out_t_type%", inOutType->typeId},
-                                      {"%in_out_t_comp%", inOutType->compType},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inOutType->glslType, accTypeStr});
 }
 
 /*******************************************************************************
@@ -764,7 +729,8 @@ Cast::Cast(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDyn
            const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
            const std::shared_ptr<TensorDescriptor> &_output, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output), {}, _pipelineCache,
-                      createSpirv(_pipelineCache, _input, _output), debugName, {_input->getRank()}) {}
+                      createSpirv(_pipelineCache, _input->getFormat(), _output->getFormat()), debugName,
+                      {_input->getRank()}) {}
 
 DescriptorMap Cast::createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                         const std::shared_ptr<TensorDescriptor> &output) const {
@@ -777,32 +743,12 @@ DescriptorMap Cast::createDescriptorMap(const std::shared_ptr<TensorDescriptor> 
     return descriptorMap;
 }
 
-SpirvBinary Cast::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                              const std::shared_ptr<TensorDescriptor> &input,
-                              const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
-    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Cast::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat inputFormat,
+                              VkFormat outputFormat) {
+    const auto *inType = getTosaArithmeticTypeInfo(inputFormat, IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inType->glslType,
-                                      outType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_t_type%", inType->typeId},
-                                      {"%out_t_type%", outType->typeId},
-                                      {"%in_t_lowest%", inType->lowest},
-                                      {"%in_t_max%", inType->max},
-                                      {"%out_t_lowest%", outType->lowest},
-                                      {"%out_t_max%", outType->max},
-                                      {"%in_t%", inType->glslType},
-                                      {"%in_t_comp%", inType->compType},
-                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
-                                      {"%out_t%", outType->glslType},
-                                      {"%out_t_comp%", outType->compType},
-                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inType->glslType, outType->glslType});
 }
 
 /*******************************************************************************
@@ -814,7 +760,8 @@ Clamp::Clamp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderD
              const std::shared_ptr<TensorDescriptor> &_output, const real_t _min, const real_t _max,
              const uint32_t _nanMode, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output), {&pushConstant, sizeof(pushConstant)},
-                      _pipelineCache, createSpirv(_pipelineCache, _output), debugName, {_input->getRank()}),
+                      _pipelineCache, createSpirv(_pipelineCache, _output->getFormat()), debugName,
+                      {_input->getRank()}),
       pushConstant{createPushConstant(_min, _max, _nanMode)} {}
 
 Clamp::PushConstant Clamp::createPushConstant(const real_t min, const real_t max, const uint32_t nanMode) const {
@@ -837,21 +784,10 @@ DescriptorMap Clamp::createDescriptorMap(const std::shared_ptr<TensorDescriptor>
     return descriptorMap;
 }
 
-SpirvBinary Clamp::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                               const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Clamp::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat outputFormat) {
+    const auto *inOutType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inOutType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_out_t%", inOutType->glslType},
-                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                      {"%in_out_t_type%", inOutType->typeId},
-                                      {"%in_out_t_comp%", inOutType->compType},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inOutType->glslType});
 }
 
 /*******************************************************************************
@@ -863,7 +799,8 @@ Concat::Concat(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoade
                const std::shared_ptr<TensorDescriptor> &_output, const uint32_t _axis, const uint32_t _offset,
                const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output), {&pushConstant, sizeof(pushConstant)},
-                      _pipelineCache, createSpirv(_pipelineCache, _output), debugName, {_input->getRank()}),
+                      _pipelineCache, createSpirv(_pipelineCache, _output->getFormat()), debugName,
+                      {_input->getRank()}),
       pushConstant{createPushConstant(_axis, _offset)} {}
 
 Concat::PushConstant Concat::createPushConstant(const uint32_t axis, const uint32_t offset) const {
@@ -895,19 +832,10 @@ void Concat::cmdDispatch(VkCommandBuffer commandBuffer) {
     loader->vkCmdDispatch(commandBuffer, groupCountX, groupCountY, 1);
 }
 
-SpirvBinary Concat::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Concat::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat outputFormat) {
+    const auto *inOutType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inOutType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_out_t%", inOutType->glslType},
-                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inOutType->glslType});
 }
 
 /*******************************************************************************
@@ -921,9 +849,11 @@ Conv2D::Conv2D(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoade
                const std::vector<int32_t> &_stride, const std::vector<int32_t> &_dilation, const int8_t _inputZeroPoint,
                const int8_t _weightZeroPoint, const uint32_t _accType, const std::array<uint32_t, 3> &_maxGroupCount,
                const std::string &debugName)
-    : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output, _weights, _biases),
-                      {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
-                      createSpirv(_pipelineCache, _input, _output, _weights, _accType), debugName),
+    : ComputePipeline(
+          _loader, _device, createDescriptorMap(_input, _output, _weights, _biases),
+          {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
+          createSpirv(_pipelineCache, _input->getFormat(), _output->getFormat(), _weights->getFormat(), _accType),
+          debugName),
       pushConstant{createPushConstant(_pad, _stride, _dilation, _inputZeroPoint, _weightZeroPoint)},
       maxGroupCount{_maxGroupCount} {}
 
@@ -968,38 +898,15 @@ DescriptorMap Conv2D::createDescriptorMap(const std::shared_ptr<TensorDescriptor
     return descriptorMap;
 }
 
-SpirvBinary Conv2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                const std::shared_ptr<TensorDescriptor> &input,
-                                const std::shared_ptr<TensorDescriptor> &output,
-                                const std::shared_ptr<TensorDescriptor> &weights, const uint32_t accType) const {
-    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
-    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
-    const auto *weightType = getTosaArithmeticTypeInfo(weights->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Conv2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat inputFormat,
+                                VkFormat outputFormat, VkFormat weightsFormat, const uint32_t accType) {
+    const auto *inType = getTosaArithmeticTypeInfo(inputFormat, IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
+    const auto *weightType = getTosaArithmeticTypeInfo(weightsFormat, IntegerInterpretation::Signed);
     const auto *accTypeType = getArithmeticTypeInfo(accScalarType(accType));
 
     return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inType->glslType,
-                                      weightType->glslType,
-                                      outType->glslType,
-                                      accTypeType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", std::to_string(warpX)},
-                                      {"%warpY%", std::to_string(warpY)},
-                                      {"%warpZ%", std::to_string(warpZ)},
-                                      {"%in_t%", inType->glslType},
-                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
-                                      {"%in_t_type%", inType->typeId},
-                                      {"%out_t%", outType->glslType},
-                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                      {"%out_t_type%", outType->typeId},
-                                      {"%weight_t%", weightType->glslType},
-                                      {"%weight_t_storage%", getTensorInterfaceGlslType(weights->getFormat())},
-                                      {"%weight_t_type%", weightType->typeId},
-                                      {"%acc_t_type%", accTypeType->typeId},
-                                      {"%acc_t%", accTypeType->glslType},
-                                  });
+                                  {inType->glslType, weightType->glslType, outType->glslType, accTypeType->glslType});
 }
 
 void Conv2D::cmdDispatch(VkCommandBuffer commandBuffer) {
@@ -1039,9 +946,11 @@ Conv3D::Conv3D(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoade
                const std::shared_ptr<TensorDescriptor> &_biases, const std::vector<int32_t> &_pad,
                const std::vector<int32_t> &_stride, const std::vector<int32_t> &_dilation, const int8_t _inputZeroPoint,
                const int8_t _weightZeroPoint, const uint32_t _accType, const std::string &debugName)
-    : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output, _weights, _biases),
-                      {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
-                      createSpirv(_pipelineCache, _input, _output, _weights, _accType), debugName),
+    : ComputePipeline(
+          _loader, _device, createDescriptorMap(_input, _output, _weights, _biases),
+          {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
+          createSpirv(_pipelineCache, _input->getFormat(), _output->getFormat(), _weights->getFormat(), _accType),
+          debugName),
       pushConstant{createPushConstant(_pad, _stride, _dilation, _inputZeroPoint, _weightZeroPoint)} {}
 
 Conv3D::PushConstant Conv3D::createPushConstant(const std::vector<int32_t> &pad, const std::vector<int32_t> &stride,
@@ -1088,36 +997,15 @@ DescriptorMap Conv3D::createDescriptorMap(const std::shared_ptr<TensorDescriptor
     return descriptorMap;
 }
 
-SpirvBinary Conv3D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                const std::shared_ptr<TensorDescriptor> &input,
-                                const std::shared_ptr<TensorDescriptor> &output,
-                                const std::shared_ptr<TensorDescriptor> &weights, const uint32_t accType) const {
-    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
-    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
-    const auto *weightType = getTosaArithmeticTypeInfo(weights->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Conv3D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat inputFormat,
+                                VkFormat outputFormat, VkFormat weightsFormat, const uint32_t accType) {
+    const auto *inType = getTosaArithmeticTypeInfo(inputFormat, IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
+    const auto *weightType = getTosaArithmeticTypeInfo(weightsFormat, IntegerInterpretation::Signed);
     const auto *accTypeType = getArithmeticTypeInfo(accScalarType(accType));
 
     return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inType->glslType,
-                                      weightType->glslType,
-                                      outType->glslType,
-                                      accTypeType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_t%", inType->glslType},
-                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
-                                      {"%in_t_type%", inType->typeId},
-                                      {"%out_t%", outType->glslType},
-                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                      {"%out_t_type%", outType->typeId},
-                                      {"%weight_t%", weightType->glslType},
-                                      {"%weight_t_storage%", getTensorInterfaceGlslType(weights->getFormat())},
-                                      {"%weight_t_type%", weightType->typeId},
-                                      {"%acc_t_type%", accTypeType->typeId},
-                                      {"%acc_t%", accTypeType->glslType},
-                                  });
+                                  {inType->glslType, weightType->glslType, outType->glslType, accTypeType->glslType});
 }
 
 /*******************************************************************************
@@ -1133,9 +1021,11 @@ DepthwiseConv2D::DepthwiseConv2D(const std::shared_ptr<VULKAN_HPP_NAMESPACE::det
                                  const std::vector<int32_t> &_stride, const std::vector<int32_t> &_dilation,
                                  const int8_t _inputZeroPoint, const int8_t _weightZeroPoint, const uint32_t _accType,
                                  const std::string &debugName)
-    : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output, _weights, _biases),
-                      {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
-                      createSpirv(_pipelineCache, _input, _output, _weights, _accType), debugName),
+    : ComputePipeline(
+          _loader, _device, createDescriptorMap(_input, _output, _weights, _biases),
+          {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
+          createSpirv(_pipelineCache, _input->getFormat(), _output->getFormat(), _weights->getFormat(), _accType),
+          debugName),
       pushConstant{createPushConstant(_pad, _stride, _dilation, _inputZeroPoint, _weightZeroPoint)} {}
 
 DepthwiseConv2D::PushConstant DepthwiseConv2D::createPushConstant(const std::vector<int32_t> &pad,
@@ -1180,37 +1070,15 @@ DescriptorMap DepthwiseConv2D::createDescriptorMap(const std::shared_ptr<TensorD
     return descriptorMap;
 }
 
-SpirvBinary DepthwiseConv2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                         const std::shared_ptr<TensorDescriptor> &input,
-                                         const std::shared_ptr<TensorDescriptor> &output,
-                                         const std::shared_ptr<TensorDescriptor> &weights,
-                                         const uint32_t accType) const {
-    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
-    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
-    const auto *weightType = getTosaArithmeticTypeInfo(weights->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary DepthwiseConv2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat inputFormat,
+                                         VkFormat outputFormat, VkFormat weightsFormat, const uint32_t accType) {
+    const auto *inType = getTosaArithmeticTypeInfo(inputFormat, IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
+    const auto *weightType = getTosaArithmeticTypeInfo(weightsFormat, IntegerInterpretation::Signed);
     const auto *accTypeType = getArithmeticTypeInfo(accScalarType(accType));
 
     return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inType->glslType,
-                                      weightType->glslType,
-                                      outType->glslType,
-                                      accTypeType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_t%", inType->glslType},
-                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
-                                      {"%in_t_type%", inType->typeId},
-                                      {"%out_t%", outType->glslType},
-                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                      {"%out_t_type%", outType->typeId},
-                                      {"%weight_t%", weightType->glslType},
-                                      {"%weight_t_storage%", getTensorInterfaceGlslType(weights->getFormat())},
-                                      {"%weight_t_type%", weightType->typeId},
-                                      {"%acc_t_type%", accTypeType->typeId},
-                                      {"%acc_t%", accTypeType->glslType},
-                                  });
+                                  {inType->glslType, weightType->glslType, outType->glslType, accTypeType->glslType});
 }
 
 /*******************************************************************************
@@ -1221,10 +1089,10 @@ ElementwiseBinary::ElementwiseBinary(
     const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, VkDevice _device,
     const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input1,
     const std::shared_ptr<TensorDescriptor> &_input2, const std::shared_ptr<TensorDescriptor> &_output,
-    const uint32_t _nanMode, const std::string &debugName, const std::string_view &_operation)
+    const uint32_t _nanMode, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input1, _input2, _output),
                       {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
-                      createSpirv(_pipelineCache, _input1, _output, debugName, _operation), debugName,
+                      createSpirv(_pipelineCache, _input1->getFormat(), _output->getFormat(), debugName), debugName,
                       {_input1->getRank(), _output->getRank()}),
       pushConstant{createPushConstant(_nanMode)} {}
 
@@ -1245,30 +1113,12 @@ DescriptorMap ElementwiseBinary::createDescriptorMap(const std::shared_ptr<Tenso
     return descriptorMap;
 }
 
-SpirvBinary ElementwiseBinary::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                           const std::shared_ptr<TensorDescriptor> &input,
-                                           const std::shared_ptr<TensorDescriptor> &output, const std::string &name,
-                                           const std::string_view &operation) const {
-    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
-    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary ElementwiseBinary::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat inputFormat,
+                                           VkFormat outputFormat, const std::string &name) {
+    const auto *inType = getTosaArithmeticTypeInfo(inputFormat, IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      name,
-                                      inType->glslType,
-                                      outType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%operation%", operation},
-                                      {"%in_t%", inType->glslType},
-                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
-                                      {"%out_t%", outType->glslType},
-                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                      {"%in_t_type%", inType->typeId},
-                                      {"%out_t_type%", outType->typeId},
-                                      {"%in_t_comp%", inType->compType},
-                                  });
+    return _pipelineCache->lookup(shaderName, {name, inType->glslType, outType->glslType});
 }
 
 /*******************************************************************************
@@ -1278,10 +1128,9 @@ SpirvBinary ElementwiseBinary::createSpirv(const std::shared_ptr<PipelineCache> 
 ElementwiseUnary::ElementwiseUnary(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader,
                                    VkDevice _device, const std::shared_ptr<PipelineCache> &_pipelineCache,
                                    const std::shared_ptr<TensorDescriptor> &_input1,
-                                   const std::shared_ptr<TensorDescriptor> &_output, const std::string &debugName,
-                                   const std::string_view &_operation)
+                                   const std::shared_ptr<TensorDescriptor> &_output, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input1, _output), {}, _pipelineCache,
-                      createSpirv(_pipelineCache, _output, debugName, _operation), debugName, {_output->getRank()}) {}
+                      createSpirv(_pipelineCache, _output->getFormat(), debugName), debugName, {_output->getRank()}) {}
 
 DescriptorMap ElementwiseUnary::createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input1,
                                                     const std::shared_ptr<TensorDescriptor> &output) const {
@@ -1294,24 +1143,11 @@ DescriptorMap ElementwiseUnary::createDescriptorMap(const std::shared_ptr<Tensor
     return descriptorMap;
 }
 
-SpirvBinary ElementwiseUnary::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                          const std::shared_ptr<TensorDescriptor> &output, const std::string &name,
-                                          const std::string_view &operation) const {
-    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary ElementwiseUnary::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat outputFormat,
+                                          const std::string &name) {
+    const auto *inOutType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      name,
-                                      inOutType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%operation%", operation},
-                                      {"%in_out_t%", inOutType->glslType},
-                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                      {"%in_out_t_type%", inOutType->typeId},
-                                      {"%in_out_t_comp%", inOutType->compType},
-                                  });
+    return _pipelineCache->lookup(shaderName, {name, inOutType->glslType});
 }
 
 /*******************************************************************************
@@ -1349,11 +1185,8 @@ DescriptorMap Fft2D::createDescriptorMap(const std::shared_ptr<TensorDescriptor>
     return descriptorMap;
 }
 
-SpirvBinary Fft2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache) const {
-    return _pipelineCache->lookup(shaderName, {},
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                  });
+SpirvBinary Fft2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache) {
+    return _pipelineCache->lookup(shaderName, {});
 }
 
 /*******************************************************************************
@@ -1365,7 +1198,7 @@ Gather::Gather(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoade
                const std::shared_ptr<TensorDescriptor> &_indices, const std::shared_ptr<TensorDescriptor> &_output,
                const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_values, _indices, _output), {}, _pipelineCache,
-                      createSpirv(_pipelineCache, _indices, _output), debugName, {}) {}
+                      createSpirv(_pipelineCache, _indices->getFormat(), _output->getFormat()), debugName, {}) {}
 
 DescriptorMap Gather::createDescriptorMap(const std::shared_ptr<TensorDescriptor> &values,
                                           const std::shared_ptr<TensorDescriptor> &indices,
@@ -1380,24 +1213,12 @@ DescriptorMap Gather::createDescriptorMap(const std::shared_ptr<TensorDescriptor
     return descriptorMap;
 }
 
-SpirvBinary Gather::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                const std::shared_ptr<TensorDescriptor> &indices,
-                                const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
-    const auto *indicesType = getTosaArithmeticTypeInfo(indices->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Gather::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat indicesFormat,
+                                VkFormat outputFormat) {
+    const auto *inOutType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
+    const auto *indicesType = getTosaArithmeticTypeInfo(indicesFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inOutType->glslType,
-                                      indicesType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%index_t%", indicesType->glslType},
-                                      {"%index_t_storage%", getTensorInterfaceGlslType(indices->getFormat())},
-                                      {"%in_out_t%", inOutType->glslType},
-                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inOutType->glslType, indicesType->glslType});
 }
 
 /*******************************************************************************
@@ -1410,7 +1231,7 @@ Matmul::Matmul(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoade
                const int32_t _inputZeroPoint1, const int32_t _inputZeroPoint2, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input1, _input2, _output),
                       {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
-                      createSpirv(_pipelineCache, _input1, _output), debugName),
+                      createSpirv(_pipelineCache, _input1->getFormat(), _output->getFormat()), debugName),
       pushConstant{createPushConstant(_inputZeroPoint1, _inputZeroPoint2)} {}
 
 Matmul::PushConstant Matmul::createPushConstant(const int32_t inputZeroPoint1, const int32_t inputZeroPoint2) const {
@@ -1435,27 +1256,12 @@ DescriptorMap Matmul::createDescriptorMap(const std::shared_ptr<TensorDescriptor
     return descriptorMap;
 }
 
-SpirvBinary Matmul::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                const std::shared_ptr<TensorDescriptor> &input1,
-                                const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inType = getTosaArithmeticTypeInfo(input1->getFormat(), IntegerInterpretation::Signed);
-    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Matmul::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat input1Format,
+                                VkFormat outputFormat) {
+    const auto *inType = getTosaArithmeticTypeInfo(input1Format, IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inType->glslType,
-                                      outType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_t%", inType->glslType},
-                                      {"%in_t_storage%", getTensorInterfaceGlslType(input1->getFormat())},
-                                      {"%in_t_type%", inType->typeId},
-                                      {"%out_t%", outType->glslType},
-                                      {"%out_t_comp%", outType->compType},
-                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                      {"%out_t_type%", outType->typeId},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inType->glslType, outType->glslType});
 }
 
 /*******************************************************************************
@@ -1468,7 +1274,7 @@ MaxPool2D::MaxPool2D(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispatc
                      const std::vector<int32_t> &_kernel, const std::vector<int32_t> &_stride,
                      const std::vector<int32_t> &_pad, const uint32_t _nanMode, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output), {&pushConstant, sizeof(pushConstant)},
-                      _pipelineCache, createSpirv(_pipelineCache, _output, _nanMode), debugName),
+                      _pipelineCache, createSpirv(_pipelineCache, _output->getFormat()), debugName),
       pushConstant{createPushConstant(_kernel, _stride, _pad, _nanMode)} {}
 
 MaxPool2D::PushConstant MaxPool2D::createPushConstant(const std::vector<int32_t> &kernel,
@@ -1506,23 +1312,10 @@ DescriptorMap MaxPool2D::createDescriptorMap(const std::shared_ptr<TensorDescrip
     return descriptorMap;
 }
 
-SpirvBinary MaxPool2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                   const std::shared_ptr<TensorDescriptor> &output, const uint32_t _nanMode) const {
-    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary MaxPool2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat outputFormat) {
+    const auto *inOutType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
-    const std::string_view init = (_nanMode == NanPropagationMode::Ignore ? "NAN" : inOutType->lowest);
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inOutType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_out_t%", inOutType->glslType},
-                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                      {"%in_out_t_lowest%", init},
-                                      {"%in_out_t_type%", inOutType->typeId},
-                                      {"%in_out_t_comp%", inOutType->compType},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inOutType->glslType});
 }
 
 /*******************************************************************************
@@ -1535,7 +1328,7 @@ Mul::Mul(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynam
          const uint32_t _shift, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input1, _input2, _output),
                       {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
-                      createSpirv(_pipelineCache, _input1, _output), debugName,
+                      createSpirv(_pipelineCache, _input1->getFormat(), _output->getFormat()), debugName,
                       {_input1->getRank(), _output->getRank()}),
       pushConstant{createPushConstant(_shift)} {}
 
@@ -1560,26 +1353,12 @@ DescriptorMap Mul::createDescriptorMap(const std::shared_ptr<TensorDescriptor> &
     return descriptorMap;
 }
 
-SpirvBinary Mul::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                             const std::shared_ptr<TensorDescriptor> &input1,
-                             const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inType = getTosaArithmeticTypeInfo(input1->getFormat(), IntegerInterpretation::Signed);
-    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Mul::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat input1Format,
+                             VkFormat outputFormat) {
+    const auto *inType = getTosaArithmeticTypeInfo(input1Format, IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inType->glslType,
-                                      outType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_t_type%", inType->typeId},
-                                      {"%out_t_type%", outType->typeId},
-                                      {"%in_t%", inType->glslType},
-                                      {"%in_t_storage%", getTensorInterfaceGlslType(input1->getFormat())},
-                                      {"%out_t%", outType->glslType},
-                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inType->glslType, outType->glslType});
 }
 
 /*******************************************************************************
@@ -1591,7 +1370,8 @@ Negate::Negate(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoade
                const std::shared_ptr<TensorDescriptor> &_output, const int32_t _inputZeroPoint,
                const int32_t _outputZeroPoint, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output), {&pushConstant, sizeof(pushConstant)},
-                      _pipelineCache, createSpirv(_pipelineCache, _output), debugName, {_output->getRank()}),
+                      _pipelineCache, createSpirv(_pipelineCache, _output->getFormat()), debugName,
+                      {_output->getRank()}),
       pushConstant{createPushConstant(_inputZeroPoint, _outputZeroPoint)} {}
 
 Negate::PushConstant Negate::createPushConstant(const int32_t inputZeroPoint, const int32_t outputZeroPoint) const {
@@ -1614,25 +1394,12 @@ DescriptorMap Negate::createDescriptorMap(const std::shared_ptr<TensorDescriptor
     return descriptorMap;
 }
 
-SpirvBinary Negate::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Negate::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat outputFormat) {
+    const auto *inOutType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
     const std::string_view accType = inOutType->isInteger ? "int" : "float";
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inOutType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_out_t%", inOutType->glslType},
-                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                      {"%in_out_t_type%", inOutType->typeId},
-                                      {"%acc_t%", accType},
-                                      {"%in_out_t_lowest%", inOutType->lowest},
-                                      {"%in_out_t_max%", inOutType->max},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inOutType->glslType, accType});
 }
 
 /*******************************************************************************
@@ -1644,8 +1411,8 @@ Pad::Pad(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynam
          const std::shared_ptr<TensorDescriptor> &_output, const std::shared_ptr<TensorDescriptor> &_padding,
          const real_t _padConst, const int32_t _padConstInt, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output, _padding),
-                      {&pushConstant, sizeof(pushConstant)}, _pipelineCache, createSpirv(_pipelineCache, _output),
-                      debugName, {_input->getRank()}),
+                      {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
+                      createSpirv(_pipelineCache, _output->getFormat()), debugName, {_input->getRank()}),
       pushConstant{createPushConstant(_padConst, _padConstInt)} {}
 
 Pad::PushConstant Pad::createPushConstant(const real_t padConst, const int32_t padConstInt) const {
@@ -1670,20 +1437,10 @@ DescriptorMap Pad::createDescriptorMap(const std::shared_ptr<TensorDescriptor> &
     return descriptorMap;
 }
 
-SpirvBinary Pad::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                             const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Pad::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat outputFormat) {
+    const auto *inOutType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inOutType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_out_t%", inOutType->glslType},
-                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                      {"%in_out_t_type%", inOutType->typeId},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inOutType->glslType});
 }
 
 /*******************************************************************************
@@ -1693,9 +1450,9 @@ SpirvBinary Pad::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCach
 Reduce::Reduce(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, VkDevice _device,
                const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
                const std::shared_ptr<TensorDescriptor> &_output, const uint32_t _axis, const uint32_t _nanMode,
-               const std::string &debugName, const std::string &_init, const std::string_view &_operation)
+               const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output), {&pushConstant, sizeof(pushConstant)},
-                      _pipelineCache, createSpirv(_pipelineCache, _input, debugName, _init, _operation), debugName,
+                      _pipelineCache, createSpirv(_pipelineCache, _input->getFormat(), debugName), debugName,
                       {_output->getRank()}),
       pushConstant{createPushConstant(
           _axis, _nanMode, getTosaArithmeticTypeInfo(_input->getFormat(), IntegerInterpretation::Signed)->isInteger)} {}
@@ -1721,25 +1478,11 @@ DescriptorMap Reduce::createDescriptorMap(const std::shared_ptr<TensorDescriptor
     return descriptorMap;
 }
 
-SpirvBinary Reduce::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                const std::shared_ptr<TensorDescriptor> &output, const std::string &name,
-                                const std::string &init, const std::string_view &operation) const {
-    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Reduce::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat outputFormat,
+                                const std::string &name) {
+    const auto *inOutType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      name,
-                                      inOutType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%init%", init},
-                                      {"%operation%", operation},
-                                      {"%in_out_t%", inOutType->glslType},
-                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                      {"%in_out_t_type%", inOutType->typeId},
-                                      {"%in_out_t_comp%", inOutType->compType},
-                                  });
+    return _pipelineCache->lookup(shaderName, {name, inOutType->glslType});
 }
 
 /*******************************************************************************
@@ -1755,7 +1498,8 @@ Rescale::Rescale(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoa
                  const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output, _multiplier, _shift),
                       {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
-                      createSpirv(_pipelineCache, _input, _output, _multiplier, _inputUnsigned, _outputUnsigned),
+                      createSpirv(_pipelineCache, _input->getFormat(), _output->getFormat(), _multiplier->getFormat(),
+                                  _inputUnsigned, _outputUnsigned),
                       debugName, {_output->getRank(), _scale32, _doubleRound, _perChannel}),
       pushConstant{createPushConstant(_inputZeroPoint, _outputZeroPoint)} {}
 
@@ -1783,34 +1527,16 @@ DescriptorMap Rescale::createDescriptorMap(const std::shared_ptr<TensorDescripto
     return descriptorMap;
 }
 
-SpirvBinary Rescale::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                 const std::shared_ptr<TensorDescriptor> &input,
-                                 const std::shared_ptr<TensorDescriptor> &output,
-                                 const std::shared_ptr<TensorDescriptor> &multiplier, const bool inputUnsigned,
-                                 const bool outputUnsigned) const {
-    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), inputUnsigned ? IntegerInterpretation::Unsigned
-                                                                                     : IntegerInterpretation::Signed);
-    const auto *outType = getTosaArithmeticTypeInfo(
-        output->getFormat(), outputUnsigned ? IntegerInterpretation::Unsigned : IntegerInterpretation::Signed);
-    const auto *mulType = getTosaArithmeticTypeInfo(multiplier->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Rescale::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat inputFormat,
+                                 VkFormat outputFormat, VkFormat multiplierFormat, const bool inputUnsigned,
+                                 const bool outputUnsigned) {
+    const auto *inType = getTosaArithmeticTypeInfo(inputFormat, inputUnsigned ? IntegerInterpretation::Unsigned
+                                                                              : IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(outputFormat, outputUnsigned ? IntegerInterpretation::Unsigned
+                                                                                 : IntegerInterpretation::Signed);
+    const auto *mulType = getTosaArithmeticTypeInfo(multiplierFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inType->glslType,
-                                      outType->glslType,
-                                      mulType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_t%", inType->glslType},
-                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
-                                      {"%out_t%", outType->glslType},
-                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                      {"%mul_t%", mulType->glslType},
-                                      {"%mul_t_storage%", getTensorInterfaceGlslType(multiplier->getFormat())},
-                                      {"%out_t_lowest%", outType->lowest},
-                                      {"%out_t_max%", outType->max},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inType->glslType, outType->glslType, mulType->glslType});
 }
 
 /*******************************************************************************
@@ -1821,7 +1547,8 @@ Reshape::Reshape(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoa
                  const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
                  const std::shared_ptr<TensorDescriptor> &_output, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output), {}, _pipelineCache,
-                      createSpirv(_pipelineCache, _output), debugName, {_input->getRank(), _output->getRank()}) {}
+                      createSpirv(_pipelineCache, _output->getFormat()), debugName,
+                      {_input->getRank(), _output->getRank()}) {}
 
 DescriptorMap Reshape::createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                            const std::shared_ptr<TensorDescriptor> &output) const {
@@ -1834,19 +1561,10 @@ DescriptorMap Reshape::createDescriptorMap(const std::shared_ptr<TensorDescripto
     return descriptorMap;
 }
 
-SpirvBinary Reshape::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                 const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Reshape::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat outputFormat) {
+    const auto *inOutType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inOutType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_out_t%", inOutType->glslType},
-                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inOutType->glslType});
 }
 
 /*******************************************************************************
@@ -1859,7 +1577,8 @@ Resize::Resize(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoade
                const std::vector<int32_t> &_offset, const std::vector<int32_t> &_border, const uint32_t _mode,
                const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output), {&pushConstant, sizeof(pushConstant)},
-                      _pipelineCache, createSpirv(_pipelineCache, _input, _output), debugName),
+                      _pipelineCache, createSpirv(_pipelineCache, _input->getFormat(), _output->getFormat()),
+                      debugName),
       pushConstant{createPushConstant(_scale, _offset, _border, _mode)} {}
 
 Resize::PushConstant Resize::createPushConstant(const std::vector<int32_t> &scale, const std::vector<int32_t> &offset,
@@ -1896,27 +1615,12 @@ DescriptorMap Resize::createDescriptorMap(const std::shared_ptr<TensorDescriptor
     return descriptorMap;
 }
 
-SpirvBinary Resize::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                const std::shared_ptr<TensorDescriptor> &input,
-                                const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
-    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Resize::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat inputFormat,
+                                VkFormat outputFormat) {
+    const auto *inType = getTosaArithmeticTypeInfo(inputFormat, IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inType->glslType,
-                                      outType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_t%", inType->glslType},
-                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
-                                      {"%in_t_type%", inType->typeId},
-                                      {"%out_t%", outType->glslType},
-                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                      {"%out_t_type%", outType->typeId},
-                                      {"%out_t_comp%", outType->compType},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inType->glslType, outType->glslType});
 }
 
 /*******************************************************************************
@@ -1927,7 +1631,8 @@ Reverse::Reverse(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoa
                  const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
                  const std::shared_ptr<TensorDescriptor> &_output, const uint32_t _axis, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output), {&pushConstant, sizeof(pushConstant)},
-                      _pipelineCache, createSpirv(_pipelineCache, _output), debugName, {_output->getRank()}),
+                      _pipelineCache, createSpirv(_pipelineCache, _output->getFormat()), debugName,
+                      {_output->getRank()}),
       pushConstant{createPushConstant(_axis)} {}
 
 Reverse::PushConstant Reverse::createPushConstant(const uint32_t axis) const {
@@ -1948,19 +1653,10 @@ DescriptorMap Reverse::createDescriptorMap(const std::shared_ptr<TensorDescripto
     return descriptorMap;
 }
 
-SpirvBinary Reverse::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                 const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Reverse::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat outputFormat) {
+    const auto *inOutType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inOutType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_out_t%", inOutType->glslType},
-                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inOutType->glslType});
 }
 
 /*******************************************************************************
@@ -1987,11 +1683,8 @@ DescriptorMap Rfft2D::createDescriptorMap(const std::shared_ptr<TensorDescriptor
     return descriptorMap;
 }
 
-SpirvBinary Rfft2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache) const {
-    return _pipelineCache->lookup(shaderName, {},
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                  });
+SpirvBinary Rfft2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache) {
+    return _pipelineCache->lookup(shaderName, {});
 }
 
 /*******************************************************************************
@@ -2003,7 +1696,7 @@ Scatter::Scatter(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoa
                  const std::shared_ptr<TensorDescriptor> &_values, const std::shared_ptr<TensorDescriptor> &_indices,
                  const std::shared_ptr<TensorDescriptor> &_output, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _values, _indices, _output), {}, _pipelineCache,
-                      createSpirv(_pipelineCache, _indices, _output), debugName, {}) {}
+                      createSpirv(_pipelineCache, _indices->getFormat(), _output->getFormat()), debugName, {}) {}
 
 DescriptorMap Scatter::createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                            const std::shared_ptr<TensorDescriptor> &values,
@@ -2020,24 +1713,12 @@ DescriptorMap Scatter::createDescriptorMap(const std::shared_ptr<TensorDescripto
     return descriptorMap;
 }
 
-SpirvBinary Scatter::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                 const std::shared_ptr<TensorDescriptor> &indices,
-                                 const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
-    const auto *indicesType = getTosaArithmeticTypeInfo(indices->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Scatter::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat indicesFormat,
+                                 VkFormat outputFormat) {
+    const auto *inOutType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
+    const auto *indicesType = getTosaArithmeticTypeInfo(indicesFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inOutType->glslType,
-                                      indicesType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%index_t%", indicesType->glslType},
-                                      {"%index_t_storage%", getTensorInterfaceGlslType(indices->getFormat())},
-                                      {"%in_out_t%", inOutType->glslType},
-                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inOutType->glslType, indicesType->glslType});
 }
 
 /*******************************************************************************
@@ -2049,7 +1730,7 @@ Select::Select(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoade
                const std::shared_ptr<TensorDescriptor> &_input2, const std::shared_ptr<TensorDescriptor> &_input3,
                const std::shared_ptr<TensorDescriptor> &_output, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input1, _input2, _input3, _output), {}, _pipelineCache,
-                      createSpirv(_pipelineCache, _output), debugName, {_output->getRank()}) {}
+                      createSpirv(_pipelineCache, _output->getFormat()), debugName, {_output->getRank()}) {}
 
 DescriptorMap Select::createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input1,
                                           const std::shared_ptr<TensorDescriptor> &input2,
@@ -2066,19 +1747,10 @@ DescriptorMap Select::createDescriptorMap(const std::shared_ptr<TensorDescriptor
     return descriptorMap;
 }
 
-SpirvBinary Select::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Select::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat outputFormat) {
+    const auto *inOutType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inOutType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_out_t%", inOutType->glslType},
-                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inOutType->glslType});
 }
 
 /*******************************************************************************
@@ -2091,7 +1763,7 @@ Slice::Slice(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderD
              const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output),
                       {&pushConstant, static_cast<uint32_t>(_input->getRank() * sizeof(uint32_t))}, _pipelineCache,
-                      createSpirv(_pipelineCache, _input), debugName, {_input->getRank()}),
+                      createSpirv(_pipelineCache, _input->getFormat()), debugName, {_input->getRank()}),
       pushConstant{createPushConstant(_start)} {}
 
 Slice::PushConstant Slice::createPushConstant(const std::vector<uint32_t> &start) const {
@@ -2111,19 +1783,10 @@ DescriptorMap Slice::createDescriptorMap(const std::shared_ptr<TensorDescriptor>
     return descriptorMap;
 }
 
-SpirvBinary Slice::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                               const std::shared_ptr<TensorDescriptor> &input) const {
-    const auto *inOutType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Slice::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat inputFormat) {
+    const auto *inOutType = getTosaArithmeticTypeInfo(inputFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inOutType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_out_t%", inOutType->glslType},
-                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inOutType->glslType});
 }
 
 /*******************************************************************************
@@ -2135,7 +1798,8 @@ Table::Table(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderD
              const std::shared_ptr<TensorDescriptor> &_output, const std::shared_ptr<TensorDescriptor> &_table,
              const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output, _table), {}, _pipelineCache,
-                      createSpirv(_pipelineCache, _input, _output), debugName, {_output->getRank()}) {}
+                      createSpirv(_pipelineCache, _input->getFormat(), _output->getFormat()), debugName,
+                      {_output->getRank()}) {}
 
 DescriptorMap Table::createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                          const std::shared_ptr<TensorDescriptor> &output,
@@ -2150,25 +1814,12 @@ DescriptorMap Table::createDescriptorMap(const std::shared_ptr<TensorDescriptor>
     return descriptorMap;
 }
 
-SpirvBinary Table::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                               const std::shared_ptr<TensorDescriptor> &input,
-                               const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
-    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Table::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat inputFormat,
+                               VkFormat outputFormat) {
+    const auto *inType = getTosaArithmeticTypeInfo(inputFormat, IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inType->glslType,
-                                      outType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_t%", inType->glslType},
-                                      {"%in_t_type%", inType->typeId},
-                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
-                                      {"%out_t%", outType->glslType},
-                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inType->glslType, outType->glslType});
 }
 
 /*******************************************************************************
@@ -2179,7 +1830,7 @@ Tile::Tile(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDyn
            const std::shared_ptr<PipelineCache> &_pipelineCache, const std::shared_ptr<TensorDescriptor> &_input,
            const std::shared_ptr<TensorDescriptor> &_output, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output), {}, _pipelineCache,
-                      createSpirv(_pipelineCache, _output), debugName, {_input->getRank()}) {}
+                      createSpirv(_pipelineCache, _output->getFormat()), debugName, {_input->getRank()}) {}
 
 DescriptorMap Tile::createDescriptorMap(const std::shared_ptr<TensorDescriptor> &input,
                                         const std::shared_ptr<TensorDescriptor> &output) const {
@@ -2192,19 +1843,10 @@ DescriptorMap Tile::createDescriptorMap(const std::shared_ptr<TensorDescriptor> 
     return descriptorMap;
 }
 
-SpirvBinary Tile::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                              const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Tile::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat outputFormat) {
+    const auto *inOutType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inOutType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_out_t%", inOutType->glslType},
-                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inOutType->glslType});
 }
 
 /*******************************************************************************
@@ -2217,7 +1859,7 @@ Transpose::Transpose(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispatc
                      const std::vector<uint32_t> &_perms, const std::string &debugName)
     : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output),
                       {&pushConstant, static_cast<uint32_t>(_input->getRank() * sizeof(uint32_t))}, _pipelineCache,
-                      createSpirv(_pipelineCache, _output), debugName, {_output->getRank()}),
+                      createSpirv(_pipelineCache, _output->getFormat()), debugName, {_output->getRank()}),
       pushConstant{createPushConstant(_perms)} {}
 
 Transpose::PushConstant Transpose::createPushConstant(const std::vector<uint32_t> &perms) const {
@@ -2237,19 +1879,10 @@ DescriptorMap Transpose::createDescriptorMap(const std::shared_ptr<TensorDescrip
     return descriptorMap;
 }
 
-SpirvBinary Transpose::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                   const std::shared_ptr<TensorDescriptor> &output) const {
-    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary Transpose::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat outputFormat) {
+    const auto *inOutType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
 
-    return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inOutType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_out_t%", inOutType->glslType},
-                                      {"%in_out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                  });
+    return _pipelineCache->lookup(shaderName, {inOutType->glslType});
 }
 
 /*******************************************************************************
@@ -2264,9 +1897,11 @@ TransposeConv2D::TransposeConv2D(const std::shared_ptr<VULKAN_HPP_NAMESPACE::det
                                  const std::shared_ptr<TensorDescriptor> &_biases, const std::vector<int32_t> &_outPad,
                                  const std::vector<int32_t> &_stride, const int8_t _inputZeroPoint,
                                  const int8_t _weightZeroPoint, const uint32_t _accType, const std::string &debugName)
-    : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output, _weights, _biases),
-                      {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
-                      createSpirv(_pipelineCache, _input, _output, _weights, _accType), debugName),
+    : ComputePipeline(
+          _loader, _device, createDescriptorMap(_input, _output, _weights, _biases),
+          {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
+          createSpirv(_pipelineCache, _input->getFormat(), _output->getFormat(), _weights->getFormat(), _accType),
+          debugName),
       pushConstant{createPushConstant(_outPad, _stride, _inputZeroPoint, _weightZeroPoint)} {}
 
 TransposeConv2D::PushConstant TransposeConv2D::createPushConstant(const std::vector<int32_t> &outPad,
@@ -2306,37 +1941,15 @@ DescriptorMap TransposeConv2D::createDescriptorMap(const std::shared_ptr<TensorD
     return descriptorMap;
 }
 
-SpirvBinary TransposeConv2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                         const std::shared_ptr<TensorDescriptor> &input,
-                                         const std::shared_ptr<TensorDescriptor> &output,
-                                         const std::shared_ptr<TensorDescriptor> &weights,
-                                         const uint32_t accType) const {
-    const auto *inType = getTosaArithmeticTypeInfo(input->getFormat(), IntegerInterpretation::Signed);
-    const auto *outType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
-    const auto *weightType = getTosaArithmeticTypeInfo(weights->getFormat(), IntegerInterpretation::Signed);
+SpirvBinary TransposeConv2D::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, VkFormat inputFormat,
+                                         VkFormat outputFormat, VkFormat weightsFormat, const uint32_t accType) {
+    const auto *inType = getTosaArithmeticTypeInfo(inputFormat, IntegerInterpretation::Signed);
+    const auto *outType = getTosaArithmeticTypeInfo(outputFormat, IntegerInterpretation::Signed);
+    const auto *weightType = getTosaArithmeticTypeInfo(weightsFormat, IntegerInterpretation::Signed);
     const auto *accTypeType = getArithmeticTypeInfo(accScalarType(accType));
 
     return _pipelineCache->lookup(shaderName,
-                                  {
-                                      inType->glslType,
-                                      weightType->glslType,
-                                      outType->glslType,
-                                      accTypeType->glslType,
-                                  },
-                                  {
-                                      {"%warpX%", warp1DSv},
-                                      {"%in_t%", inType->glslType},
-                                      {"%in_t_storage%", getTensorInterfaceGlslType(input->getFormat())},
-                                      {"%in_t_type%", inType->typeId},
-                                      {"%out_t%", outType->glslType},
-                                      {"%out_t_storage%", getTensorInterfaceGlslType(output->getFormat())},
-                                      {"%out_t_type%", outType->typeId},
-                                      {"%weight_t%", weightType->glslType},
-                                      {"%weight_t_storage%", getTensorInterfaceGlslType(weights->getFormat())},
-                                      {"%weight_t_type%", weightType->typeId},
-                                      {"%acc_t_type%", accTypeType->typeId},
-                                      {"%acc_t%", accTypeType->glslType},
-                                  });
+                                  {inType->glslType, weightType->glslType, outType->glslType, accTypeType->glslType});
 }
 
 /*******************************************************************************
@@ -2353,10 +1966,13 @@ BlockMatch::BlockMatch(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispa
                        const std::vector<uint32_t> &inputStrides, const std::vector<uint32_t> &windowStrides,
                        const std::vector<uint32_t> &windowOffsets, const std::vector<uint32_t> &padding,
                        const uint32_t searchPattern, const SearchType searchType, const std::string &debugName)
-    : ComputePipeline(_loader, _device, createDescriptorMap(inTemplate, inSearch, outVectors, outCosts, searchType), {},
-                      _pipelineCache, createSpirv(_pipelineCache, searchType), debugName,
-                      createSpecConstants(kernelSizes, searchWindowSizes, inputStrides, windowStrides, windowOffsets,
-                                          padding, searchPattern)) {}
+    : ComputePipeline(
+          _loader, _device, createDescriptorMap(inTemplate, inSearch, outVectors, outCosts, searchType), {},
+          _pipelineCache,
+          createSpirv(_pipelineCache, searchType, outCosts ? outCosts.value()->getFormat() : VK_FORMAT_UNDEFINED),
+          debugName,
+          createSpecConstants(kernelSizes, searchWindowSizes, inputStrides, windowStrides, windowOffsets, padding,
+                              searchPattern)) {}
 
 DescriptorMap BlockMatch::createDescriptorMap(const std::shared_ptr<TensorDescriptor> &inTemplate,
                                               const std::shared_ptr<TensorDescriptor> &inSearch,
@@ -2391,15 +2007,17 @@ DescriptorMap BlockMatch::createDescriptorMap(const std::shared_ptr<TensorDescri
     return descriptorMap;
 }
 
-SpirvBinary BlockMatch::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache,
-                                    const SearchType searchType) const {
+SpirvBinary BlockMatch::createSpirv(const std::shared_ptr<PipelineCache> &_pipelineCache, const SearchType searchType,
+                                    VkFormat costFormat) {
     const auto searchTypeStr = std::to_string(static_cast<uint32_t>(searchType));
-    return _pipelineCache->lookup(shaderName, {searchTypeStr},
-                                  {
-                                      {"%search_type%", searchTypeStr},
-                                      {"%warpX%", std::to_string(warpX)},
-                                      {"%warpY%", std::to_string(warpY)},
-                                  });
+    if (searchType == SearchType::RAW_SAD) {
+        if (costFormat != VK_FORMAT_R8_UINT && costFormat != VK_FORMAT_R8_SINT && costFormat != VK_FORMAT_R16_UINT &&
+            costFormat != VK_FORMAT_R16_SINT) {
+            throw std::runtime_error("RAW_SAD requires an 8-bit or 16-bit integer output");
+        }
+        return _pipelineCache->lookup(shaderName, {searchTypeStr, getTensorInterfaceGlslType(costFormat)});
+    }
+    return _pipelineCache->lookup(shaderName, {searchTypeStr});
 }
 
 SpecConstants BlockMatch::createSpecConstants(const std::vector<uint32_t> &kernelSizes,
@@ -2579,14 +2197,13 @@ void GraphPipeline::makeOutput(const std::shared_ptr<TensorDescriptor> &tensor) 
 
 void GraphPipeline::makeAbs(const std::shared_ptr<TensorDescriptor> &input,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseUnary>(input, output, debugName, "abs(value1)");
+    makePipeline<ElementwiseUnary>(input, output, debugName);
 }
 
 void GraphPipeline::makeAdd(const std::shared_ptr<TensorDescriptor> &input1,
                             const std::shared_ptr<TensorDescriptor> &input2,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
-                                    "value1 + value2");
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName);
 }
 
 void GraphPipeline::makeArgmax(const std::shared_ptr<TensorDescriptor> &input,
@@ -2613,27 +2230,24 @@ void GraphPipeline::makeAvgPool2D(const std::shared_ptr<TensorDescriptor> &input
 void GraphPipeline::makeBitwiseAnd(const std::shared_ptr<TensorDescriptor> &input1,
                                    const std::shared_ptr<TensorDescriptor> &input2,
                                    const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
-                                    "value1 & value2");
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName);
 }
 
 void GraphPipeline::makeBitwiseNot(const std::shared_ptr<TensorDescriptor> &input,
                                    const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseUnary>(input, output, debugName, "~value1");
+    makePipeline<ElementwiseUnary>(input, output, debugName);
 }
 
 void GraphPipeline::makeBitwiseOr(const std::shared_ptr<TensorDescriptor> &input1,
                                   const std::shared_ptr<TensorDescriptor> &input2,
                                   const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
-                                    "value1 | value2");
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName);
 }
 
 void GraphPipeline::makeBitwiseXor(const std::shared_ptr<TensorDescriptor> &input1,
                                    const std::shared_ptr<TensorDescriptor> &input2,
                                    const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
-                                    "value1 ^ value2");
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName);
 }
 
 void GraphPipeline::makeCast(const std::shared_ptr<TensorDescriptor> &input,
@@ -2643,7 +2257,7 @@ void GraphPipeline::makeCast(const std::shared_ptr<TensorDescriptor> &input,
 
 void GraphPipeline::makeCeil(const std::shared_ptr<TensorDescriptor> &input1,
                              const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseUnary>(input1, output, debugName, "ceil(value1)");
+    makePipeline<ElementwiseUnary>(input1, output, debugName);
 }
 
 void GraphPipeline::makeClamp(const std::shared_ptr<TensorDescriptor> &input,
@@ -2654,7 +2268,7 @@ void GraphPipeline::makeClamp(const std::shared_ptr<TensorDescriptor> &input,
 
 void GraphPipeline::makeClz(const std::shared_ptr<TensorDescriptor> &input1,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseUnary>(input1, output, debugName, "clz(value1)");
+    makePipeline<ElementwiseUnary>(input1, output, debugName);
 }
 
 void GraphPipeline::makeConcat(const std::vector<std::shared_ptr<TensorDescriptor>> &_inputs,
@@ -2691,7 +2305,7 @@ void GraphPipeline::makeConv3D(const std::shared_ptr<TensorDescriptor> &input,
 
 void GraphPipeline::makeCos(const std::shared_ptr<TensorDescriptor> &input1,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseUnary>(input1, output, debugName, "cos(value1)");
+    makePipeline<ElementwiseUnary>(input1, output, debugName);
 }
 
 void GraphPipeline::makeDepthwiseConv2D(
@@ -2706,18 +2320,17 @@ void GraphPipeline::makeDepthwiseConv2D(
 void GraphPipeline::makeEqual(const std::shared_ptr<TensorDescriptor> &input1,
                               const std::shared_ptr<TensorDescriptor> &input2,
                               const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
-                                    "value1 == value2");
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName);
 }
 
 void GraphPipeline::makeErf(const std::shared_ptr<TensorDescriptor> &input,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseUnary>(input, output, debugName, "erf(value1)");
+    makePipeline<ElementwiseUnary>(input, output, debugName);
 }
 
 void GraphPipeline::makeExp(const std::shared_ptr<TensorDescriptor> &input,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseUnary>(input, output, debugName, "exp(value1)");
+    makePipeline<ElementwiseUnary>(input, output, debugName);
 }
 
 void GraphPipeline::makeFft2D(const std::shared_ptr<TensorDescriptor> &inputReal,
@@ -2730,7 +2343,7 @@ void GraphPipeline::makeFft2D(const std::shared_ptr<TensorDescriptor> &inputReal
 
 void GraphPipeline::makeFloor(const std::shared_ptr<TensorDescriptor> &input1,
                               const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseUnary>(input1, output, debugName, "floor(value1)");
+    makePipeline<ElementwiseUnary>(input1, output, debugName);
 }
 
 void GraphPipeline::makeGather(const std::shared_ptr<TensorDescriptor> &values,
@@ -2742,69 +2355,61 @@ void GraphPipeline::makeGather(const std::shared_ptr<TensorDescriptor> &values,
 void GraphPipeline::makeGreater(const std::shared_ptr<TensorDescriptor> &input1,
                                 const std::shared_ptr<TensorDescriptor> &input2,
                                 const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
-                                    "value1 > value2");
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName);
 }
 
 void GraphPipeline::makeGreaterEqual(const std::shared_ptr<TensorDescriptor> &input1,
                                      const std::shared_ptr<TensorDescriptor> &input2,
                                      const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
-                                    "value1 >= value2");
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName);
 }
 
 void GraphPipeline::makeIntdiv(const std::shared_ptr<TensorDescriptor> &input1,
                                const std::shared_ptr<TensorDescriptor> &input2,
                                const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
-                                    "value1 / value2");
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName);
 }
 
 void GraphPipeline::makeLog(const std::shared_ptr<TensorDescriptor> &input1,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseUnary>(input1, output, debugName, "log_guarded(value1)");
+    makePipeline<ElementwiseUnary>(input1, output, debugName);
 }
 
 void GraphPipeline::makeLogicalAnd(const std::shared_ptr<TensorDescriptor> &input1,
                                    const std::shared_ptr<TensorDescriptor> &input2,
                                    const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
-                                    "value1 && value2");
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName);
 }
 
 void GraphPipeline::makeLogicalLeftShift(const std::shared_ptr<TensorDescriptor> &input1,
                                          const std::shared_ptr<TensorDescriptor> &input2,
                                          const std::shared_ptr<TensorDescriptor> &output,
                                          const std::string &debugName) {
-    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
-                                    "uint(value1) << uint(value2)");
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName);
 }
 
 void GraphPipeline::makeLogicalNot(const std::shared_ptr<TensorDescriptor> &input,
                                    const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseUnary>(input, output, debugName, "!value1");
+    makePipeline<ElementwiseUnary>(input, output, debugName);
 }
 
 void GraphPipeline::makeLogicalRightShift(const std::shared_ptr<TensorDescriptor> &input1,
                                           const std::shared_ptr<TensorDescriptor> &input2,
                                           const std::shared_ptr<TensorDescriptor> &output,
                                           const std::string &debugName) {
-    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
-                                    "zeroExtend(value1) >> uint(value2)");
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName);
 }
 
 void GraphPipeline::makeLogicalOr(const std::shared_ptr<TensorDescriptor> &input1,
                                   const std::shared_ptr<TensorDescriptor> &input2,
                                   const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
-                                    "value1 || value2");
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName);
 }
 
 void GraphPipeline::makeLogicalXor(const std::shared_ptr<TensorDescriptor> &input1,
                                    const std::shared_ptr<TensorDescriptor> &input2,
                                    const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
-                                    "value1 ^^ value2");
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName);
 }
 
 void GraphPipeline::makeMatmul(const std::shared_ptr<TensorDescriptor> &input1,
@@ -2825,16 +2430,14 @@ void GraphPipeline::makeMaximum(const std::shared_ptr<TensorDescriptor> &input1,
                                 const std::shared_ptr<TensorDescriptor> &input2,
                                 const std::shared_ptr<TensorDescriptor> &output, const uint32_t nanMode,
                                 const std::string &debugName) {
-    makePipeline<ElementwiseBinary>(input1, input2, output, nanMode, debugName,
-                                    "applyMax(value1, value2, pushConstants.nanMode)");
+    makePipeline<ElementwiseBinary>(input1, input2, output, nanMode, debugName);
 }
 
 void GraphPipeline::makeMinimum(const std::shared_ptr<TensorDescriptor> &input1,
                                 const std::shared_ptr<TensorDescriptor> &input2,
                                 const std::shared_ptr<TensorDescriptor> &output, const uint32_t nanMode,
                                 const std::string &debugName) {
-    makePipeline<ElementwiseBinary>(input1, input2, output, nanMode, debugName,
-                                    "applyMin(value1, value2, pushConstants.nanMode)");
+    makePipeline<ElementwiseBinary>(input1, input2, output, nanMode, debugName);
 }
 
 void GraphPipeline::makeMul(const std::shared_ptr<TensorDescriptor> &input1,
@@ -2860,55 +2463,48 @@ void GraphPipeline::makePad(const std::shared_ptr<TensorDescriptor> &input,
 void GraphPipeline::makePow(const std::shared_ptr<TensorDescriptor> &input1,
                             const std::shared_ptr<TensorDescriptor> &input2,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
-                                    "power(value1, value2)");
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName);
 }
 
 void GraphPipeline::makeReciprocal(const std::shared_ptr<TensorDescriptor> &input,
                                    const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseUnary>(input, output, debugName, "1.0 / value1");
+    makePipeline<ElementwiseUnary>(input, output, debugName);
 }
 
 void GraphPipeline::makeReduceAll(const std::shared_ptr<TensorDescriptor> &input,
                                   const std::shared_ptr<TensorDescriptor> &output, const uint32_t axis,
                                   const std::string &debugName) {
-    makePipeline<Reduce>(input, output, axis, NanPropagationMode::Propagate, debugName, "true", "result && value");
+    makePipeline<Reduce>(input, output, axis, NanPropagationMode::Propagate, debugName);
 }
 
 void GraphPipeline::makeReduceAny(const std::shared_ptr<TensorDescriptor> &input,
                                   const std::shared_ptr<TensorDescriptor> &output, const uint32_t axis,
                                   const std::string &debugName) {
-    makePipeline<Reduce>(input, output, axis, NanPropagationMode::Propagate, debugName, "false", "result || value");
+    makePipeline<Reduce>(input, output, axis, NanPropagationMode::Propagate, debugName);
 }
 
 void GraphPipeline::makeReduceMax(const std::shared_ptr<TensorDescriptor> &input,
                                   const std::shared_ptr<TensorDescriptor> &output, const uint32_t axis,
                                   const uint32_t nanMode, const std::string &debugName) {
-    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
-    const std::string init =
-        "(pushConstants.nanMode == NAN_MODE_IGNORE) ? COMP_T(NAN) : COMP_T(" + std::string(inOutType->lowest) + ')';
-    makePipeline<Reduce>(input, output, axis, nanMode, debugName, init, "max(result, value)");
+    makePipeline<Reduce>(input, output, axis, nanMode, debugName);
 }
 
 void GraphPipeline::makeReduceMin(const std::shared_ptr<TensorDescriptor> &input,
                                   const std::shared_ptr<TensorDescriptor> &output, const uint32_t axis,
                                   const uint32_t nanMode, const std::string &debugName) {
-    const auto *inOutType = getTosaArithmeticTypeInfo(output->getFormat(), IntegerInterpretation::Signed);
-    const std::string init =
-        "(pushConstants.nanMode == NAN_MODE_IGNORE) ? COMP_T(NAN) : COMP_T(" + std::string(inOutType->max) + ')';
-    makePipeline<Reduce>(input, output, axis, nanMode, debugName, init, "min(result, value)");
+    makePipeline<Reduce>(input, output, axis, nanMode, debugName);
 }
 
 void GraphPipeline::makeReduceProduct(const std::shared_ptr<TensorDescriptor> &input,
                                       const std::shared_ptr<TensorDescriptor> &output, const uint32_t axis,
                                       const std::string &debugName) {
-    makePipeline<Reduce>(input, output, axis, NanPropagationMode::Propagate, debugName, "1", "result * value");
+    makePipeline<Reduce>(input, output, axis, NanPropagationMode::Propagate, debugName);
 }
 
 void GraphPipeline::makeReduceSum(const std::shared_ptr<TensorDescriptor> &input,
                                   const std::shared_ptr<TensorDescriptor> &output, const uint32_t axis,
                                   const std::string &debugName) {
-    makePipeline<Reduce>(input, output, axis, NanPropagationMode::Propagate, debugName, "0", "result + value");
+    makePipeline<Reduce>(input, output, axis, NanPropagationMode::Propagate, debugName);
 }
 
 void GraphPipeline::makeRescale(const std::shared_ptr<TensorDescriptor> &input,
@@ -2947,7 +2543,7 @@ void GraphPipeline::makeRfft2D(const std::shared_ptr<TensorDescriptor> &input,
 
 void GraphPipeline::makeRsqrt(const std::shared_ptr<TensorDescriptor> &input1,
                               const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseUnary>(input1, output, debugName, "inversesqrt(value1)");
+    makePipeline<ElementwiseUnary>(input1, output, debugName);
 }
 
 void GraphPipeline::makeScatter(const std::shared_ptr<TensorDescriptor> &input,
@@ -2966,12 +2562,12 @@ void GraphPipeline::makeSelect(const std::shared_ptr<TensorDescriptor> &input1,
 
 void GraphPipeline::makeSigmoid(const std::shared_ptr<TensorDescriptor> &input,
                                 const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseUnary>(input, output, debugName, "1.0 / (1.0 + exp(-value1))");
+    makePipeline<ElementwiseUnary>(input, output, debugName);
 }
 
 void GraphPipeline::makeSin(const std::shared_ptr<TensorDescriptor> &input1,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseUnary>(input1, output, debugName, "sin_hybrid(value1)");
+    makePipeline<ElementwiseUnary>(input1, output, debugName);
 }
 
 void GraphPipeline::makeSlice(const std::shared_ptr<TensorDescriptor> &input,
@@ -2983,8 +2579,7 @@ void GraphPipeline::makeSlice(const std::shared_ptr<TensorDescriptor> &input,
 void GraphPipeline::makeSub(const std::shared_ptr<TensorDescriptor> &input1,
                             const std::shared_ptr<TensorDescriptor> &input2,
                             const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName,
-                                    "value1 - value2");
+    makePipeline<ElementwiseBinary>(input1, input2, output, NanPropagationMode::Propagate, debugName);
 }
 
 void GraphPipeline::makeTable(const std::shared_ptr<TensorDescriptor> &input,
@@ -2995,7 +2590,7 @@ void GraphPipeline::makeTable(const std::shared_ptr<TensorDescriptor> &input,
 
 void GraphPipeline::makeTanh(const std::shared_ptr<TensorDescriptor> &input1,
                              const std::shared_ptr<TensorDescriptor> &output, const std::string &debugName) {
-    makePipeline<ElementwiseUnary>(input1, output, debugName, "tanh_clamped(value1)");
+    makePipeline<ElementwiseUnary>(input1, output, debugName);
 }
 
 void GraphPipeline::makeTile(const std::shared_ptr<TensorDescriptor> &input,

@@ -8,6 +8,7 @@
 #define MIN_SAD_COST 1
 #define RAW_SAD      2
 #define SEARCH_TYPE  %search_type%
+#define COST_T       %cost_t%
 
 #define RASTER 0
 #define SPIRAL 1
@@ -25,10 +26,10 @@ layout(set = 1, binding = 0) uniform tensorARM<uint8_t,  4>  in_search;
 layout(set = 2, binding = 0) writeonly uniform tensorARM<int8_t,   4>  out_flow;
 #endif
 #if SEARCH_TYPE == RAW_SAD
-layout(set = 2, binding = 0) writeonly uniform tensorARM<uint16_t, 4>  out_cost;
+layout(set = 2, binding = 0) writeonly uniform tensorARM<COST_T, 4>  out_cost;
 #endif
 #if SEARCH_TYPE == MIN_SAD_COST
-layout(set = 3, binding = 0) writeonly uniform tensorARM<uint16_t, 4>  out_cost;
+layout(set = 3, binding = 0) writeonly uniform tensorARM<COST_T, 4>  out_cost;
 #endif
 
 /* spec constants */
@@ -154,7 +155,7 @@ void main() {
                             #if SEARCH_TYPE == RAW_SAD
                             {   // write full cost volume at channel = ch * SEARCH_SIZE + wi
                                 uint oc_idx[4] = uint[4](uint(n), uint(ch) * SEARCH_SIZE + uint(wi), py, px);
-                                tensorWriteARM(out_cost, oc_idx, uint16_t(sad));
+                                tensorWriteARM(out_cost, oc_idx, COST_T(sad));
                             }
                             #endif
 
@@ -179,7 +180,7 @@ void main() {
                         #if SEARCH_TYPE == RAW_SAD
                         {
                             uint oc_idx[4] = uint[4](uint(n), uint(ch) * SEARCH_SIZE + uint(wi), py, px);
-                            tensorWriteARM(out_cost, oc_idx, uint16_t(sad));
+                            tensorWriteARM(out_cost, oc_idx, COST_T(sad));
                         }
                         #endif
 
@@ -207,7 +208,7 @@ void main() {
             {
                 // Per-channel minimal SAD
                 uint c_idx[4] = uint[4](uint(n), uint(ch), py, px);
-                tensorWriteARM(out_cost, c_idx, uint16_t(min_sad)); // min only
+                tensorWriteARM(out_cost, c_idx, COST_T(min_sad)); // min only
             }
             #endif
         }
