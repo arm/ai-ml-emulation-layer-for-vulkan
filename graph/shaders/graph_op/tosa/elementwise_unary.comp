@@ -15,7 +15,7 @@ layout(set = 0, binding = 0) uniform tensorARM<IN_OUT_T, RANK> outputData;
 layout(set = 1, binding = 0) uniform tensorARM<IN_OUT_T, RANK> inputData1;
 
 // Count leading zeros
-uint clz(uint32_t value) {
+uint tosaClz(uint32_t value) {
     uint i;
 
     for (i = 0; i < 32; i++) {
@@ -27,7 +27,7 @@ uint clz(uint32_t value) {
     return i;
 }
 
-uint clz(int32_t value) { return clz(uint32_t(value)); }
+uint tosaClz(int32_t value) { return tosaClz(uint32_t(value)); }
 
 // Gaussian error function
 // https://en.wikipedia.org/wiki/Error_function
