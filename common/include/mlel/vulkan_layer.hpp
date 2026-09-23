@@ -872,7 +872,6 @@ class VulkanLayer {
                 queryVulkan12Feature.descriptorBindingStorageImageUpdateAfterBind;
             layerVulkan12Feature.descriptorBindingSampledImageUpdateAfterBind =
                 queryVulkan12Feature.descriptorBindingSampledImageUpdateAfterBind;
-            layerVulkan12Feature.descriptorBindingPartiallyBound = queryVulkan12Feature.descriptorBindingPartiallyBound;
             appendType(&newCreateInfo, &layerVulkan12Feature);
         } else {
             replaceOrAppendFeature(&newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES,
@@ -889,17 +888,16 @@ class VulkanLayer {
                                    [&](VkPhysicalDeviceBufferDeviceAddressFeatures &feature) {
                                        feature.bufferDeviceAddress = queryVulkan12Feature.bufferDeviceAddress;
                                    });
-            replaceOrAppendFeature(
-                &newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
-                layerDescriptorIndexingFeature, [&](VkPhysicalDeviceDescriptorIndexingFeatures &feature) {
-                    feature.descriptorBindingStorageBufferUpdateAfterBind =
-                        queryVulkan12Feature.descriptorBindingStorageBufferUpdateAfterBind;
-                    feature.descriptorBindingStorageImageUpdateAfterBind =
-                        queryVulkan12Feature.descriptorBindingStorageImageUpdateAfterBind;
-                    feature.descriptorBindingSampledImageUpdateAfterBind =
-                        queryVulkan12Feature.descriptorBindingSampledImageUpdateAfterBind;
-                    feature.descriptorBindingPartiallyBound = queryVulkan12Feature.descriptorBindingPartiallyBound;
-                });
+            replaceOrAppendFeature(&newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
+                                   layerDescriptorIndexingFeature,
+                                   [&](VkPhysicalDeviceDescriptorIndexingFeatures &feature) {
+                                       feature.descriptorBindingStorageBufferUpdateAfterBind =
+                                           queryVulkan12Feature.descriptorBindingStorageBufferUpdateAfterBind;
+                                       feature.descriptorBindingStorageImageUpdateAfterBind =
+                                           queryVulkan12Feature.descriptorBindingStorageImageUpdateAfterBind;
+                                       feature.descriptorBindingSampledImageUpdateAfterBind =
+                                           queryVulkan12Feature.descriptorBindingSampledImageUpdateAfterBind;
+                                   });
         }
 
         const auto *pDeviceFeature13 = removeType<VkPhysicalDeviceVulkan13Features>(

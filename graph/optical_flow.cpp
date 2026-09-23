@@ -198,7 +198,7 @@ void OpticalFlow::makeDownsamplePyramid(std::vector<DownsampleBlock> &blocks, st
             blocks[level + 1].image = downscaledImage;
 
             // RGB-to-Y + downsample
-            rgbToY = makePipeline<RGBToY>(pipelines, srcImage, blocks[level + 1].image, blocks[level].image, true,
+            rgbToY = makePipeline<RGBToY>(pipelines, srcImage, blocks[level + 1].image, blocks[level].image,
                                           isRGBToYOutputFull, 2.0f, std::string("RGBtoY_L") + levelStr);
         } else {
             auto downscaledImage =

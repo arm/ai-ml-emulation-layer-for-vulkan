@@ -15,37 +15,25 @@ precision mediump image2D;
 // Local Work Size set as Specialization Constants
 layout (local_size_x_id = 0, local_size_y_id = 1, local_size_z = 1) in;
 
-// Supported : VECTORIZE_X: 1 or 2, VECTORIZE_Y: 1
-layout(constant_id = 2) const int VECTORIZE_X = 1;
-layout(constant_id = 3) const int VECTORIZE_Y = 1;
-
-layout(constant_id = 4) const bool IMAGE_STORE = false;
-layout(constant_id = 5) const float SCALE_X = 0.5f;  // The ratio of src/dst, used to scale the magnitude of flow
-layout(constant_id = 6) const float SCALE_Y = 0.5f;  // The ratio of src/dst, used to scale the magnitude of flow
-layout(constant_id = 7) const float INV_SCALE_X = 2.f;  // The ratio of dst/src, used for upsampling
-layout(constant_id = 8) const float INV_SCALE_Y = 2.f;  // The ratio of dst/src, used for upsampling
-layout(constant_id = 9) const int OUTPUT_SIZE_X = 480;
-layout(constant_id = 10) const int OUTPUT_SIZE_Y = 270;
-layout(constant_id = 11) const uint STRIDE_DST = 480;   // The number of elements in a row (x-axis) including padding
-layout(constant_id = 12) const uint STRIDE_DST_FLOW = 480;   // The number of elements in a row (x-axis) including padding
+layout(constant_id = 2) const float SCALE_X = 0.5f;  // The ratio of src/dst, used to scale the magnitude of flow
+layout(constant_id = 3) const float SCALE_Y = 0.5f;  // The ratio of src/dst, used to scale the magnitude of flow
+layout(constant_id = 4) const float INV_SCALE_X = 2.f;  // The ratio of dst/src, used for upsampling
+layout(constant_id = 5) const float INV_SCALE_Y = 2.f;  // The ratio of dst/src, used for upsampling
+layout(constant_id = 6) const int OUTPUT_SIZE_X = 480;
+layout(constant_id = 7) const int OUTPUT_SIZE_Y = 270;
+layout(constant_id = 8) const uint STRIDE_DST = 480;   // The number of elements in a row (x-axis) including padding
+layout(constant_id = 9) const uint STRIDE_DST_FLOW = 480;   // The number of elements in a row (x-axis) including padding
 
 layout (binding = 0) uniform mediump sampler2D imageSampler;
 layout (binding = 1) uniform highp sampler2D flowImageSampler;
 
-layout (set=0, binding = 2, r8) uniform writeonly image2D dst_img;
-layout (set = 0, binding = 3, std430) buffer _dst_buf_u8{
+layout (set = 0, binding = 2, std430) buffer _dst_buf_u8{
     uint8_t dst_buf_u8[];
 };
-// Attribute alias for vectorized(x2) store
-layout (set = 0, binding = 3, std430) buffer _dst_buf_u8x2{
-    u8vec2 dst_buf_u8x2[];
-};
 
-layout (set=0, binding = 4, rg16f) uniform writeonly image2D dst_flow_img;
-layout (set = 0, binding = 5, std430) buffer _dst_flow_buf{
+layout (set = 0, binding = 3, std430) buffer _dst_flow_buf{
     f16vec2 dst_flow_buf[];
 };
-
 
 vec2 calc_mv_process(vec2 src_pos)
 {
@@ -70,44 +58,17 @@ uint8_t convert_uint8(float16_t x)
 
 void main()
 {
-     const ivec2 pos = ivec2(gl_GlobalInvocationID.x * VECTORIZE_X,
-                             gl_GlobalInvocationID.y);
+    const ivec2 pos = ivec2(gl_GlobalInvocationID.x,
+                            gl_GlobalInvocationID.y);
     if (any(greaterThanEqual(pos, ivec2(OUTPUT_SIZE_X, OUTPUT_SIZE_Y)))) return;
 
-    vec2 flow[VECTORIZE_X];
     vec2 inv_scale = vec2(INV_SCALE_X, INV_SCALE_Y);
-    for (int vx = 0; vx < VECTORIZE_X; ++vx) {
-        vec2 uv = (vec2(pos.x + vx, pos.y) + 0.5f) * inv_scale;
-        flow[vx] = calc_mv_process(uv);
-    }
+    vec2 uv = (vec2(pos) + 0.5f) * inv_scale;
+    vec2 flow = calc_mv_process(uv);
+    float16_t warped = calc_dense_warp(flow, pos);
 
-    float16_t warped[VECTORIZE_X];
-    for (int vx = 0; vx < VECTORIZE_X; ++vx) {
-        warped[vx] = calc_dense_warp(flow[vx], ivec2(pos.x + vx, pos.y));
-    }
-
-    if (IMAGE_STORE) {
-        for (int vx = 0; vx < VECTORIZE_X; ++vx) {
-            ivec2 vpos = ivec2(pos.x + vx, pos.y);
-            imageStore(dst_img, vpos, vec4(warped[vx], 0, 0, 0));
-            imageStore(dst_flow_img, vpos, f16vec4(flow[vx], 0, 0));
-        }
-    } else {
-        if (VECTORIZE_X == 2) {
-            u8vec2 dst_val;
-            for (int vx = 0; vx < VECTORIZE_X; ++vx) {
-                dst_val[vx] = convert_uint8(warped[vx]);
-            }
-            uint index_for_vec2 = (STRIDE_DST * pos.y + pos.x) / VECTORIZE_X;
-            dst_buf_u8x2[index_for_vec2] = dst_val;
-        } else {
-            uint8_t dst_val = convert_uint8(warped[0]);
-            uint index = STRIDE_DST * pos.y + pos.x;
-            dst_buf_u8[index] = dst_val;
-        }
-
-        for (int vx = 0; vx < VECTORIZE_X; ++vx) {  // Compiler vectorizes this data type
-            dst_flow_buf[STRIDE_DST_FLOW * pos.y + pos.x + vx] = f16vec2(flow[vx]);
-        }
-    }
+    uint8_t dst_val = convert_uint8(warped);
+    uint index = STRIDE_DST * pos.y + pos.x;
+    dst_buf_u8[index] = dst_val;
+    dst_flow_buf[STRIDE_DST_FLOW * pos.y + pos.x] = f16vec2(flow);
 }

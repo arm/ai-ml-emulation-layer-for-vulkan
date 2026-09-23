@@ -15,24 +15,28 @@ precision mediump image2D;
 #define MACRO_BLOCK (5)
 #define BLOCK_R (MACRO_BLOCK / 2)
 
+#ifndef IMAGE_STORE
+#error IMAGE_STORE must be defined
+#endif
+
 // Local Work Size set as Specialization Constants
 layout (local_size_x_id = 0, local_size_y_id = 1, local_size_z = 1) in;
 
-layout(constant_id = 2) const int VECTORIZE_X = 1;  // unused
-layout(constant_id = 3) const int VECTORIZE_Y = 1;  // unused
-layout(constant_id = 4) const bool IMAGE_STORE = false;
-layout(constant_id = 5) const float OUTPUT_FLOW_SCALE = 1.f;
-layout(constant_id = 6) const int OUTPUT_SIZE_X = 480;
-layout(constant_id = 7) const int OUTPUT_SIZE_Y = 270;
-layout(constant_id = 8) const uint STRIDE_DST = 480;   // The number of elements in a row (x-axis) including padding
+layout(constant_id = 2) const float OUTPUT_FLOW_SCALE = 1.f;
+layout(constant_id = 3) const int OUTPUT_SIZE_X = 480;
+layout(constant_id = 4) const int OUTPUT_SIZE_Y = 270;
+layout(constant_id = 5) const uint STRIDE_DST = 480;   // The number of elements in a row (x-axis) including padding
 
 layout (binding = 0) uniform mediump sampler2D imageSampler;
 layout (binding = 1) uniform mediump sampler2D flowImageSampler;
 
-layout(set=0, binding=2, rg16f) uniform writeonly image2D dst_flow_img;
+#if IMAGE_STORE
+layout (set=0, binding=2, rg16f) uniform writeonly image2D dst_flow_img;
+#else
 layout (set = 0, binding = 3, std430) buffer _dst_flow_buf{
     f16vec2 dst_flow_buf[];
 };
+#endif
 
 // The parameters below need to be adjusted in accordance with the reference
 // sigma_spatial=7.4, sigma_intensity=0.14
@@ -78,8 +82,9 @@ void main()
 
     f16vec2 flow = calc(pos);
 
-    if (IMAGE_STORE)
+    #if IMAGE_STORE
         imageStore(dst_flow_img, pos, f16vec4(flow, 0, 0));
-    else
+    #else
         dst_flow_buf[STRIDE_DST * pos.y + pos.x] = flow;
+    #endif
 }

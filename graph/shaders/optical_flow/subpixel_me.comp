@@ -16,21 +16,18 @@ precision mediump image2D;
 #define MACRO_BLOCK (5)
 #define BLOCK_R (MACRO_BLOCK / 2)
 
+#ifndef DO_ACCUMULATE
+#error DO_ACCUMULATE must be defined
+#endif
+
 // Local Work Size set as Specialization Constants
 layout (local_size_x_id = 0, local_size_y_id = 1, local_size_z = 1) in;
 
-// Vectorization is not available, just for compatibility
-layout(constant_id = 2) const int VECTORIZE_X = 1;
-layout(constant_id = 3) const int VECTORIZE_Y = 1;
-
-layout(constant_id = 4) const bool DO_ACCUMULATE = true;
-layout(constant_id = 5) const bool FLOW_BUFFER_LOAD = false;
-layout(constant_id = 6) const bool IMAGE_STORE = false;
-layout(constant_id = 7) const int OUTPUT_SIZE_X = 480;
-layout(constant_id = 8) const int OUTPUT_SIZE_Y = 270;
-layout(constant_id = 9) const uint STRIDE_INT_FLOW = 480;   // The number of elements in a row (x-axis) including padding
-layout(constant_id = 10) const uint STRIDE_PREV_FLOW = 480;
-layout(constant_id = 11) const uint STRIDE_DST_FLOW = 480;
+layout(constant_id = 2) const int OUTPUT_SIZE_X = 480;
+layout(constant_id = 3) const int OUTPUT_SIZE_Y = 270;
+layout(constant_id = 4) const uint STRIDE_INT_FLOW = 480;   // The number of elements in a row (x-axis) including padding
+layout(constant_id = 5) const uint STRIDE_PREV_FLOW = 480;
+layout(constant_id = 6) const uint STRIDE_DST_FLOW = 480;
 
 layout (set = 0, binding = 0) uniform mediump sampler2D imageSearchSampler;
 
@@ -40,13 +37,13 @@ layout (set = 0, binding = 2, std430) buffer _int_flow_buf{
     i8vec2 int_flow_buf[];
 };
 
-layout (set = 0, binding = 3) uniform mediump sampler2D prevFlowSampler;
-layout (set = 0, binding = 4, std430) buffer _prev_flow_buf{
+#if DO_ACCUMULATE
+layout (set = 0, binding = 3, std430) buffer _prev_flow_buf{
     f16vec2 prev_flow_buf[];
 };
+#endif
 
-layout(set = 0, binding = 5, rg16f) uniform writeonly image2D dst_flow_img;
-layout (set = 0, binding = 6, std430) buffer _dst_flow_buf{
+layout (set = 0, binding = 4, std430) buffer _dst_flow_buf{
     f16vec2 dst_flow_buf[];
 };
 
@@ -151,11 +148,9 @@ f16vec2 calc(const ivec2 pos)
     // NOTE: The reference implementaion returns negated integer flow, but Motin Engine doesn't.
     f16vec2 out_flow = f16vec2(int_flow) - f16vec2(subpixel);
 
-    if (DO_ACCUMULATE)
-        if (FLOW_BUFFER_LOAD)
-            out_flow += prev_flow_buf[STRIDE_PREV_FLOW * pos.y + pos.x];
-        else
-            out_flow += f16vec2(texelFetch(prevFlowSampler, ivec2(pos.x, pos.y), 0).xy);
+    #if DO_ACCUMULATE
+        out_flow += prev_flow_buf[STRIDE_PREV_FLOW * pos.y + pos.x];
+    #endif
 
     return out_flow;
 }
@@ -168,8 +163,5 @@ void main()
 
     f16vec2 flow = calc(pos);
 
-    if (IMAGE_STORE)
-        imageStore(dst_flow_img, pos, f16vec4(flow, 0, 0));
-    else
-        dst_flow_buf[STRIDE_DST_FLOW * pos.y + pos.x] = flow;
+    dst_flow_buf[STRIDE_DST_FLOW * pos.y + pos.x] = flow;
 }

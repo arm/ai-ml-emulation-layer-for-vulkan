@@ -13,31 +13,21 @@ list(SORT SOURCES_GRAPH_OP)
 
 set(GLSL_SOURCES "")
 add_custom_target(mlel_generate_shader_comp)
-macro(mlel_add_glsl_source SOURCE USE_COMMON)
-    if("${USE_COMMON}")
-        get_filename_component(NAME "${SOURCE}" NAME)
-        set(OUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/${NAME}")
+macro(mlel_add_graph_op_source SOURCE)
+    get_filename_component(NAME "${SOURCE}" NAME)
+    set(OUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/${NAME}")
 
-        add_custom_command(
-            OUTPUT "${OUT_FILE}"
-            COMMAND ${CMAKE_COMMAND} -E cat "${CMAKE_CURRENT_SOURCE_DIR}/graph_op/common.comp" "${SOURCE}" > "${OUT_FILE}"
-            DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/graph_op/common.comp" "${SOURCE}")
-        add_custom_target("mlel_generate_shader_${NAME}" DEPENDS "${OUT_FILE}")
-        add_dependencies(mlel_generate_shader_comp "mlel_generate_shader_${NAME}")
-        list(APPEND GLSL_SOURCES "${OUT_FILE}")
-    else()
-        list(APPEND GLSL_SOURCES "${SOURCE}")
-    endif()
+    add_custom_command(
+        OUTPUT "${OUT_FILE}"
+        COMMAND ${CMAKE_COMMAND} -E cat "${CMAKE_CURRENT_SOURCE_DIR}/graph_op/common.comp" "${SOURCE}" > "${OUT_FILE}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/graph_op/common.comp" "${SOURCE}")
+    add_custom_target("mlel_generate_shader_${NAME}" DEPENDS "${OUT_FILE}")
+    add_dependencies(mlel_generate_shader_comp "mlel_generate_shader_${NAME}")
+    list(APPEND GLSL_SOURCES "${OUT_FILE}")
 endmacro()
 
 foreach(SOURCE ${SOURCES_GRAPH_OP})
-    mlel_add_glsl_source("${SOURCE}" TRUE)
-endforeach()
-
-file(GLOB SOURCES_OPTICAL_FLOW CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/optical_flow/*.comp")
-list(SORT SOURCES_OPTICAL_FLOW)
-foreach(SOURCE ${SOURCES_OPTICAL_FLOW})
-    mlel_add_glsl_source("${SOURCE}" FALSE)
+    mlel_add_graph_op_source("${SOURCE}")
 endforeach()
 
 # Combine all outputs into a single target
@@ -114,11 +104,11 @@ set(WARPY 8)
 set(WARPZ 1)
 
 function(mlel_generate_glsl)
-    cmake_parse_arguments(ARGS "" "INPUT;OUTPUT" "REPLACE" ${ARGN})
+    cmake_parse_arguments(ARGS "" "INPUT;OUTPUT" "DEFINE;REPLACE" ${ARGN})
     # Aliases (e.g. widened i4/i48 storage) may share a module, but different
     # shader substitutions must never silently share an output/key.
     string(SHA256 OUTPUT_ID "${ARGS_OUTPUT}")
-    set(SIGNATURE "${ARGS_INPUT};${ARGS_REPLACE}")
+    set(SIGNATURE "${ARGS_INPUT};${ARGS_DEFINE};${ARGS_REPLACE}")
     get_property(PREVIOUS DIRECTORY PROPERTY "MLEL_SPV_${OUTPUT_ID}")
     if(PREVIOUS)
         if(NOT PREVIOUS STREQUAL SIGNATURE)
@@ -136,6 +126,7 @@ function(mlel_generate_glsl)
             GLSLANG "${GLSLANG_CMD}"
             OUTPUT_FILE "${ARGS_OUTPUT}"
             INPUT_FILE "${ARGS_INPUT}"
+            DEFINE ${ARGS_DEFINE}
             REPLACE ${ARGS_REPLACE}
         DEPENDS
             ${GLSLANG_DEP}
@@ -304,20 +295,40 @@ mlel_spv_block_match(block_match "2" uint8_t)
 mlel_spv_block_match(block_match "2" uint16_t)
 
 # Optical Flow
-macro(mlel_spv_optical_flow)
-    foreach(SOURCE ${SOURCES_OPTICAL_FLOW})
-        get_filename_component(NAME "${SOURCE}" NAME_WE)
-        set(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${NAME}.spv")
+function(mlel_spv_optical_flow SOURCE VARIANT)
+    cmake_parse_arguments(ARGS "" "" "DEFINE" ${ARGN})
 
-        mlel_generate_glsl(
-            INPUT "${SOURCE}"
-            OUTPUT ${OUTPUT})
+    set(INPUT "${CMAKE_CURRENT_SOURCE_DIR}/optical_flow/${SOURCE}.comp")
+    set(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${VARIANT}.spv")
+    mlel_generate_glsl(
+        INPUT "${INPUT}"
+        OUTPUT "${OUTPUT}"
+        DEFINE ${ARGS_DEFINE})
 
-        list(APPEND SPV_FILES ${OUTPUT})
-    endforeach()
-endmacro()
+    list(APPEND SPV_FILES "${OUTPUT}")
+    set(SPV_FILES "${SPV_FILES}" PARENT_SCOPE)
+endfunction()
 
-mlel_spv_optical_flow()
+mlel_spv_optical_flow(rgb_to_y rgb_to_y_img DEFINE OUTPUT_FULL=0 IMAGE_STORE=1)
+mlel_spv_optical_flow(rgb_to_y rgb_to_y_full_buf DEFINE OUTPUT_FULL=1 IMAGE_STORE=0)
+mlel_spv_optical_flow(downsample downsample_img)
+mlel_spv_optical_flow(mv_process_and_warp mv_process_and_warp_buf)
+mlel_spv_optical_flow(dense_warp dense_warp_img)
+mlel_spv_optical_flow(median_filter median_filter_img)
+mlel_spv_optical_flow(bilateral_filter bilateral_filter_img DEFINE IMAGE_STORE=1)
+mlel_spv_optical_flow(bilateral_filter bilateral_filter_buf DEFINE IMAGE_STORE=0)
+mlel_spv_optical_flow(subpixel_me subpixel_me_buf DEFINE DO_ACCUMULATE=0)
+mlel_spv_optical_flow(subpixel_me subpixel_me_acc_buf DEFINE DO_ACCUMULATE=1)
+mlel_spv_optical_flow(mv_replace mv_replace_img DEFINE OUTPUT_COST=0)
+mlel_spv_optical_flow(mv_replace mv_replace_cost_img DEFINE OUTPUT_COST=1)
+mlel_spv_optical_flow(
+    block_match_of block_match_of_flow DEFINE OUTPUT_FLOW=1 OUTPUT_COST=0 COST_IMAGE_STORE=0)
+mlel_spv_optical_flow(
+    block_match_of block_match_of_flow_cost_buf DEFINE OUTPUT_FLOW=1 OUTPUT_COST=1 COST_IMAGE_STORE=0)
+mlel_spv_optical_flow(
+    block_match_of block_match_of_flow_cost_img DEFINE OUTPUT_FLOW=1 OUTPUT_COST=1 COST_IMAGE_STORE=1)
+mlel_spv_optical_flow(
+    block_match_of block_match_of_cost_buf DEFINE OUTPUT_FLOW=0 OUTPUT_COST=1 COST_IMAGE_STORE=0)
 
 # Generate independently compiled SPIR-V modules and their lookup registry
 mlel_generate_spv_library()
