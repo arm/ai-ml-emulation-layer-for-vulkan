@@ -298,7 +298,7 @@ $env:VK_INSTANCE_LAYERS="VK_LAYER_ML_Graph_Emulation;VK_LAYER_ML_Tensor_Emulatio
 
 ```{note}
 If running a Windows® terminal with elevated permissions, `VK_ADD_LAYER_PATH` is ignored
-for security reasons. However, if `VK_ADD_LAYER_PATH` is set and not ignored, then Vulkan
+for security reasons. However, if `VK_ADD_LAYER_PATH` is set and not ignored, then Vulkan®
 skips searching the registry keys for manifest files.
 ```
 
@@ -326,7 +326,7 @@ cmake --build build
 
 You can pack the graph and tensor layer libraries into the Application Package
 Kit (APK) or push to the `/data/local/debug/vulkan` directory for Android™ to
-discover the ML Emulation Layer for Vulkan®. Applications can enable the layers during Vulkan
+discover the ML Emulation Layer for Vulkan®. Applications can enable the layers during Vulkan®
 instance creation or you can enable the layers without modifying the application
 by using following commands:
 
@@ -400,11 +400,11 @@ package visibility entry such as:
 
 Refer to the Android™ validation layer guide for background on APK packaging,
 debug layer settings, and package visibility:
-[Use Vulkan validation layers on Android](https://developer.android.com/ndk/guides/graphics/validation-layer).
+[Use Vulkan® validation layers on Android™](https://developer.android.com/ndk/guides/graphics/validation-layer).
 
 ## Building for Darwin (Experimental)
 
-Install the [LunarG Vulkan SDK](https://vulkan.lunarg.com/sdk/home#mac)
+Install the [LunarG Vulkan® SDK](https://vulkan.lunarg.com/sdk/home#mac)
 to obtain the Vulkan® Loader. Recent SDK releases can also install KosmicKrisp as an opt-in technical preview; check that SDK release's host requirements before
 selecting it.
 
@@ -564,5 +564,5 @@ LICENSES directory.
 Arm® is a registered trademark of Arm Limited (or its subsidiaries) in the US
 and/or elsewhere.
 
-Khronos®, Vulkan® and SPIR-V™ are registered trademarks of the
-[Khronos® Group](https://www.khronos.org/legal/trademarks).
+Khronos® and Vulkan® are registered trademarks, and SPIR-V™ is a trademark of
+[The Khronos Group Inc.](https://www.khronos.org/legal/trademarks/).

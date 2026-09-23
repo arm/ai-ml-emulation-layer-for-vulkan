@@ -1,5 +1,5 @@
 #
-# SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-FileCopyrightText: Copyright 2024-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: Apache-2.0
 #
 import os
@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.abspath("."))
 
 # Emulation Layer project config
 EL_project = "ML Emulation Layer for Vulkan®"
-copyright = "2023-2025, Arm Limited and/or its affiliates <open-source-office@arm.com>"
+copyright = "2023-2026, Arm Limited and/or its affiliates <open-source-office@arm.com>"
 author = "Arm Limited"
 git_repo_tool_url = "https://gerrit.googlesource.com/git-repo"
 
