@@ -344,7 +344,7 @@ class BilateralFilter : public ComputePipeline {
                     const std::string &debugName);
     ~BilateralFilter() override = default;
 
-    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, bool imageStore);
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache);
 
     struct SpecConstants {
         uint32_t threadGroupSizeX;
@@ -352,7 +352,6 @@ class BilateralFilter : public ComputePipeline {
         float outputFlowScale;
         uint32_t outputImageWidth;
         uint32_t outputImageHeight;
-        uint32_t outputImageStride;
     };
 
     SpecConstants makeSpecConstants(float outputFlowScale) const;
@@ -361,8 +360,7 @@ class BilateralFilter : public ComputePipeline {
     void bindAndDispatch(VkCommandBuffer cmdBuf) override;
 
   private:
-    static constexpr std::string_view shaderBaseName = "bilateral_filter";
-    static std::string makeShaderName(bool imageStore);
+    static constexpr std::string_view shaderName = "bilateral_filter_img";
     std::shared_ptr<Image> srcTemplate_;
     std::shared_ptr<Image> srcFlow_;
     std::shared_ptr<Image> dstFlow_;
@@ -373,7 +371,6 @@ class BilateralFilter : public ComputePipeline {
         {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // Src
         {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // SrcFlow
         {2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // DstFlow
-        {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // DstFlow
     };
 };
 
@@ -399,7 +396,6 @@ class SubpixelME : public ComputePipeline {
         uint32_t outputHeight;
         uint32_t inputFlowStride;
         uint32_t previousFlowStride;
-        uint32_t outputFlowStride;
     };
 
     SpecConstants makeSpecConstants() const;
@@ -424,7 +420,7 @@ class SubpixelME : public ComputePipeline {
         {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // SrcTemplate
         {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // SrcFlow
         {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // PrevFlow
-        {4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // DstFlow
+        {4, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // DstFlow
     };
 };
 
@@ -494,8 +490,7 @@ class BlockMatch : public ComputePipeline {
                std::shared_ptr<Image> dstFlow, std::shared_ptr<Image> dstCost, const std::string &debugName);
     ~BlockMatch() override = default;
 
-    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, SearchType searchType,
-                                   bool costImageStore);
+    static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, SearchType searchType);
 
     struct SpecConstants {
         uint32_t threadGroupSizeX;
@@ -504,7 +499,6 @@ class BlockMatch : public ComputePipeline {
         uint32_t outputWidth;
         uint32_t outputHeight;
         uint32_t outputFlowStride;
-        uint32_t outputCostStride;
     };
 
     struct PushConstants {
@@ -521,7 +515,7 @@ class BlockMatch : public ComputePipeline {
 
   private:
     static constexpr std::string_view shaderBaseName = "block_match_of";
-    static std::string makeShaderName(SearchType searchType, bool costImageStore);
+    static std::string makeShaderName(SearchType searchType);
     std::shared_ptr<Image> srcSearch_;
     std::shared_ptr<Image> srcTemplate_;
     std::shared_ptr<Image> dstFlow_;
@@ -537,7 +531,6 @@ class BlockMatch : public ComputePipeline {
         {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // SrcSearch
         {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // DstFlow
         {3, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // DstCost
-        {4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // DstCost
     };
 };
 

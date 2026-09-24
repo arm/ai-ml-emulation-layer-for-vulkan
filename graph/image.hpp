@@ -27,7 +27,6 @@ class Image {
         BufferStoreLoad,        // Producer stores to Buffer, consumer loads from Buffer
         ImageStoreSample,       // Producer stores to Image, consumer samples from Image
         BufferStoreImageSample, // Producer stores to Buffer, consumer samples from Image
-        ImageStoreBufferLoad,   // Producer stores to Image, consumer loads from Buffer
         NoStoreImageSample,     // Read-only. Consumer samples from Image
         HostBuffer,             // Host visible and coherent buffer. Mainly for staging buffer
     };
@@ -162,12 +161,8 @@ class Image {
 inline bool Image::isBufferStore() const {
     return usage_ == Usage::BufferStoreLoad || usage_ == Usage::BufferStoreImageSample;
 }
-inline bool Image::isBufferLoad() const {
-    return usage_ == Usage::BufferStoreLoad || usage_ == Usage::ImageStoreBufferLoad;
-}
-inline bool Image::isImageStore() const {
-    return usage_ == Usage::ImageStoreSample || usage_ == Usage::ImageStoreBufferLoad;
-}
+inline bool Image::isBufferLoad() const { return usage_ == Usage::BufferStoreLoad; }
+inline bool Image::isImageStore() const { return usage_ == Usage::ImageStoreSample; }
 inline bool Image::isImageSample() const {
     return usage_ == Usage::ImageStoreSample || usage_ == Usage::BufferStoreImageSample ||
            usage_ == Usage::NoStoreImageSample;
