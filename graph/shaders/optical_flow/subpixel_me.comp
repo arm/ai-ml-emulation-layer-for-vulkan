@@ -27,7 +27,6 @@ layout(constant_id = 2) const int OUTPUT_SIZE_X = 480;
 layout(constant_id = 3) const int OUTPUT_SIZE_Y = 270;
 layout(constant_id = 4) const uint STRIDE_INT_FLOW = 480;   // The number of elements in a row (x-axis) including padding
 layout(constant_id = 5) const uint STRIDE_PREV_FLOW = 480;
-layout(constant_id = 6) const uint STRIDE_DST_FLOW = 480;
 
 layout (set = 0, binding = 0) uniform mediump sampler2D imageSearchSampler;
 
@@ -43,9 +42,7 @@ layout (set = 0, binding = 3, std430) buffer _prev_flow_buf{
 };
 #endif
 
-layout (set = 0, binding = 4, std430) buffer _dst_flow_buf{
-    f16vec2 dst_flow_buf[];
-};
+layout (set = 0, binding = 4, rg16f) uniform writeonly image2D dst_flow_img;
 
 const ivec2 output_size = ivec2(OUTPUT_SIZE_X, OUTPUT_SIZE_Y);
 
@@ -163,5 +160,5 @@ void main()
 
     f16vec2 flow = calc(pos);
 
-    dst_flow_buf[STRIDE_DST_FLOW * pos.y + pos.x] = flow;
+    imageStore(dst_flow_img, pos, f16vec4(flow, 0, 0));
 }

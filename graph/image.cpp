@@ -37,7 +37,7 @@ Image::Image(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderD
     }
     if (usage == Usage::BufferStoreLoad) {
         makeBuffer();
-    } else if (usage == Usage::BufferStoreImageSample || usage == Usage::ImageStoreBufferLoad) {
+    } else if (usage == Usage::BufferStoreImageSample) {
         makeBufferAlias();
     }
 }
