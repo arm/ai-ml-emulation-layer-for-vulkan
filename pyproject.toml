@@ -21,6 +21,7 @@ requires-python = ">=3.10"
 emulation_layer = "emulation_layer.cli:main"
 
 [tool.setuptools]
+license-files = ["LICENSES/*.txt"]
 package-dir = { "" = "pip_package" }
 include-package-data = true
 
