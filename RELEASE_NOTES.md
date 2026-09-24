@@ -2,39 +2,52 @@
 
 ---
 
-## Unreleased
+## Version 0.11.0 – *Datatype Fixes & Shader Precompilation*
 
 ### Build, Packaging & Developer Experience
 
-- Updated Emulation Layer `--version` output to report the package version and include git revision and dependency revision information
+- Raised the minimum supported Python version for the pip package from 3.8 to
+  3.10.
+- Updated Emulation Layer `--version` output to report the package version and
+  include git revision and dependency revision information
 - Enabled building and installing the native Emulation Layer with
   `pip install .` from the repository root.
 - Enabled KosmicKrisp compatibility automatically based on selected driver.
 - Added support for Android™ devices using 16KiB pages.
+- Made graph shader precompilation mandatory and removed
+  `--disable-precompile-shaders` and `VMEL_DISABLE_PRECOMPILE_SHADERS`.
+  Cross-compilation now requires a runnable host glslang compiler, found on
+  `PATH` or selected with `GLSLANG_EXECUTABLE`.
 
 ### Tensor Shader Support
 
 - Disabled advertising `VK_FORMAT_FEATURE_2_TENSOR_SHADER_BIT_ARM` for BF16,
   E4M3, and E5M2 float formats because the tensor shader translator does not
-  yet fully lower BF16 and float8 values and conversions. Tensor copy/transfer and
-  data-graph support remains advertised.
+  yet fully lower BF16 and float8 values and conversions. Tensor copy/transfer
+  and data-graph support remains advertised.
 
 ### Bug Fixes
 
+- Fixed device creation when applications supply individual promoted Vulkan®
+  feature structures.
+- Fixed motion-engine `RAW_SAD` output storage to match 8-bit and 16-bit integer
+  output formats.
 - Fixed signed TOSA arithmetic and conversions with unsigned integer tensor
   storage across graph operations. Corrected FP8 rounding, overflow handling,
   and reduced-float constant decoding.
 - Fixed convolution input and weight decoding to preserve signed TOSA values in
-  `uint8_t` storage during integer accumulation, while retaining FP8 decoding and
-  avoiding intermediate FP16 rounding of FP32 accumulators for FP8 outputs.
-- Fixed linear tensor/image aliasing to honor padded image row and depth pitches.
+  `uint8_t` storage during integer accumulation, while retaining FP8 decoding
+  and avoiding intermediate FP16 rounding of FP32 accumulators for FP8 outputs.
+- Fixed linear tensor/image aliasing to honor padded image row and depth
+  pitches.
 - Fixed optical-flow image/buffer alias alignment and tensor descriptor binding
   flag substitution.
 - Split oversized Conv2D workloads across multiple dispatches when any workgroup
   count exceeds the corresponding physical-device limit.
 - Fixed interval memory planning to preserve tensor live ranges across multiple
   graph dispatches.
-- Fixed ambiguous shader conversion overloads for `uint32_t` convolution outputs.
+- Fixed ambiguous shader conversion overloads for `uint32_t` convolution
+  outputs.
 - Fixed MoltenVK shader compilation for TOSA `CLZ` by avoiding a helper-name
   collision with Metal's built-in `clz` overloads.
 - Prevented Resize interpolation from producing `Inf` or `NaN` for extreme
