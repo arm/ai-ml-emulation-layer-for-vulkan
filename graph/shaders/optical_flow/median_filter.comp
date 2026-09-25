@@ -5,7 +5,7 @@
 
 #version 450
 precision highp float;
-precision mediump sampler2D;
+precision highp sampler2D;
 precision mediump image2D;
 #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
 #extension GL_EXT_shader_16bit_storage : require
@@ -17,7 +17,7 @@ layout(constant_id = 2) const float OUTPUT_FLOW_SCALE = 1.f;
 layout(constant_id = 3) const int OUTPUT_SIZE_X = 480;
 layout(constant_id = 4) const int OUTPUT_SIZE_Y = 270;
 
-layout (binding = 0) uniform mediump sampler2D imageSampler;
+layout (binding = 0) uniform highp sampler2D imageSampler;
 
 layout (set=0, binding = 1, rg16f) uniform writeonly image2D dst_img;
 
@@ -60,47 +60,23 @@ f16vec2 sort9(f16vec2 p0, f16vec2 p1, f16vec2 p2, f16vec2 p3, f16vec2 p4, f16vec
     return p4;
 }
 
-#define READ_QUAD(_SAMP, _POS, _COMP) \
-    textureGather(_SAMP, _POS + vec2(1.f), _COMP).wzxy
-
-f16vec2 calc(ivec2 _pos)
+f16vec2 load_clamp_edge(ivec2 pos)
 {
-    vec2 pos = vec2(_pos);
-    // Load 3x3 neighbours.
-    /*
-        + + + -
-        + P + -     "P" : pos
-        + + + -     "+" : 3x3 neighbours for (vx, vy) = (0, 0)
-        - - - -
-    */
-    f16vec2 p[4][4];
+    ivec2 size = textureSize(imageSampler, 0);
+    return f16vec2(texelFetch(imageSampler, clamp(pos, ivec2(0), size - 1), 0).xy);
+}
 
-    #define read_2x2_v2(_px, _py) \
-    { \
-        vec2 bpos = pos + vec2(_px - 1, _py - 1); \
-        f16vec4 p_u = f16vec4(READ_QUAD(imageSampler, bpos, 0)); \
-        f16vec4 p_v = f16vec4(READ_QUAD(imageSampler, bpos, 1)); \
-        for (int vy = 0; vy < 2; ++vy) { \
-            for (int vx = 0; vx < 2; ++vx) { \
-                p[_py + vy][_px + vx] = f16vec2(p_u[vy * 2 + vx], p_v[vy * 2 + vx]); \
-            } \
-        } \
-    }
-
-    /*
-        + + - -
-        + + - -
-        - - - -     "+" : quad loaded by read_2x2_v2(0, 0)
-        - - - -
-    */
-    read_2x2_v2(0, 0);
-    read_2x2_v2(2, 0);
-    read_2x2_v2(0, 2);
-    read_2x2_v2(2, 2);
-
-    f16vec2 filtered = sort9(p[0][0], p[0][1], p[0][2],
-                             p[1][0], p[1][1], p[1][2],
-                             p[2][0], p[2][1], p[2][2]);
+f16vec2 calc(ivec2 pos)
+{
+    f16vec2 filtered = sort9(load_clamp_edge(pos + ivec2(-1, -1)),
+                             load_clamp_edge(pos + ivec2( 0, -1)),
+                             load_clamp_edge(pos + ivec2( 1, -1)),
+                             load_clamp_edge(pos + ivec2(-1,  0)),
+                             load_clamp_edge(pos),
+                             load_clamp_edge(pos + ivec2( 1,  0)),
+                             load_clamp_edge(pos + ivec2(-1,  1)),
+                             load_clamp_edge(pos + ivec2( 0,  1)),
+                             load_clamp_edge(pos + ivec2( 1,  1)));
     return filtered * f16vec2(OUTPUT_FLOW_SCALE);
 }
 

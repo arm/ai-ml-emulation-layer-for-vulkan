@@ -8,7 +8,6 @@ precision highp float;
 precision highp sampler2D;
 precision highp image2D;
 #extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
-#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
 #extension GL_EXT_shader_8bit_storage : require
 
 /*
@@ -17,7 +16,7 @@ RGB to Y color conversion + downsampling
   - Output images : Downsampled Luma, plus Full size Luma when OUTPUT_FULL
   - If OUTPUT_FULL, DOWNSAMPLE_SCALE must be 2.f (hard-coded)
   - Full size Luma is processed in 2x2 pixels per thread. Vectorization is not configurable.
-  - Downsampling is simple bilinear filtering which is performed by Texture H/W sampler
+  - Downsampling is a 2x2 box filter
 */
 
 #ifndef OUTPUT_FULL
@@ -39,6 +38,7 @@ layout(constant_id = 7) const uint DS_STRIDE_DST = 960;   // The number of eleme
 layout(constant_id = 8) const int FULL_OUTPUT_SIZE_X = 1920;
 layout(constant_id = 9) const int FULL_OUTPUT_SIZE_Y = 1080;
 layout(constant_id = 10) const uint FULL_STRIDE_DST = 1920;   // The number of elements in a row (x-axis) including padding
+layout(constant_id = 11) const bool UNORM8_INPUT = true;
 
 layout (binding = 0) uniform sampler2D imageSampler;
 
@@ -56,47 +56,73 @@ layout (set = 0, binding = 3, std430) buffer _dst_full_buf{
 };
 #endif
 
-const f16vec3 COEFF = f16vec3(0.25f, 0.5f, 0.25f);
-
-#define READ_QUAD_CENTER(_SAMP, _POS, _COMP) \
-    textureGather(_SAMP, _POS, _COMP).wzxy
-
-float16_t rgb_to_y(f16vec3 rgb) {
-    // NOTE: assuming value is normalized in 0.0-1.0 range in B10G11R11_UFLOAT format
-    return dot(rgb, COEFF);
+ivec2 clamp_input_pos(ivec2 pos)
+{
+    return clamp(pos, ivec2(0), textureSize(imageSampler, 0) - 1);
 }
 
-float16_t calc_ds(vec2 src_pos)
+vec3 load_rgb(ivec2 pos)
+{
+    return texelFetch(imageSampler, clamp_input_pos(pos), 0).rgb;
+}
+
+uvec3 load_unorm8_rgb(ivec2 pos)
+{
+    return uvec3(floor(load_rgb(pos) * 255.f + 0.5f));
+}
+
+uint rgb_to_y_unorm8(uvec3 rgb)
+{
+    return (rgb.r + 2u * rgb.g + rgb.b + 2u) / 4u;
+}
+
+uvec3 load_unorm16_rgb(ivec2 pos)
+{
+    // Canonicalize packed-float input before weighted arithmetic. This remains within
+    // one R8 level of the float formula while avoiding driver-dependent rounding.
+    return uvec3(floor(load_rgb(pos) * 65535.f + 0.5f));
+}
+
+uint rgb_to_y_unorm16(uvec3 rgb)
+{
+    const uint weighted = rgb.r + 2u * rgb.g + rgb.b;
+    return (weighted * 255u + 131070u) / 262140u;
+}
+
+uint load_luma_unorm8(ivec2 pos)
 {
     if (LUMA_INPUT) {
-        return float16_t(texture(imageSampler, src_pos).x);
-    } else {
-        return rgb_to_y(f16vec3(texture(imageSampler, src_pos).xyz));
+        return load_unorm8_rgb(pos).r;
     }
+    return rgb_to_y_unorm8(load_unorm8_rgb(pos));
 }
 
-f16vec4 calc_2x2(vec2 src_pos)
+uint load_luma(ivec2 pos)
 {
-    f16vec4 luma;
-    if (LUMA_INPUT) {
-        luma = f16vec4(READ_QUAD_CENTER(imageSampler, src_pos, 0));
+    if (UNORM8_INPUT) {
+        return load_luma_unorm8(pos);
+    }
+    return rgb_to_y_unorm16(load_unorm16_rgb(pos));
+}
 
-    } else {
-        f16vec4 r = f16vec4(READ_QUAD_CENTER(imageSampler, src_pos, 0));
-        f16vec4 g = f16vec4(READ_QUAD_CENTER(imageSampler, src_pos, 1));
-        f16vec4 b = f16vec4(READ_QUAD_CENTER(imageSampler, src_pos, 2));
-
-        for (int i = 0; i < 4; ++i) {
-            luma[i] = rgb_to_y(f16vec3(r[i], g[i], b[i]));
+uint calc_downsampled_luma(ivec2 base_pos)
+{
+    if (UNORM8_INPUT) {
+        if (LUMA_INPUT) {
+            uint sum = load_luma_unorm8(base_pos) + load_luma_unorm8(base_pos + ivec2(1, 0)) +
+                       load_luma_unorm8(base_pos + ivec2(0, 1)) + load_luma_unorm8(base_pos + ivec2(1, 1));
+            return (sum + 2u) / 4u;
         }
+
+        uvec3 sum = load_unorm8_rgb(base_pos) + load_unorm8_rgb(base_pos + ivec2(1, 0)) +
+                    load_unorm8_rgb(base_pos + ivec2(0, 1)) + load_unorm8_rgb(base_pos + ivec2(1, 1));
+        return (sum.r + 2u * sum.g + sum.b + 8u) / 16u;
     }
 
-    return luma;
-}
-
-uint8_t convert_uint8(float16_t x)
-{
-    return uint8_t(round(x * 255.HF));
+    uvec3 sum = load_unorm16_rgb(base_pos) + load_unorm16_rgb(base_pos + ivec2(1, 0)) +
+                load_unorm16_rgb(base_pos + ivec2(0, 1)) + load_unorm16_rgb(base_pos + ivec2(1, 1));
+    const uint weighted = sum.r + 2u * sum.g + sum.b;
+    return (weighted * 255u + 524280u) / 1048560u;
 }
 
 void main()
@@ -104,32 +130,25 @@ void main()
     const ivec2 ds_pos = ivec2(gl_GlobalInvocationID.x,
                                gl_GlobalInvocationID.y);
 
-    vec2 downsample_scale = vec2(DOWNSAMPLE_SCALE_X, DOWNSAMPLE_SCALE_Y);
-    #if (OUTPUT_FULL)
-        downsample_scale = vec2(2.f);
-    #endif
-
-    vec2 src_pos = (vec2(ds_pos) + 0.5f) * downsample_scale;
-
     if (any(greaterThanEqual(ds_pos, ivec2(DS_OUTPUT_SIZE_X, DS_OUTPUT_SIZE_Y)))) return;
-    float16_t luma_ds = calc_ds(src_pos);
+
+    // The pipeline currently uses a fixed 2x reduction. Keep the specialization constants
+    // in the interface so the contract remains explicit.
+    const ivec2 downsample_scale = ivec2(DOWNSAMPLE_SCALE_X, DOWNSAMPLE_SCALE_Y);
+    const ivec2 src_base = ds_pos * downsample_scale;
+    const uint luma_ds = calc_downsampled_luma(src_base);
 
     #if (IMAGE_STORE)
-        imageStore(dst_ds_img, ds_pos, vec4(luma_ds, 0, 0, 0));
+        imageStore(dst_ds_img, ds_pos, vec4(float(luma_ds) / 255.f, 0, 0, 0));
     #else
-        dst_ds_buf[DS_STRIDE_DST * ds_pos.y + ds_pos.x] = convert_uint8(luma_ds);
+        dst_ds_buf[DS_STRIDE_DST * ds_pos.y + ds_pos.x] = uint8_t(luma_ds);
     #endif
 
     #if (OUTPUT_FULL)
-        f16vec4 luma = calc_2x2(src_pos);
-
         for (int qy = 0; qy < 2 && ds_pos.y * 2 + qy < FULL_OUTPUT_SIZE_Y; ++qy) {
             for (int qx = 0; qx < 2 && ds_pos.x * 2 + qx < FULL_OUTPUT_SIZE_X; ++qx) {
-
                 ivec2 full_pos = ds_pos * 2 + ivec2(qx, qy);
-
-                const int index_1d = qy * 2 + qx;
-                dst_full_buf[FULL_STRIDE_DST * full_pos.y + full_pos.x] = convert_uint8(luma[index_1d]);
+                dst_full_buf[FULL_STRIDE_DST * full_pos.y + full_pos.x] = uint8_t(load_luma(full_pos));
             }
         }
     #endif

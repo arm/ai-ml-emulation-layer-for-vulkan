@@ -5,11 +5,10 @@
 
 #version 450
 precision highp float;  // 32bit precision is necessary for det_A
-precision mediump sampler2D;
+precision highp sampler2D;
 precision mediump image2D;
 #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
-#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
 #extension GL_EXT_shader_16bit_storage : require
 #extension GL_EXT_shader_8bit_storage : require
 
@@ -28,9 +27,9 @@ layout(constant_id = 3) const int OUTPUT_SIZE_Y = 270;
 layout(constant_id = 4) const uint STRIDE_INT_FLOW = 480;   // The number of elements in a row (x-axis) including padding
 layout(constant_id = 5) const uint STRIDE_PREV_FLOW = 480;
 
-layout (set = 0, binding = 0) uniform mediump sampler2D imageSearchSampler;
+layout (set = 0, binding = 0) uniform highp sampler2D imageSearchSampler;
 
-layout (set = 0, binding = 1) uniform mediump sampler2D imageTemplateSampler;
+layout (set = 0, binding = 1) uniform highp sampler2D imageTemplateSampler;
 
 layout (set = 0, binding = 2, std430) buffer _int_flow_buf{
     i8vec2 int_flow_buf[];
@@ -46,31 +45,38 @@ layout (set = 0, binding = 4, rg16f) uniform writeonly image2D dst_flow_img;
 
 const ivec2 output_size = ivec2(OUTPUT_SIZE_X, OUTPUT_SIZE_Y);
 
-
-void unpack_from_u32(highp uint packed, out float16_t f, out float16_t dfx, out float16_t dfy)
-{
-    f   = float16_t(packed         & 0xff)  / 255.HF;           //  8 bit, [0, 1.0]
-    dfx = float16_t(((packed >>  8) & 0xfff) / 4095.f - 0.5f);  // 12 bit, [-0.5, +0.5]
-    dfy = float16_t(((packed >> 20) & 0xfff) / 4095.f - 0.5f);  // 12 bit, [-0.5, +0.5]
-}
-
 bool is_outside(ivec2 pos)
 {
     return pos.x < 0 || pos.x >= output_size.x || pos.y < 0 || pos.y >= output_size.y;
+}
+
+float16_t load_clamp_edge(sampler2D sampler_value, ivec2 pos)
+{
+    ivec2 size = textureSize(sampler_value, 0);
+    return float16_t(texelFetch(sampler_value, clamp(pos, ivec2(0), size - 1), 0).x);
+}
+
+float16_t load_zero(sampler2D sampler_value, ivec2 pos)
+{
+    ivec2 size = textureSize(sampler_value, 0);
+    if (any(lessThan(pos, ivec2(0))) || any(greaterThanEqual(pos, size))) {
+        return 0.HF;
+    }
+    return float16_t(texelFetch(sampler_value, pos, 0).x);
 }
 
 void calc_gradient(ivec2 pos, out float16_t dfx, out float16_t dfy, out float16_t f)
 {
     // Compute gradient on the fly
     {
-        float16_t f_m1 = float16_t(texture(imageTemplateSampler, pos + ivec2(-1, 0)).x);
-        f              = float16_t(texture(imageTemplateSampler, pos               ).x);
-        float16_t f_p1 = float16_t(texture(imageTemplateSampler, pos + ivec2(+1, 0)).x);
+        precise float16_t f_m1 = load_clamp_edge(imageTemplateSampler, pos + ivec2(-1, 0));
+        f                      = load_clamp_edge(imageTemplateSampler, pos);
+        precise float16_t f_p1 = load_clamp_edge(imageTemplateSampler, pos + ivec2(+1, 0));
         dfx = (f_p1 - f_m1) * 0.5HF;
     }
     {
-        float16_t f_m1 = float16_t(texture(imageTemplateSampler, pos + ivec2(0, -1)).x);
-        float16_t f_p1 = float16_t(texture(imageTemplateSampler, pos + ivec2(0, +1)).x);
+        precise float16_t f_m1 = load_clamp_edge(imageTemplateSampler, pos + ivec2(0, -1));
+        precise float16_t f_p1 = load_clamp_edge(imageTemplateSampler, pos + ivec2(0, +1));
         dfy = (f_p1 - f_m1) * 0.5HF;
     }
 
@@ -84,7 +90,7 @@ void calc_gradient(ivec2 pos, out float16_t dfx, out float16_t dfy, out float16_
 
 f16vec2 calc(const ivec2 pos)
 {
-    float16_t a = 0.HF, b = 0.HF, d = 0.HF, p = 0.HF, q = 0.HF;
+    precise float16_t a = 0.HF, b = 0.HF, d = 0.HF, p = 0.HF, q = 0.HF;
     ivec2 int_flow = ivec2(int_flow_buf[STRIDE_INT_FLOW * pos.y + pos.x]);
 
     // Read inputs and accumulate value, which updates:
@@ -92,14 +98,14 @@ f16vec2 calc(const ivec2 pos)
     #define acc_work(_bx, _by) \
     { \
         ivec2 bpos = pos + ivec2(_bx, _by); \
-        float16_t f, dfx, dfy; \
+        precise float16_t f, dfx, dfy; \
         calc_gradient(bpos, dfx, dfy, f); \
         a += dfx * dfx; \
         b += dfx * dfy; \
         d += dfy * dfy; \
         ivec2 g_pos = bpos + int_flow; \
-        float16_t g = float16_t(texture(imageSearchSampler, g_pos).x); \
-        float16_t z = g - f;\
+        precise float16_t g = load_zero(imageSearchSampler, g_pos); \
+        precise float16_t z = g - f;\
         p += z * dfx; \
         q += z * dfy; \
     }
@@ -127,18 +133,16 @@ f16vec2 calc(const ivec2 pos)
     }
 
     // Use 32 bit float for numeric error sensitive process
-    float det_A = float(a) * float(d) - float(b) * float(b);
-    vec2 subpixel;
-    subpixel.x = float(d) * float(p) - float(b) * float(q);
-    subpixel.y = float(a) * float(q) - float(b) * float(p);
-    subpixel = subpixel / det_A;
+    precise float det_A = float(a) * float(d) - float(b) * float(b);
+    precise vec2 numerator;
+    numerator.x = float(d) * float(p) - float(b) * float(q);
+    numerator.y = float(a) * float(q) - float(b) * float(p);
 
-    // Validation
-    bool cond1 = (det_A <= 1e-7f);
-    bvec2 cond2 = greaterThanEqual(abs(subpixel), vec2(1.f));
-    // NOTE : element-wise vector operator of '||' cannot be compiled
-    bvec2 invalid_mask = bvec2(cond1 || cond2.x, cond1 || cond2.y);
-    subpixel = mix(subpixel, vec2(0.f), invalid_mask);
+    vec2 subpixel = vec2(0.f);
+    if (det_A > 1e-7f) {
+        subpixel = numerator / det_A;
+        subpixel = mix(subpixel, vec2(0.f), greaterThanEqual(abs(subpixel), vec2(1.f)));
+    }
 
     // Add integer flow here to save memory bandwidth
     // Also accumulate the flow from previous level
