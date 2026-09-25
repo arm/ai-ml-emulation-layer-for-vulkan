@@ -65,6 +65,7 @@ class Builder:
 
         if self.package_release_pip:
             self.package_pip = True
+        self.install_libdir = "lib" if self.package_pip else args.install_libdir
 
         self.pip_install = str(
             EMULATION_LAYER_DIR / "pip_package" / "emulation_layer" / "deploy"
@@ -177,6 +178,9 @@ class Builder:
             "-G",
             "Ninja",
         ]
+
+        if self.install_libdir:
+            cmake_setup_cmd.append(f"-DCMAKE_INSTALL_LIBDIR={self.install_libdir}")
 
         if self.prefix_path:
             cmake_setup_cmd.append(f"-DCMAKE_PREFIX_PATH={self.prefix_path}")
@@ -523,6 +527,10 @@ def parse_arguments(argv=None):
         help="Only build documentation. Default: %(default)s",
         action="store_true",
         default=False,
+    )
+    parser.add_argument(
+        "--install-libdir",
+        help="Library installation directory (pip packages always use lib)",
     )
     parser.add_argument(
         "--install",

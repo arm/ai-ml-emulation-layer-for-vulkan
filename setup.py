@@ -74,6 +74,8 @@ class BuildPy(build_py):
             [
                 "--build-dir",
                 str(native_build_dir),
+                "--install-libdir",
+                "lib",
                 "--install",
                 str(native_install_dir),
                 "--package-version",
