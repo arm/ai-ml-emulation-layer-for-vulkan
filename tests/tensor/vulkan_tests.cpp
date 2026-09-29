@@ -98,6 +98,61 @@ TEST_F(MLEmulationLayerGraphForVulkan, TensorArray) {
     }
 }
 
+TEST_F(MLEmulationLayerGraphForVulkan, TensorHelperPaddedBoundsAndTails) {
+    const auto spirv = compileGlsl(R"(
+#version 460
+#extension GL_ARM_tensors : require
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) uniform tensorARM<uint, 2> source;
+layout(set = 0, binding = 1) uniform tensorARM<uint, 2> destination;
+layout(set = 0, binding = 2) uniform tensorARM<uint, 1> results;
+void main() {
+    uint values[4];
+    tensorReadARM(source, uint[](0, 1), values, gl_TensorOperandsOutOfBoundsValueARM, 99u);
+    tensorWriteARM(results, uint[](0), values);
+    tensorReadARM(source, uint[](2, 0), values, gl_TensorOperandsOutOfBoundsValueARM, 99u);
+    tensorWriteARM(results, uint[](4), values);
+    tensorReadARM(source, uint[](0xffffffffu, 0xffffffffu), values,
+                  gl_TensorOperandsOutOfBoundsValueARM, 99u);
+    tensorWriteARM(results, uint[](8), values);
+    uint value;
+    tensorReadARM(source, uint[](1, 2), value);
+    tensorWriteARM(results, uint[](12), value);
+    tensorReadARM(source, uint[](2, 0), value, gl_TensorOperandsOutOfBoundsValueARM, 99u);
+    tensorWriteARM(results, uint[](13), value);
+    tensorReadARM(source, uint[](0, 0xffffffffu), value, gl_TensorOperandsOutOfBoundsValueARM, 99u);
+    tensorWriteARM(results, uint[](14), value);
+    uint stores[4] = uint[](31, 32, 33, 34);
+    tensorWriteARM(destination, uint[](1, 1), stores);
+    tensorWriteARM(destination, uint[](0xffffffffu, 0), stores);
+    tensorWriteARM(destination, uint[](0, 0), 41u);
+    tensorWriteARM(destination, uint[](0, 0xffffffffu), 42u);
+}
+)");
+    auto input = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Uint, {2, 3}, {32, 4}});
+    auto output = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Uint, {2, 3}, {32, 4}});
+    auto results = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Uint, {15}});
+    std::vector<uint32_t> inputData(16, 0xdeadbeef);
+    for (uint32_t row = 0; row < 2; ++row) {
+        for (uint32_t col = 0; col < 3; ++col) {
+            inputData[(row * 8) + col] = ((row + 1) * 10) + col;
+        }
+    }
+    std::memcpy(input->data(), inputData.data(), input->size());
+    std::vector<uint32_t> expectedOutput(16, 0xdeadbeef);
+    std::memcpy(output->data(), expectedOutput.data(), output->size());
+    std::fill(results->data(), results->data() + results->size(), 0);
+    const TensorComputePipeline::DescriptorMap descriptors = {{{0, {input}}, {1, {output}}, {2, {results}}}};
+    auto pipeline = std::make_shared<TensorComputePipeline>(device, descriptors, spirv);
+    pipeline->dispatchSubmit(1, 1, 1);
+    const std::vector<uint32_t> expectedResults{11, 12, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 22, 99, 99};
+    expectedOutput[0] = 41;
+    expectedOutput[9] = 31;
+    expectedOutput[10] = 32;
+    EXPECT_EQ(std::memcmp(results->data(), expectedResults.data(), results->size()), 0);
+    EXPECT_EQ(std::memcmp(output->data(), expectedOutput.data(), output->size()), 0);
+}
+
 // FIXME: Temporarily disabled in Darwin due to not being able to pass SSBO's to functions
 TEST_F(MLEmulationLayerGraphForVulkan, CreateTensorComputePipeline) {
 

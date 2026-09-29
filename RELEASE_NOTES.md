@@ -2,6 +2,13 @@
 
 ---
 
+## Unreleased
+
+### Performance
+
+- Optimized tensor read/write bounds checks while retaining out-of-bounds
+  handling.
+
 ## Version 0.11.0 – *Datatype Fixes & Shader Precompilation*
 
 ### Build, Packaging & Developer Experience
