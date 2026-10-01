@@ -528,16 +528,16 @@ void OpticalFlow::swapImagePyramids() {
 float OpticalFlow::calcOutputFlowScale() const { return static_cast<float>(1 << config_.levelOfLastEstimation); }
 
 int OpticalFlow::toSearchRangeLimit(uint32_t meanFlowL1NormHint) const {
-    const uint32_t maxDimension = std::max(config_.width, config_.height);
-    meanFlowL1NormHint = std::min(meanFlowL1NormHint, maxDimension);
+    const uint32_t minDimension = std::min(config_.width, config_.height);
+    meanFlowL1NormHint = std::min(meanFlowL1NormHint, minDimension);
+
     if (meanFlowL1NormHint == 0) {
         return config_.maxSearchRange;
     }
 
-    const int factor = (1 << (pyramidLevels_ - 1)) / 2;
-    int searchRangeLimit = static_cast<int>(std::ceil(meanFlowL1NormHint / static_cast<float>(factor)));
-    searchRangeLimit = std::clamp(searchRangeLimit, 1, config_.maxSearchRange);
-    return searchRangeLimit;
+    const int factor = 1 << (pyramidLevels_ - 1);
+    int searchRangeLimit = static_cast<int>(std::floor(meanFlowL1NormHint / static_cast<float>(factor))) + 1;
+    return std::clamp(searchRangeLimit, 1, config_.maxSearchRange);
 }
 
 bool OpticalFlow::validateConfiguration() const {
