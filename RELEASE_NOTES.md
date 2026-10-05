@@ -15,6 +15,11 @@
 - Optimized tensor read/write bounds checks while retaining out-of-bounds
   handling.
 
+### Bug Fixes
+
+- Fixed TOSA `SIN` and `COS` handling for positive and negative infinity by
+  returning `NaN` before invoking driver-dependent trigonometric functions.
+
 ## Version 0.11.0 – *Datatype Fixes & Shader Precompilation*
 
 ### Build, Packaging & Developer Experience

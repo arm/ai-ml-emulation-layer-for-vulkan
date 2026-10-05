@@ -9,9 +9,12 @@
 #include "mlel/utils.hpp"
 #include "vulkan_test_utils.hpp"
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <vector>
@@ -577,6 +580,40 @@ TEST_F(MLEmulationLayerGraphForVulkan, SIN) {
 
     ASSERT_GE(output, refMin);
     ASSERT_LE(output, refMax);
+}
+
+TEST_F(MLEmulationLayerGraphForVulkan, TosaSinInfinityReturnsNaN) {
+    const std::vector<float> values{std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::infinity()};
+    auto input = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{2}});
+    auto output = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{2}});
+    std::memcpy(input->data(), values.data(), input->size());
+    const GraphPipeline::DescriptorMap descriptors = {{{0, {input}}, {1, {output}}}};
+    const auto spirv = assembleSpirv(fileToString("sin_infinity.spvasm"));
+    GraphPipeline pipeline(device, descriptors, GraphConstants{}, spirv);
+    pipeline.dispatchSubmit();
+
+    std::vector<float> actual(values.size());
+    std::memcpy(actual.data(), output->data(), output->size());
+    for (const auto value : actual) {
+        EXPECT_TRUE(std::isnan(value));
+    }
+}
+
+TEST_F(MLEmulationLayerGraphForVulkan, TosaCosInfinityReturnsNaN) {
+    const std::vector<float> values{std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::infinity()};
+    auto input = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{2}});
+    auto output = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{2}});
+    std::memcpy(input->data(), values.data(), input->size());
+    const GraphPipeline::DescriptorMap descriptors = {{{0, {input}}, {1, {output}}}};
+    const auto spirv = assembleSpirv(fileToString("cos_infinity.spvasm"));
+    GraphPipeline pipeline(device, descriptors, GraphConstants{}, spirv);
+    pipeline.dispatchSubmit();
+
+    std::vector<float> actual(values.size());
+    std::memcpy(actual.data(), output->data(), output->size());
+    for (const auto value : actual) {
+        EXPECT_TRUE(std::isnan(value));
+    }
 }
 
 } // namespace
