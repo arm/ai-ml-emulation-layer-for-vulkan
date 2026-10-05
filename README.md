@@ -97,8 +97,8 @@ The build system must have:
   Windows®.
 - CMake 3.25 or later.
 - Ninja 1.8.2 or later.
-- Python 3.10 or later. Required python libraries for building are listed in
-  `tooling-requirements.txt`.
+- Python 3.10 or later and `uv` 0.9.26. Python tooling dependencies are
+  declared in `pyproject.toml` and locked in `uv.lock`.
 - Vulkan® SDK 1.4.328.1 or later.
 
 The following dependencies are also needed:

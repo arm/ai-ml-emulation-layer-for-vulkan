@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+### Build, Packaging & Dependencies
+
+- Locked development tooling with `uv.lock` in place of the tooling
+  requirements file.
+
 ### Performance
 
 - Optimized tensor read/write bounds checks while retaining out-of-bounds
