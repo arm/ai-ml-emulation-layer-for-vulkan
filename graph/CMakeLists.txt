@@ -13,6 +13,7 @@ add_library(MLELGraph STATIC)
 add_library(${ML_SDK_EL_NAMESPACE}::MLELGraph ALIAS MLELGraph)
 
 target_compile_options(MLELGraph PRIVATE ${VMEL_COMPILE_OPTIONS})
+mlel_enable_coverage(MLELGraph)
 
 target_sources(MLELGraph PRIVATE
     compute_graph_op.cpp
@@ -52,6 +53,7 @@ add_library(${ML_SDK_EL_NAMESPACE}::VkLayer_Graph ALIAS VkLayer_Graph)
 target_set_vulkan_exports(VkLayer_Graph)
 
 target_compile_options(VkLayer_Graph PRIVATE ${VMEL_COMPILE_OPTIONS})
+mlel_enable_coverage(VkLayer_Graph)
 
 target_sources(VkLayer_Graph PRIVATE
     graph_layer.cpp)

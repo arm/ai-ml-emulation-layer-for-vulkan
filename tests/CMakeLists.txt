@@ -43,6 +43,7 @@ function(mlel_add_test)
     cmake_parse_arguments(ARGS "" "TARGET" "DEFINITIONS;ENVIRONMENT_MODIFICATION;GROUPED_SUITES;INCLUDE_DIRECTORIES;LIBRARIES;PROPERTIES;SOURCES" ${ARGN})
 
     add_executable(${ARGS_TARGET})
+    mlel_enable_coverage(${ARGS_TARGET})
 
     target_sources(${ARGS_TARGET} PRIVATE ${ARGS_SOURCES})
 
@@ -114,10 +115,10 @@ if(APPLE)
         DYLD_LIBRARY_PATH=path_list_append:$ENV{DYLD_LIBRARY_PATH})
 else()
     set(MLEL_VULKAN_UNIT_TEST_ENVIRONMENT
-        VK_LAYER_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Graph>
-        LD_LIBRARY_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Graph>
-        VK_LAYER_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Tensor>
-        LD_LIBRARY_PATH=path_list_append:$<TARGET_FILE_DIR:VkLayer_Tensor>
+        VK_LAYER_PATH=path_list_prepend:$<TARGET_FILE_DIR:VkLayer_Graph>
+        LD_LIBRARY_PATH=path_list_prepend:$<TARGET_FILE_DIR:VkLayer_Graph>
+        VK_LAYER_PATH=path_list_prepend:$<TARGET_FILE_DIR:VkLayer_Tensor>
+        LD_LIBRARY_PATH=path_list_prepend:$<TARGET_FILE_DIR:VkLayer_Tensor>
         VK_LAYER_PATH=path_list_append:/usr/share/vulkan/explicit_layer.d)
 endif()
 

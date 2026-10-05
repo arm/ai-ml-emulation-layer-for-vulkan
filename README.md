@@ -152,6 +152,21 @@ For more command line options, see the help output:
 python3 $SDK_PATH/sw/emulation-layer/scripts/build.py --help
 ```
 
+## Code coverage
+
+Sync the locked tooling dependencies, then run the unit tests on Linux with GCC
+coverage instrumentation:
+
+```bash
+uv sync --locked --no-install-project --no-default-groups --group tooling
+uv run --no-sync python scripts/build.py --coverage --build-dir build-coverage
+```
+
+The coverage command writes a detailed HTML report to
+`build-coverage/coverage/index.html` and a machine-readable JSON summary to
+`build-coverage/coverage/summary.json`. Coverage is collected for the common,
+graph, tensor, and utility sources; tests and bundled dependencies are excluded.
+
 ## Usage
 
 The ML Emulation Layer for Vulkan® is loaded as two explicit Vulkan® layers.
