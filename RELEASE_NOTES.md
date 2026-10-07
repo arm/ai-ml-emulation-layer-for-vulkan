@@ -8,6 +8,7 @@
 
 - Locked development tooling with `uv.lock` in place of the tooling
   requirements file.
+- Added GCC code coverage reporting for native Linux unit-test builds.
 
 ### Performance
 

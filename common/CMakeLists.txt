@@ -9,6 +9,7 @@
 add_library(VkLayer_Common STATIC)
 
 target_compile_options(VkLayer_Common PUBLIC ${VMEL_COMPILE_OPTIONS})
+mlel_enable_coverage(VkLayer_Common)
 
 if(VMEL_USE_FLOAT_AS_DOUBLE)
     target_compile_definitions(VkLayer_Common PUBLIC USE_FLOAT_AS_DOUBLE)

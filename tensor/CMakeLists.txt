@@ -11,6 +11,7 @@ add_library(MLELTensor STATIC)
 add_library(${ML_SDK_EL_NAMESPACE}::MLELTensor ALIAS MLELTensor)
 
 target_compile_options(MLELTensor PRIVATE ${VMEL_COMPILE_OPTIONS})
+mlel_enable_coverage(MLELTensor)
 
 target_sources(MLELTensor PRIVATE
     tensor_processor.cpp
@@ -40,6 +41,7 @@ add_library(${ML_SDK_EL_NAMESPACE}::VkLayer_Tensor ALIAS VkLayer_Tensor)
 target_set_vulkan_exports(VkLayer_Tensor)
 
 target_compile_options(VkLayer_Tensor PRIVATE ${VMEL_COMPILE_OPTIONS})
+mlel_enable_coverage(VkLayer_Tensor)
 
 target_sources(VkLayer_Tensor PRIVATE
     tensor_layer.cpp)

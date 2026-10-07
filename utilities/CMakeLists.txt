@@ -9,6 +9,7 @@
 add_library(mlelutilities STATIC)
 
 target_compile_options(mlelutilities PUBLIC ${VMEL_COMPILE_OPTIONS})
+mlel_enable_coverage(mlelutilities)
 
 target_sources(mlelutilities PRIVATE
     device.cpp

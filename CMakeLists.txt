@@ -42,6 +42,28 @@ endif()
 option(VMEL_TESTS_ENABLE "Enable tests" OFF)
 option(VMEL_USE_FLOAT_AS_DOUBLE "Use float as double precision type" OFF)
 option(VMEL_BUILD_DOCS "Build documentation" OFF)
+option(VMEL_ENABLE_COVERAGE "Enable GCC code coverage instrumentation" OFF)
+
+if(VMEL_ENABLE_COVERAGE)
+    if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        message(FATAL_ERROR "VMEL_ENABLE_COVERAGE requires GCC")
+    endif()
+    if(CMAKE_CROSSCOMPILING)
+        message(FATAL_ERROR "VMEL_ENABLE_COVERAGE is only supported for native builds")
+    endif()
+
+    add_library(mlel_coverage_options INTERFACE)
+    target_compile_options(mlel_coverage_options INTERFACE --coverage -O0 -g)
+    target_link_options(mlel_coverage_options INTERFACE --coverage)
+endif()
+
+function(mlel_enable_coverage target_name)
+    if(NOT VMEL_ENABLE_COVERAGE)
+        return()
+    endif()
+
+    target_link_libraries(${target_name} PRIVATE $<BUILD_INTERFACE:mlel_coverage_options>)
+endfunction()
 
 ###############################################################################
 # Vulkan and SPIR-V dependencies
