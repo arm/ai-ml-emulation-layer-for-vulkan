@@ -588,7 +588,7 @@ TEST_F(MLEmulationLayerGraphForVulkan, TosaSinInfinityReturnsNaN) {
     auto output = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{2}});
     std::memcpy(input->data(), values.data(), input->size());
     const GraphPipeline::DescriptorMap descriptors = {{{0, {input}}, {1, {output}}}};
-    const auto spirv = assembleSpirv(fileToString("sin_infinity.spvasm"));
+    const auto spirv = assembleSpirv(fileToString("sin.spvasm"));
     GraphPipeline pipeline(device, descriptors, GraphConstants{}, spirv);
     pipeline.dispatchSubmit();
 
@@ -605,7 +605,7 @@ TEST_F(MLEmulationLayerGraphForVulkan, TosaCosInfinityReturnsNaN) {
     auto output = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{2}});
     std::memcpy(input->data(), values.data(), input->size());
     const GraphPipeline::DescriptorMap descriptors = {{{0, {input}}, {1, {output}}}};
-    const auto spirv = assembleSpirv(fileToString("cos_infinity.spvasm"));
+    const auto spirv = assembleSpirv(fileToString("cos.spvasm"));
     GraphPipeline pipeline(device, descriptors, GraphConstants{}, spirv);
     pipeline.dispatchSubmit();
 
