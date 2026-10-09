@@ -19,6 +19,8 @@
 
 - Fixed TOSA `SIN` and `COS` handling for positive and negative infinity by
   returning `NaN` before invoking driver-dependent trigonometric functions.
+- Fix optical-flow search range mapping to align with reference
+  implementation.
 
 ## Version 0.11.0 – *Datatype Fixes & Shader Precompilation*
 
