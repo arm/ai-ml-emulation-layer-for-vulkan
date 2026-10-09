@@ -257,7 +257,7 @@ RGBToY::RGBToY(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoade
                       {dstDownsampledImage->width(), dstDownsampledImage->height()}, debugName),
       srcImage_(std::move(srcRGBImage)), dstYDownsampled_(dstDownsampledImage), dstYFull_(std::move(dstFullImage)),
       outputFull_(outputFullRes), specConstants_{makeSpecConstants(downsampleScale)},
-      linearSampler_{createSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {
+      nearestSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {
     assert(!outputFull_ || dstYFull_);
     assert(!outputFull_ || dstYDownsampled_->isImageStore() == dstYFull_->isImageStore());
 }
@@ -291,6 +291,7 @@ RGBToY::SpecConstants RGBToY::makeSpecConstants(float downsampleScale) const {
         outputFull_ ? dstYFull_->width() : 1,
         outputFull_ ? dstYFull_->height() : 1,
         outputFull_ ? dstYFull_->stride() : 1,
+        srcImage_->format() != VK_FORMAT_B10G11R11_UFLOAT_PACK32,
     };
     return specConstants;
 }
@@ -301,7 +302,7 @@ void RGBToY::setInput(std::shared_ptr<Image> src) {
 }
 
 void RGBToY::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, 0, srcImage_, linearSampler_);
+    setInputStorage(cmdBuf, 0, srcImage_, nearestSampler_);
     setOutputStorage(cmdBuf, dstYDownsampled_->isImageStore() ? 1 : 2, dstYDownsampled_);
     if (outputFull_) {
         setOutputStorage(cmdBuf, 3, dstYFull_);
@@ -321,7 +322,7 @@ Downsample::Downsample(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispa
     : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache), descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, 0, {dst->width(), dst->height()}, debugName),
       srcImage_(std::move(src)), dstImage_(dst), specConstants_{makeSpecConstants()},
-      linearSampler_{createSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
+      nearestSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
 SpirvBinary Downsample::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache) {
     return pipelineCache->lookup(shaderName, {});
@@ -342,7 +343,7 @@ Downsample::SpecConstants Downsample::makeSpecConstants() const {
 }
 
 void Downsample::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, 0, srcImage_, linearSampler_);
+    setInputStorage(cmdBuf, 0, srcImage_, nearestSampler_);
     setOutputStorage(cmdBuf, 1, dstImage_);
 
     bindPipeline(cmdBuf);
@@ -363,7 +364,7 @@ MVProcessAndWarp::MVProcessAndWarp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::d
       srcSearch_(std::move(srcImage)), srcFlow_(std::move(srcFlow)), dstWarped_(dstImage),
       // Output flow and specialization state.
       dstFlow_(std::move(dstFlow)), specConstants_{makeSpecConstants()},
-      linearSampler_{createSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
+      nearestSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
 SpirvBinary MVProcessAndWarp::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache) {
     return pipelineCache->lookup(shaderName, {});
@@ -380,8 +381,8 @@ MVProcessAndWarp::SpecConstants MVProcessAndWarp::makeSpecConstants() const {
 }
 
 void MVProcessAndWarp::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, 0, srcSearch_, linearSampler_);
-    setInputStorage(cmdBuf, 1, srcFlow_, linearSampler_);
+    setInputStorage(cmdBuf, 0, srcSearch_, nearestSampler_);
+    setInputStorage(cmdBuf, 1, srcFlow_, nearestSampler_);
     setOutputStorage(cmdBuf, 2, dstWarped_);
     setOutputStorage(cmdBuf, 3, dstFlow_);
 
@@ -402,7 +403,6 @@ DenseWarp::DenseWarp(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispatc
       srcSearch_(std::move(srcImage)), srcFlow_(std::move(srcFlow)),
       // Output image and specialization state.
       dstWarped_(dstImage), specConstants_{makeSpecConstants(inputFlowScale)},
-      linearSampler_{createSampler(VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)},
       nearestSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
 SpirvBinary DenseWarp::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache) {
@@ -424,7 +424,7 @@ void DenseWarp::setInputFlow(std::shared_ptr<Image> srcFlow) {
 }
 
 void DenseWarp::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, 0, srcSearch_, linearSampler_);
+    setInputStorage(cmdBuf, 0, srcSearch_, nearestSampler_);
     setInputStorage(cmdBuf, 1, srcFlow_, nearestSampler_);
     setOutputStorage(cmdBuf, 2, dstWarped_);
 

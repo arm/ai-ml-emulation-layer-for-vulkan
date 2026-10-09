@@ -4,15 +4,12 @@
  */
 
 #version 450
-precision mediump float;
-precision mediump sampler2D;
+precision highp float;
+precision highp sampler2D;
 precision mediump image2D;
-#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
-#extension GL_EXT_shader_16bit_storage : require
 #extension GL_EXT_shader_8bit_storage : require
-#extension GL_GOOGLE_include_directive : enable
 
 #ifndef OUTPUT_FLOW
 #error OUTPUT_FLOW must be defined
@@ -25,10 +22,6 @@ precision mediump image2D;
 #define MACRO_BLOCK (5)  // This shader assumes the value is 5 for optimization purpose
 #define MAX_SEARCH_W (MAX_SEARCH_RANGE * 2 + 1)
 #define BLOCK_R (MACRO_BLOCK / 2)
-#define BLOCK_R (MACRO_BLOCK / 2)
-
-// Threshold to judge if float values are equal as we need to take floating point errors into account.
-#define THR_FOR_EQUAL (float16_t(0.5f / 255.f))
 
 /* Search pattern which defines the priority in case the cost values are the same between candidates
             'spiral':
@@ -86,8 +79,8 @@ layout(constant_id = 3) const int OUTPUT_SIZE_X = 480;
 layout(constant_id = 4) const int OUTPUT_SIZE_Y = 270;
 layout(constant_id = 5) const uint STRIDE_DST_FLOW = 480;   // The number of elements in a row (x-axis) including padding
 
-layout (binding = 0) uniform mediump sampler2D imageTemplateSampler;
-layout (binding = 1) uniform mediump sampler2D imageSearchSampler;
+layout (binding = 0) uniform highp sampler2D imageTemplateSampler;
+layout (binding = 1) uniform highp sampler2D imageSearchSampler;
 
 #if OUTPUT_FLOW
 layout (set = 0, binding = 2, std430) buffer _dst_flow_buf {
@@ -103,32 +96,42 @@ layout (push_constant) uniform PushConstants {
     int search_index_limit;  // (2 * SR + 1)^2, where SR is the limit of search range
 };
 
+uint load_unorm8_zero(sampler2D sampler_value, ivec2 pos)
+{
+    ivec2 size = textureSize(sampler_value, 0);
+    if (any(lessThan(pos, ivec2(0))) || any(greaterThanEqual(pos, size))) {
+        return 0u;
+    }
+    return uint(floor(texelFetch(sampler_value, pos, 0).x * 255.f + 0.5f));
+}
+
 void calc(i16vec2 pos, out i8vec2 flow_out, out uint16_t cost_at_min)
 {
-    float16_t min_dist = 65504.HF;  // half float max
+    uint min_dist = 0xffffffffu;
 
     for (int si = 0; si < search_index_limit; ++si) {
         i16vec2 search_pos = get_spiral_search_position(si);
 
         // Compute SAD (sum of absolute difference)
-        float16_t dist = 0.HF;
+        uint dist = 0u;
         for (int by = -BLOCK_R; by <= BLOCK_R; ++by) {
             for (int bx = -BLOCK_R; bx <= BLOCK_R; ++bx) {
                 ivec2 b_pos = ivec2(pos) + ivec2(bx, by);
-                float16_t template_val = float16_t(texture(imageTemplateSampler, b_pos).x);
-                float16_t window_val   = float16_t(texture(imageSearchSampler, b_pos + ivec2(search_pos)).x);
-                dist += abs(window_val - template_val);
+                int template_val = int(load_unorm8_zero(imageTemplateSampler, b_pos));
+                int window_val = int(load_unorm8_zero(imageSearchSampler, b_pos + ivec2(search_pos)));
+                dist += uint(abs(window_val - template_val));
             }
         }
 
-        if (min_dist - dist > THR_FOR_EQUAL) {
+        // Strict comparison preserves the spiral order as the tie-break rule.
+        if (dist < min_dist) {
             // Update min and flow
             min_dist = dist;
             flow_out = i8vec2(search_pos);
         }
     }
 
-    cost_at_min = uint16_t(round(min_dist * 255.HF));
+    cost_at_min = uint16_t(min_dist);
 }
 
 void main()

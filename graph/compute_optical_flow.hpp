@@ -138,6 +138,7 @@ class RGBToY : public ComputePipeline {
         uint32_t fullImageWidth;
         uint32_t fullImageHeight;
         uint32_t fullImageStride;
+        VkBool32 isUnorm8Input;
     };
 
     SpecConstants makeSpecConstants(float downsampleScale) const;
@@ -152,7 +153,7 @@ class RGBToY : public ComputePipeline {
     std::shared_ptr<Image> dstYFull_;
     bool outputFull_;
     SpecConstants specConstants_;
-    VkSampler linearSampler_;
+    VkSampler nearestSampler_;
 
     inline static const DescriptorConfigs descriptorConfigs_{
         {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // Src
@@ -193,7 +194,7 @@ class Downsample : public ComputePipeline {
     std::shared_ptr<Image> srcImage_;
     std::shared_ptr<Image> dstImage_;
     SpecConstants specConstants_;
-    VkSampler linearSampler_;
+    VkSampler nearestSampler_;
 
     inline static const DescriptorConfigs descriptorConfigs_{
         {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // Src
@@ -239,7 +240,7 @@ class MVProcessAndWarp : public ComputePipeline {
     std::shared_ptr<Image> dstWarped_;
     std::shared_ptr<Image> dstFlow_;
     SpecConstants specConstants_;
-    VkSampler linearSampler_;
+    VkSampler nearestSampler_;
 
     inline static const DescriptorConfigs descriptorConfigs_{
         {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // Src
@@ -283,7 +284,6 @@ class DenseWarp : public ComputePipeline {
     std::shared_ptr<Image> srcFlow_;
     std::shared_ptr<Image> dstWarped_;
     SpecConstants specConstants_;
-    VkSampler linearSampler_;
     VkSampler nearestSampler_;
 
     inline static const DescriptorConfigs descriptorConfigs_{
