@@ -480,28 +480,21 @@ BilateralFilter::BilateralFilter(const std::shared_ptr<VULKAN_HPP_NAMESPACE::det
                                  std::shared_ptr<Image> srcImage, std::shared_ptr<Image> srcFlow,
                                  const std::shared_ptr<Image> &dstFlow, float outputFlowScale,
                                  const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache, dstFlow->isImageStore()),
-                      descriptorConfigs_, {&specConstants_, sizeof(specConstants_)}, 0,
-                      {dstFlow->width(), dstFlow->height()}, debugName),
+    : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache), descriptorConfigs_,
+                      {&specConstants_, sizeof(specConstants_)}, 0, {dstFlow->width(), dstFlow->height()}, debugName),
       srcTemplate_(std::move(srcImage)), srcFlow_(std::move(srcFlow)),
       // Output flow and specialization state.
       dstFlow_(dstFlow), specConstants_{makeSpecConstants(outputFlowScale)},
       nearestSampler_{createSampler(VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)} {}
 
-SpirvBinary BilateralFilter::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, bool imageStore) {
-    return pipelineCache->lookup(makeShaderName(imageStore), {});
-}
-
-std::string BilateralFilter::makeShaderName(bool imageStore) {
-    std::string shaderName{shaderBaseName};
-    shaderName += imageStore ? "_img" : "_buf";
-    return shaderName;
+SpirvBinary BilateralFilter::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache) {
+    return pipelineCache->lookup(shaderName, {});
 }
 
 BilateralFilter::SpecConstants BilateralFilter::makeSpecConstants(float outputFlowScale) const {
-    assert(dstFlow_->isImageStore() || dstFlow_->isBufferStore());
+    assert(dstFlow_->isImageStore());
     SpecConstants specConstants = {
-        32, 8, outputFlowScale, dstFlow_->width(), dstFlow_->height(), dstFlow_->stride(),
+        32, 8, outputFlowScale, dstFlow_->width(), dstFlow_->height(),
     };
     return specConstants;
 }
@@ -514,7 +507,7 @@ void BilateralFilter::setOutput(std::shared_ptr<Image> dstFlow) {
 void BilateralFilter::bindAndDispatch(VkCommandBuffer cmdBuf) {
     setInputStorage(cmdBuf, 0, srcTemplate_, nearestSampler_);
     setInputStorage(cmdBuf, 1, srcFlow_, nearestSampler_);
-    setOutputStorage(cmdBuf, dstFlow_->isImageStore() ? 2 : 3, dstFlow_);
+    setOutputStorage(cmdBuf, 2, dstFlow_);
 
     bindPipeline(cmdBuf);
     dispatchPipeline(cmdBuf);
@@ -543,13 +536,13 @@ SpirvBinary SubpixelME::createSpirv(const std::shared_ptr<PipelineCache> &pipeli
 
 std::string SubpixelME::makeShaderName(bool doAccumulate) {
     std::string shaderName{shaderBaseName};
-    shaderName += doAccumulate ? "_acc_buf" : "_buf";
+    shaderName += doAccumulate ? "_acc_img" : "_img";
     return shaderName;
 }
 
 SubpixelME::SpecConstants SubpixelME::makeSpecConstants() const {
     assert(srcFlow_->isBufferLoad());
-    assert(dstFlow_->isBufferStore());
+    assert(dstFlow_->isImageStore());
     assert(!doAccumulate_ || srcPrevLevelFlow_->isBufferLoad());
 
     SpecConstants specConstants = {
@@ -559,7 +552,6 @@ SubpixelME::SpecConstants SubpixelME::makeSpecConstants() const {
         dstFlow_->height(),
         srcFlow_->stride(),
         doAccumulate_ ? srcPrevLevelFlow_->stride() : 1,
-        dstFlow_->stride(),
     };
     return specConstants;
 }
@@ -663,8 +655,7 @@ BlockMatch::BlockMatch(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispa
                        SearchType searchType, int32_t maxSearchRange, const std::shared_ptr<Image> &srcSearch,
                        std::shared_ptr<Image> srcTemplate, std::shared_ptr<Image> dstFlow,
                        std::shared_ptr<Image> dstCost, const std::string &debugName)
-    : ComputePipeline(loader, device, pipelineCache,
-                      createSpirv(pipelineCache, searchType, dstCost && dstCost->isImageStore()), descriptorConfigs_,
+    : ComputePipeline(loader, device, pipelineCache, createSpirv(pipelineCache, searchType), descriptorConfigs_,
                       {&specConstants_, sizeof(specConstants_)}, sizeof(PushConstants),
                       {srcSearch->width(), srcSearch->height()}, debugName),
       srcSearch_(srcSearch), srcTemplate_(std::move(srcTemplate)), dstFlow_(std::move(dstFlow)),
@@ -677,22 +668,21 @@ BlockMatch::BlockMatch(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::Dispa
     assert(searchType_ != SearchType::RAW_SAD || maxSearchRange_ == 0);
 }
 
-SpirvBinary BlockMatch::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, SearchType searchType,
-                                    bool costImageStore) {
-    return pipelineCache->lookup(makeShaderName(searchType, costImageStore), {});
+SpirvBinary BlockMatch::createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, SearchType searchType) {
+    return pipelineCache->lookup(makeShaderName(searchType), {});
 }
 
-std::string BlockMatch::makeShaderName(SearchType searchType, bool costImageStore) {
+std::string BlockMatch::makeShaderName(SearchType searchType) {
     std::string shaderName{shaderBaseName};
     switch (searchType) {
     case SearchType::MIN_SAD:
         shaderName += "_flow";
         break;
     case SearchType::MIN_SAD_COST:
-        shaderName += costImageStore ? "_flow_cost_img" : "_flow_cost_buf";
+        shaderName += "_flow_cost_img";
         break;
     case SearchType::RAW_SAD:
-        shaderName += "_cost_buf";
+        shaderName += "_cost_img";
         break;
     default:
         throw std::runtime_error("Unsupported BlockMatch search type");
@@ -702,9 +692,9 @@ std::string BlockMatch::makeShaderName(SearchType searchType, bool costImageStor
 
 BlockMatch::SpecConstants BlockMatch::makeSpecConstants() const {
     assert(!hasFlowOutput() || (dstFlow_ && dstFlow_->isBufferStore()));
-    assert(!hasCostOutput() || (dstCost_ && (dstCost_->isImageStore() || dstCost_->isBufferStore())));
+    assert(!hasCostOutput() || (dstCost_ && dstCost_->isImageStore()));
     assert(searchType_ != SearchType::MIN_SAD || !dstCost_);
-    assert(searchType_ != SearchType::RAW_SAD || (!dstFlow_ && dstCost_->isBufferStore()));
+    assert(searchType_ != SearchType::RAW_SAD || (!dstFlow_ && dstCost_->isImageStore()));
 
     SpecConstants specConstants = {
         32,
@@ -713,7 +703,6 @@ BlockMatch::SpecConstants BlockMatch::makeSpecConstants() const {
         hasFlowOutput() ? dstFlow_->width() : dstCost_->width(),
         hasFlowOutput() ? dstFlow_->height() : dstCost_->height(),
         hasFlowOutput() ? dstFlow_->stride() : 0,
-        hasCostOutput() ? dstCost_->stride() : 0,
     };
     return specConstants;
 }
@@ -746,7 +735,7 @@ void BlockMatch::bindAndDispatch(VkCommandBuffer cmdBuf) {
         setOutputStorage(cmdBuf, 2, dstFlow_);
     }
     if (hasCostOutput()) {
-        setOutputStorage(cmdBuf, dstCost_->isImageStore() ? 3 : 4, dstCost_);
+        setOutputStorage(cmdBuf, 3, dstCost_);
     }
 
     bindPipeline(cmdBuf);

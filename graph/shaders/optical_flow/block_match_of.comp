@@ -20,9 +20,6 @@ precision mediump image2D;
 #ifndef OUTPUT_COST
 #error OUTPUT_COST must be defined
 #endif
-#ifndef COST_IMAGE_STORE
-#error COST_IMAGE_STORE must be defined
-#endif
 
 #define MAX_SEARCH_RANGE (3)
 #define MACRO_BLOCK (5)  // This shader assumes the value is 5 for optimization purpose
@@ -88,7 +85,6 @@ layout(constant_id = 2) const int SEARCH_MODE = MIN_SAD;
 layout(constant_id = 3) const int OUTPUT_SIZE_X = 480;
 layout(constant_id = 4) const int OUTPUT_SIZE_Y = 270;
 layout(constant_id = 5) const uint STRIDE_DST_FLOW = 480;   // The number of elements in a row (x-axis) including padding
-layout(constant_id = 6) const uint STRIDE_DST_COST = 480;   // The number of elements in a row (x-axis) including padding
 
 layout (binding = 0) uniform mediump sampler2D imageTemplateSampler;
 layout (binding = 1) uniform mediump sampler2D imageSearchSampler;
@@ -100,13 +96,7 @@ layout (set = 0, binding = 2, std430) buffer _dst_flow_buf {
 #endif
 
 #if OUTPUT_COST
-#if COST_IMAGE_STORE
 layout(set=0, binding=3, r16ui) uniform writeonly uimage2D dst_cost_img;
-#else
-layout (set = 0, binding = 4, std430) buffer _dst_cost_buf {
-    uint16_t dst_cost_buf[];
-};
-#endif
 #endif
 
 layout (push_constant) uniform PushConstants {
@@ -159,11 +149,7 @@ void main()
 #if OUTPUT_COST
     if (SEARCH_MODE == RAW_SAD || SEARCH_MODE == MIN_SAD_COST) {
         // RAW_SAD is supported only when the configured search range is 0.
-#if COST_IMAGE_STORE
         imageStore(dst_cost_img, ivec2(pos), uvec4(cost_at_min, 0, 0, 0));
-#else
-        dst_cost_buf[STRIDE_DST_COST * pos.y + pos.x] = cost_at_min;
-#endif
     }
 #endif
 }

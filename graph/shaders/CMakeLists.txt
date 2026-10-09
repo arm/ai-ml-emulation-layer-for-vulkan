@@ -315,20 +315,17 @@ mlel_spv_optical_flow(downsample downsample_img)
 mlel_spv_optical_flow(mv_process_and_warp mv_process_and_warp_buf)
 mlel_spv_optical_flow(dense_warp dense_warp_img)
 mlel_spv_optical_flow(median_filter median_filter_img)
-mlel_spv_optical_flow(bilateral_filter bilateral_filter_img DEFINE IMAGE_STORE=1)
-mlel_spv_optical_flow(bilateral_filter bilateral_filter_buf DEFINE IMAGE_STORE=0)
-mlel_spv_optical_flow(subpixel_me subpixel_me_buf DEFINE DO_ACCUMULATE=0)
-mlel_spv_optical_flow(subpixel_me subpixel_me_acc_buf DEFINE DO_ACCUMULATE=1)
+mlel_spv_optical_flow(bilateral_filter bilateral_filter_img)
+mlel_spv_optical_flow(subpixel_me subpixel_me_img DEFINE DO_ACCUMULATE=0)
+mlel_spv_optical_flow(subpixel_me subpixel_me_acc_img DEFINE DO_ACCUMULATE=1)
 mlel_spv_optical_flow(mv_replace mv_replace_img DEFINE OUTPUT_COST=0)
 mlel_spv_optical_flow(mv_replace mv_replace_cost_img DEFINE OUTPUT_COST=1)
 mlel_spv_optical_flow(
-    block_match_of block_match_of_flow DEFINE OUTPUT_FLOW=1 OUTPUT_COST=0 COST_IMAGE_STORE=0)
+    block_match_of block_match_of_flow DEFINE OUTPUT_FLOW=1 OUTPUT_COST=0)
 mlel_spv_optical_flow(
-    block_match_of block_match_of_flow_cost_buf DEFINE OUTPUT_FLOW=1 OUTPUT_COST=1 COST_IMAGE_STORE=0)
+    block_match_of block_match_of_flow_cost_img DEFINE OUTPUT_FLOW=1 OUTPUT_COST=1)
 mlel_spv_optical_flow(
-    block_match_of block_match_of_flow_cost_img DEFINE OUTPUT_FLOW=1 OUTPUT_COST=1 COST_IMAGE_STORE=1)
-mlel_spv_optical_flow(
-    block_match_of block_match_of_cost_buf DEFINE OUTPUT_FLOW=0 OUTPUT_COST=1 COST_IMAGE_STORE=0)
+    block_match_of block_match_of_cost_img DEFINE OUTPUT_FLOW=0 OUTPUT_COST=1)
 
 # Generate independently compiled SPIR-V modules and their lookup registry
 mlel_generate_spv_library()

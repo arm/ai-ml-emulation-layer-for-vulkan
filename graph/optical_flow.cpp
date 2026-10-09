@@ -265,8 +265,8 @@ void OpticalFlow::makeMotionEstimationBlocks() {
             if (config_.useMvInput) {
                 searchType = SearchType::MIN_SAD_COST;
                 minCostBlockMatch_ =
-                    makeImage(Image::Usage::BufferStoreImageSample, pyramidDimensions_[level], VK_FORMAT_R16_UINT,
-                              VK_IMAGE_TILING_LINEAR, std::string("blockmatch_cost_L") + levelStr);
+                    makeImage(Image::Usage::ImageStoreSample, pyramidDimensions_[level], VK_FORMAT_R16_UINT,
+                              VK_IMAGE_TILING_OPTIMAL, std::string("blockmatch_cost_L") + levelStr);
                 costOut = minCostBlockMatch_;
             } else if (config_.outputCost) {
                 searchType = SearchType::MIN_SAD_COST;
@@ -279,7 +279,7 @@ void OpticalFlow::makeMotionEstimationBlocks() {
             dsBlocksTemplate_[level].image, block.blockMatchOut, costOut, std::string("BlockMatch_L") + levelStr);
 
         // Subpixel motion estimation
-        block.subpixelOut = createFlowMem(Image::Usage::BufferStoreImageSample, "subpixel");
+        block.subpixelOut = createFlowMem(Image::Usage::ImageStoreSample, "subpixel");
         block.subpixelMEPipeline = makePipeline<SubpixelME>(
             motionEstimationPipelines_, block.warpedImage, dsBlocksTemplate_[level].image, block.blockMatchOut,
             block.upscaledFlow, block.subpixelOut, accumulatePrevFlow, std::string("SubpixelME_L") + levelStr);
@@ -302,7 +302,7 @@ void OpticalFlow::makeMotionEstimationBlocks() {
         if (config_.performanceLevel != PerformanceLevel::FAST) {
             // joint bilateral filter
             if (block.bilateralFilterOut == nullptr) {
-                block.bilateralFilterOut = createFlowMem(Image::Usage::BufferStoreImageSample, "bilatF");
+                block.bilateralFilterOut = createFlowMem(Image::Usage::ImageStoreSample, "bilatF");
             }
 
             float bilateralFilterOutputScale = 1.0f;
@@ -330,8 +330,8 @@ void OpticalFlow::makeReplaceWithMvInput() {
                                 warpedByMvInputImage_, 1.f / outputFlowScale_, std::string("DenseWarp_L") + levelStr);
 
     // calculate cost at MV input
-    costAtMvInput_ = makeImage(Image::Usage::BufferStoreImageSample, pyramidDimensions_[level], VK_FORMAT_R16_UINT,
-                               VK_IMAGE_TILING_LINEAR, std::string("costAtMVInput_L") + levelStr);
+    costAtMvInput_ = makeImage(Image::Usage::ImageStoreSample, pyramidDimensions_[level], VK_FORMAT_R16_UINT,
+                               VK_IMAGE_TILING_OPTIMAL, std::string("costAtMVInput_L") + levelStr);
     rawSad_ = makePipeline<BlockMatch>(motionEstimationPipelines_, SearchType::RAW_SAD, 0, warpedByMvInputImage_,
                                        dsBlocksTemplate_[level].image, nullptr, costAtMvInput_,
                                        std::string("BlockMatch_L") + levelStr);
