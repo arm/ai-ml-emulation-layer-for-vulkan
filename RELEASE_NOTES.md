@@ -14,6 +14,7 @@
 
 - Optimized tensor read/write bounds checks while retaining out-of-bounds
   handling.
+- Avoided widening unsigned 32-bit tensor coordinates for bounds comparisons.
 
 ### Bug Fixes
 
