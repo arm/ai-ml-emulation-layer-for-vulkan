@@ -30,6 +30,7 @@ Discovery and capability query
 
 - ``vkGetPhysicalDeviceQueueFamilyProperties``
 - ``vkGetPhysicalDeviceQueueFamilyProperties2``
+- ``vkGetPhysicalDeviceQueueFamilyProperties2KHR``
 - ``vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM``
 - ``vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM``
 - ``vkGetPhysicalDeviceQueueFamilyDataGraphEngineOperationPropertiesARM``
