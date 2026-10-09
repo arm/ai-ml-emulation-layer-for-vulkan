@@ -29,7 +29,7 @@ include-package-data = true
 where = ["pip_package"]
 
 [tool.setuptools.package-data]
-emulation_layer = ["deploy/**"]
+emulation_layer = ["binaries/**"]
 
 [tool.setuptools_scm]
 fallback_version = "0.11.0"
@@ -42,6 +42,10 @@ managed = true
 package = false
 
 [dependency-groups]
+test = [
+    "pytest==9.0.3",
+    "pytest-xdist==3.8.0",
+]
 tooling = [
     "argcomplete==3.6.2",
     "breathe==4.36.0",
