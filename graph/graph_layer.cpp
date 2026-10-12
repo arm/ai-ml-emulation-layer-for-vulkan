@@ -438,6 +438,8 @@ class GraphLayer : public VulkanLayerImpl {
             {"vkGetPhysicalDeviceQueueFamilyProperties", PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyProperties)},
             {"vkGetPhysicalDeviceQueueFamilyProperties2",
              PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyProperties2)},
+            {"vkGetPhysicalDeviceQueueFamilyProperties2KHR",
+             PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyProperties2KHR)},
             {"vkGetPhysicalDeviceFeatures2", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2)},
             {"vkGetPhysicalDeviceFeatures2KHR", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2KHR)},
             {"vkGetPhysicalDeviceToolPropertiesEXT", PFN_vkVoidFunction(vkGetPhysicalDeviceToolPropertiesEXT)},
@@ -533,6 +535,8 @@ class GraphLayer : public VulkanLayerImpl {
             {"vkGetPhysicalDeviceQueueFamilyProperties", PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyProperties)},
             {"vkGetPhysicalDeviceQueueFamilyProperties2",
              PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyProperties2)},
+            {"vkGetPhysicalDeviceQueueFamilyProperties2KHR",
+             PFN_vkVoidFunction(vkGetPhysicalDeviceQueueFamilyProperties2KHR)},
             {"vkGetPhysicalDeviceFeatures2", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2)},
             {"vkGetPhysicalDeviceFeatures2KHR", PFN_vkVoidFunction(vkGetPhysicalDeviceFeatures2KHR)},
             {"vkGetPhysicalDeviceToolPropertiesEXT", PFN_vkVoidFunction(vkGetPhysicalDeviceToolPropertiesEXT)},
@@ -730,6 +734,12 @@ class GraphLayer : public VulkanLayerImpl {
                 pQueueFamilyProperties++;
             }
         }
+    }
+
+    static void VKAPI_CALL
+    vkGetPhysicalDeviceQueueFamilyProperties2KHR(VkPhysicalDevice physicalDevice, uint32_t *pQueueFamilyPropertyCount,
+                                                 VkQueueFamilyProperties2 *pQueueFamilyProperties) {
+        vkGetPhysicalDeviceQueueFamilyProperties2(physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
     }
 
     static void VKAPI_CALL vkGetPhysicalDeviceQueueFamilyProperties2(VkPhysicalDevice physicalDevice,

@@ -58,6 +58,7 @@
                     "vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM",
                     "vkGetPhysicalDeviceQueueFamilyProperties",
                     "vkGetPhysicalDeviceQueueFamilyProperties2",
+                    "vkGetPhysicalDeviceQueueFamilyProperties2KHR",
                     "vkGetPhysicalDeviceToolPropertiesEXT",
                     "vkQueueSubmit",
                     "vkQueueSubmit2",
