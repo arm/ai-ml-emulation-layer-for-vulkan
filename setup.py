@@ -4,7 +4,6 @@
 #
 import os
 import pathlib
-import platform
 import shutil
 import sys
 
@@ -21,8 +20,12 @@ except ImportError:
 
 EMULATION_LAYER_DIR = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(EMULATION_LAYER_DIR))
+sys.path.insert(0, str(EMULATION_LAYER_DIR / "pip_package"))
 
-SKIP_NATIVE_BUILD_ENV = "EMULATION_LAYER_SKIP_NATIVE_BUILD"
+from wheel_build import STAGED_MODE  # noqa: E402
+from wheel_build import copy_staged_payload  # noqa: E402
+from wheel_build import get_staging_dir  # noqa: E402
+from wheel_build import get_wheel_build_mode  # noqa: E402
 
 
 class Build(setuptools_build):
@@ -34,21 +37,12 @@ class Build(setuptools_build):
 class BuildPy(build_py):
     def run(self):
         super().run()
+        native_install_dir = (
+            pathlib.Path(self.build_lib) / "emulation_layer" / "binaries"
+        )
 
-        manifest_dir = (
-            pathlib.Path("bin")
-            if platform.system() == "Windows"
-            else pathlib.Path("share") / "vulkan" / "explicit_layer.d"
-        )
-        staged_manifest = (
-            EMULATION_LAYER_DIR
-            / "pip_package"
-            / "emulation_layer"
-            / "deploy"
-            / manifest_dir
-            / "VkLayer_Graph.json"
-        )
-        if os.environ.get(SKIP_NATIVE_BUILD_ENV) == "1" or staged_manifest.is_file():
+        if get_wheel_build_mode() == STAGED_MODE:
+            copy_staged_payload(get_staging_dir(), native_install_dir)
             return
 
         dependency_dir = EMULATION_LAYER_DIR.parent.parent / "dependencies"
@@ -68,7 +62,6 @@ class BuildPy(build_py):
 
         build_command = self.get_finalized_command("build")
         native_build_dir = pathlib.Path(build_command.build_temp) / "emulation_layer"
-        native_install_dir = pathlib.Path(self.build_lib) / "emulation_layer" / "deploy"
 
         result = build_emulation_layer(
             [

@@ -7,7 +7,7 @@ import sys
 
 
 def get_deploy_paths():
-    base = os.path.join(os.path.dirname(__file__), "deploy")
+    base = os.path.join(os.path.dirname(__file__), "binaries")
     linux_library_paths = [
         path
         for path in (os.path.join(base, "lib64"), os.path.join(base, "lib"))

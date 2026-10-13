@@ -158,7 +158,7 @@ Sync the locked tooling dependencies, then run the unit tests on Linux with GCC
 coverage instrumentation:
 
 ```bash
-uv sync --locked --no-install-project --no-default-groups --group tooling
+uv sync --locked --no-install-project --no-default-groups --group test --group tooling
 uv run --no-sync python scripts/build.py --coverage --build-dir build-coverage
 ```
 
@@ -534,6 +534,18 @@ repository root:
 ```bash
 pip install .
 ```
+
+After either installation, print the platform-specific commands that configure
+the Vulkan® Loader and enable the graph layer before the tensor layer:
+
+```shell
+emulation_layer
+```
+
+Run the printed commands in the current shell before starting the Vulkan®
+application. The command locates the native libraries and layer manifests
+bundled in the installed package; their installation paths do not need to be
+configured manually.
 
 ## Known Limitations
 

@@ -9,6 +9,10 @@
 - Locked development tooling with `uv.lock` in place of the tooling
   requirements file.
 - Added GCC code coverage reporting for native Linux unit-test builds.
+- Added explicit source and staged wheel modes so release wheels reuse validated
+  native install trees without rebuilding them or modifying package sources.
+- Standardized the installed wheel payload directory as `binaries`, matching the
+  other native SDK pip packages.
 
 ### Performance
 
