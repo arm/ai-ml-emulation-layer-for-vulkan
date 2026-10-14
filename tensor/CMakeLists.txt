@@ -14,12 +14,13 @@ target_compile_options(MLELTensor PRIVATE ${VMEL_COMPILE_OPTIONS})
 mlel_enable_coverage(MLELTensor)
 
 target_sources(MLELTensor PRIVATE
-    tensor_processor.cpp
+    spirv_glsl_tensor_buffer.cpp
+    spirv_tensor_lowering.cpp
     tensor_arm.cpp
-    tensor_log.cpp
-    tensor_view.cpp
     tensor_descriptor.cpp
-    spirv_glsl_tensor_buffer.cpp)
+    tensor_log.cpp
+    tensor_processor.cpp
+    tensor_view.cpp)
 
 target_link_libraries(MLELTensor PUBLIC
     VkLayer_Common

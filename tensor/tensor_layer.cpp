@@ -18,7 +18,9 @@
 #include "version.hpp"
 
 #include <limits>
+#include <map>
 #include <memory>
+#include <utility>
 #include <variant>
 
 using namespace mlsdk::el::log;
@@ -39,8 +41,9 @@ class TensorDevice : public Device {
     TensorDevice(const std::shared_ptr<PhysicalDevice> &_physicalDevice, VkDevice _device,
                  PFN_vkGetInstanceProcAddr _gipr, PFN_vkGetDeviceProcAddr _gdpr,
                  const VkAllocationCallbacks *_callbacks)
-        : Device(_physicalDevice, _device, _gipr, _gdpr, _callbacks) {}
+        : Device(_physicalDevice, _device, _gipr, _gdpr, _callbacks), loweringMode{getTensorLoweringMode()} {}
 
+    const TensorLoweringMode loweringMode;
     bool uniformBufferUpdateAfterBindEnabled = false;
 };
 
@@ -350,17 +353,24 @@ class TensorLayer : public VulkanLayerImpl {
                                                     const VkAllocationCallbacks *pAllocator,
                                                     VkShaderModule *pShaderModule) {
         auto handle = VulkanLayerImpl::getHandle(device);
+        const auto mode = handle->loweringMode;
+        if (mode == TensorLoweringMode::DirectSpirv &&
+            (pCreateInfo == nullptr || pCreateInfo->pCode == nullptr || pCreateInfo->codeSize == 0 ||
+             pCreateInfo->codeSize % sizeof(uint32_t) != 0)) {
+            tensorLog(Severity::Error) << "Malformed SPIR-V shader module size or code pointer" << std::endl;
+            return VK_ERROR_UNKNOWN;
+        }
         if (pCreateInfo != nullptr && pCreateInfo->pCode != nullptr && pCreateInfo->codeSize > 0) {
             const uint32_t *spirvCode = pCreateInfo->pCode;
             const std::size_t spirvSize = pCreateInfo->codeSize / sizeof(uint32_t);
-            const std::size_t hashCode = spirvHash(spirvCode, spirvSize);
+            const auto cacheKey = std::make_pair(mode, spirvHash(spirvCode, spirvSize));
             bool hasCacheEntry;
             std::size_t shaderModuleCodeSize = 0;
             const uint32_t *shaderModulepCode = nullptr;
 
             {
                 scopedMutex l(globalMutex);
-                const auto it = spirvCache.find(hashCode);
+                const auto it = spirvCache.find(cacheKey);
                 hasCacheEntry = (it != spirvCache.end());
                 if (hasCacheEntry) {
                     shaderModuleCodeSize = it->second.size() * sizeof(uint32_t);
@@ -370,13 +380,13 @@ class TensorLayer : public VulkanLayerImpl {
 
             if (!hasCacheEntry) {
                 std::vector<uint32_t> spirvSource = {spirvCode, spirvCode + spirvSize};
-                const TensorProcessor tensorProcessor(std::move(spirvSource));
+                const TensorProcessor tensorProcessor(std::move(spirvSource), mode);
                 if (!tensorProcessor.isValidShader()) {
                     return VK_ERROR_UNKNOWN;
                 }
                 if (tensorProcessor.isTensorComputeShader()) {
                     scopedMutex l(globalMutex);
-                    auto &spirvSourceNew = spirvCache[hashCode];
+                    auto &spirvSourceNew = spirvCache[cacheKey];
                     spirvSourceNew = tensorProcessor.getNewSpirv();
                     shaderModuleCodeSize = spirvSourceNew.size() * sizeof(uint32_t);
                     shaderModulepCode = spirvSourceNew.data();
@@ -406,6 +416,7 @@ class TensorLayer : public VulkanLayerImpl {
         auto handle = VulkanLayerImpl::getHandle(device);
 
         std::vector<VkComputePipelineCreateInfo> createInfosNew;
+        const auto mode = handle->loweringMode;
         std::map<const VkShaderModuleCreateInfo *, VkShaderModule>
             shaderCache; // avoid creating multiple shader modules for the same shader
 
@@ -420,6 +431,12 @@ class TensorLayer : public VulkanLayerImpl {
             // Find VkShaderModuleCreateInfo in pNext chain
             const auto *pShaderCreateInfo = findType<VkShaderModuleCreateInfo>(
                 shaderStageCreateInfo.pNext, VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);
+            if (mode == TensorLoweringMode::DirectSpirv && pShaderCreateInfo != nullptr &&
+                (pShaderCreateInfo->pCode == nullptr || pShaderCreateInfo->codeSize == 0 ||
+                 pShaderCreateInfo->codeSize % sizeof(uint32_t) != 0)) {
+                tensorLog(Severity::Error) << "Malformed inline SPIR-V shader module size or code pointer" << std::endl;
+                return VK_ERROR_UNKNOWN;
+            }
             if (pShaderCreateInfo == nullptr || pShaderCreateInfo->pCode == nullptr ||
                 pShaderCreateInfo->codeSize == 0) {
                 continue;
@@ -434,7 +451,7 @@ class TensorLayer : public VulkanLayerImpl {
             const uint32_t *spirvCode = pShaderCreateInfo->pCode;
             const std::size_t spirvSize = pShaderCreateInfo->codeSize / sizeof(uint32_t);
             std::vector<uint32_t> spirvSource = {spirvCode, spirvCode + spirvSize};
-            const TensorProcessor tensorProcessor(std::move(spirvSource));
+            const TensorProcessor tensorProcessor(std::move(spirvSource), mode);
             if (!tensorProcessor.isValidShader()) {
                 return VK_ERROR_UNKNOWN;
             }
@@ -450,8 +467,8 @@ class TensorLayer : public VulkanLayerImpl {
             // Replace tensors with buffers in shader
             {
                 scopedMutex l(globalMutex);
-                std::size_t hashCode = spirvHash(spirvCode, spirvSize);
-                auto &spirvSourceNew = spirvCache[hashCode];
+                const auto cacheKey = std::make_pair(mode, spirvHash(spirvCode, spirvSize));
+                auto &spirvSourceNew = spirvCache[cacheKey];
                 if (spirvSourceNew.empty()) {
                     spirvSourceNew = tensorProcessor.getNewSpirv();
                 }
@@ -946,7 +963,7 @@ class TensorLayer : public VulkanLayerImpl {
         return result;
     }
 
-    static inline std::unordered_map<std::size_t, std::vector<uint32_t>> spirvCache;
+    static inline std::map<std::pair<TensorLoweringMode, std::size_t>, std::vector<uint32_t>> spirvCache;
 
     static inline MemoryAliasing memoryAliasing;
     static bool isUniformBufferUpdateAfterBindEnabled(const VkDeviceCreateInfo *createInfo) {
