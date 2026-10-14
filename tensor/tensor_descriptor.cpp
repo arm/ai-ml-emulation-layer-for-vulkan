@@ -5,6 +5,7 @@
  */
 
 #include "tensor_descriptor.hpp"
+#include "tensor_arm.hpp"
 
 namespace mlsdk::el::layer {
 

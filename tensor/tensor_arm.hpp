@@ -7,6 +7,7 @@
 #pragma once
 
 #include "mlel/vulkan_layer.hpp"
+#include "tensor_descriptor_layout.hpp"
 
 #include <unordered_map>
 #include <vector>
@@ -26,7 +27,7 @@ class TensorCopyPipeline;
 
 class TensorARM {
   public:
-    static constexpr size_t TENSOR_MAX_DIMENSIONS = 6;
+    static constexpr size_t TENSOR_MAX_DIMENSIONS = maxTensorRank;
 
     class TensorInfo {
       public:

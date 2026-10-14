@@ -4,6 +4,7 @@
  *
  */
 
+#include "shaders/precompiled_shaders.hpp"
 #include "spirv_tensor_lowering.hpp"
 #include "tensor_processor.hpp"
 #include "test_utils.hpp"
@@ -11,6 +12,9 @@
 #include <gtest/gtest.h>
 #include <spirv-tools/libspirv.hpp>
 
+#include <algorithm>
+#include <cstddef>
+#include <map>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -54,7 +58,12 @@ spvtools::MessageConsumer captureDiagnostic(std::string &diagnostic) {
     };
 }
 
-std::vector<uint32_t> tensorShader(const std::string &access = {}) {
+std::vector<uint32_t> tensorShader(const std::string &access = {}, uint32_t rank = 1, bool specialised = false,
+                                   const std::string &decorations = {}) {
+    std::string zeros;
+    for (uint32_t i = 0; i < rank; ++i) {
+        zeros += " %zero";
+    }
     return assemble(R"(
 OpCapability Shader
 OpCapability TensorsARM
@@ -64,16 +73,21 @@ OpEntryPoint GLCompute %main "main" %data
 OpExecutionMode %main LocalSize 1 1 1
 OpDecorate %data DescriptorSet 0
 OpDecorate %data Binding 0
+)" + decorations + std::string(specialised ? "OpDecorate %rank SpecId 9\n" : "") +
+                    R"(
 %void = OpTypeVoid
 %function = OpTypeFunction %void
 %uint = OpTypeInt 32 0
 %zero = OpConstant %uint 0
 %one = OpConstant %uint 1
-%tensor = OpTypeTensorARM %uint %one
+)" + "%rank = " + (specialised ? "OpSpecConstant" : "OpConstant") +
+                    " %uint " + std::to_string(rank) + R"(
+%tensor = OpTypeTensorARM %uint %rank
 %pointer = OpTypePointer UniformConstant %tensor
 %data = OpVariable %pointer UniformConstant
-%array = OpTypeArray %uint %one
-%coords = OpConstantComposite %array %zero
+%array = OpTypeArray %uint %rank
+)" + (specialised ? "%coords = OpSpecConstantComposite %array" : "%coords = OpConstantComposite %array") +
+                    zeros + R"(
 %main = OpFunction %void None %function
 %entry = OpLabel
 %loaded = OpLoad %tensor %data
@@ -95,7 +109,26 @@ TEST(TensorSpirvLowering, PreservesNonTensorModuleExactly) {
     EXPECT_TRUE(spvtools::SpirvTools(SPV_ENV_VULKAN_1_3).Validate(output));
 }
 
-TEST(TensorSpirvLowering, RejectsTensorTypeAndEachAccess) {
+void expectLowered(std::vector<uint32_t> &spirv) {
+    bool loweredTensorCompute = false;
+    std::string diagnostic;
+    ASSERT_TRUE(lowerTensorSpirv(spirv, loweredTensorCompute, captureDiagnostic(diagnostic))) << diagnostic;
+    EXPECT_TRUE(loweredTensorCompute);
+    EXPECT_TRUE(diagnostic.empty());
+    spvtools::SpirvTools tools(SPV_ENV_VULKAN_1_3);
+    tools.SetMessageConsumer(
+        [](spv_message_level_t, const char *, const spv_position_t &position, const char *message) {
+            ADD_FAILURE() << "Instruction " << position.index << ": " << message;
+        });
+    ASSERT_TRUE(tools.Validate(spirv));
+    auto unchanged = spirv;
+    ASSERT_TRUE(lowerTensorSpirv(unchanged, loweredTensorCompute, captureDiagnostic(diagnostic))) << diagnostic;
+    EXPECT_FALSE(loweredTensorCompute);
+    EXPECT_TRUE(diagnostic.empty());
+    EXPECT_EQ(unchanged, spirv);
+}
+
+TEST(TensorSpirvLowering, LowersTensorTypeAndEachScalarAccess) {
     for (const auto &[access, name] : std::vector<std::pair<std::string, std::string>>{
              {"", "OpTypeTensorARM"},
              {"%value = OpTensorReadARM %uint %loaded %coords", "OpTensorReadARM"},
@@ -103,16 +136,11 @@ TEST(TensorSpirvLowering, RejectsTensorTypeAndEachAccess) {
              {"%size = OpTensorQuerySizeARM %uint %loaded %zero", "OpTensorQuerySizeARM"}}) {
         SCOPED_TRACE(name);
         auto spirv = tensorShader(access);
-        bool loweredTensorCompute = true;
-        std::string diagnostic;
-        EXPECT_FALSE(lowerTensorSpirv(spirv, loweredTensorCompute, captureDiagnostic(diagnostic)));
-        EXPECT_FALSE(loweredTensorCompute);
-        EXPECT_TRUE(spirv.empty());
-        EXPECT_NE(diagnostic.find("Unsupported TensorARM"), std::string::npos);
+        ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
     }
 }
 
-TEST(TensorSpirvLowering, RejectsTensorDeclarationsWithoutAccesses) {
+TEST(TensorSpirvLowering, RemovesUnusedTensorDeclarations) {
     for (const std::string capability :
          {"", "OpCapability TensorsARM\n",
           "OpCapability TensorsARM\nOpCapability StorageTensorArrayDynamicIndexingARM\n",
@@ -120,13 +148,150 @@ TEST(TensorSpirvLowering, RejectsTensorDeclarationsWithoutAccesses) {
         auto shader = plainShader;
         shader.insert(shader.find("OpMemoryModel"), capability + "OpExtension \"SPV_ARM_tensors\"\n");
         auto spirv = assemble(shader);
+        ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+    }
+}
+
+TEST(TensorSpirvLowering, KeepsTensorAccessRestrictionsOffDescriptorBuffers) {
+    for (const auto &[decoration, access] : std::vector<std::pair<std::string, std::string>>{
+             {"NonWritable", "%value = OpTensorReadARM %uint %loaded %coords"},
+             {"NonReadable", "OpTensorWriteARM %loaded %coords %one"}}) {
+        SCOPED_TRACE(decoration);
+        auto spirv = tensorShader(access + "\n%size = OpTensorQuerySizeARM %uint %loaded %zero", 1, false,
+                                  "OpDecorate %data " + decoration + "\n");
+        ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+        std::string text;
+        ASSERT_TRUE(spvtools::SpirvTools(SPV_ENV_VULKAN_1_3).Disassemble(spirv, &text));
+        EXPECT_EQ(text.find("NonReadable"), std::string::npos);
+        EXPECT_EQ(text.find("NonWritable"), std::string::npos);
+        EXPECT_NE(text.find("DescriptorSet 0"), std::string::npos);
+        EXPECT_NE(text.find("Binding 0"), std::string::npos);
+    }
+}
+
+TEST(TensorSpirvLowering, RejectsUnsupportedTensorMemoryQualifiers) {
+    for (const std::string decoration : {"Coherent", "Volatile"}) {
+        SCOPED_TRACE(decoration);
+        auto spirv = tensorShader("%value = OpTensorReadARM %uint %loaded %coords", 1, false,
+                                  "OpDecorate %data " + decoration + "\n");
         bool loweredTensorCompute = true;
         std::string diagnostic;
         EXPECT_FALSE(lowerTensorSpirv(spirv, loweredTensorCompute, captureDiagnostic(diagnostic)));
         EXPECT_FALSE(loweredTensorCompute);
         EXPECT_TRUE(spirv.empty());
-        EXPECT_NE(diagnostic.find("Unsupported TensorARM"), std::string::npos);
+        EXPECT_NE(diagnostic.find("decoration"), std::string::npos);
     }
+}
+
+TEST(TensorSpirvLowering, LowersFixedRanksAndReusesAccessFunctions) {
+    for (uint32_t rank = 1; rank <= 6; ++rank) {
+        SCOPED_TRACE(rank);
+        auto spirv = tensorShader(R"(
+%a = OpTensorReadARM %uint %loaded %coords
+%b = OpTensorReadARM %uint %loaded %coords
+OpTensorWriteARM %loaded %coords %a
+OpTensorWriteARM %loaded %coords %b
+)",
+                                  rank);
+        ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+        size_t functions = 0;
+        for (size_t offset = 5; offset < spirv.size(); offset += spirv[offset] >> 16) {
+            functions += (spirv[offset] & 0xffff) == static_cast<uint32_t>(spv::OpFunction);
+        }
+        EXPECT_EQ(functions, 3u); // Entry point, shared read helper, shared write helper.
+    }
+}
+
+TEST(TensorSpirvLowering, LowersGatherAndScatterVariants) {
+    size_t variants = 0;
+    for (const auto &[name, module] : compute::precompiledSpirvModules) {
+        if (name.rfind("gather_", 0) != 0 && name.rfind("scatter_", 0) != 0) {
+            continue;
+        }
+        SCOPED_TRACE(name);
+        const auto &[words, size] = module;
+        std::vector<uint32_t> spirv{words, words + size};
+        ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+        ++variants;
+    }
+    EXPECT_EQ(variants, 16u);
+}
+
+TEST(TensorSpirvLowering, RejectsSpecialisedRank) {
+    auto spirv = tensorShader("", 1, true);
+    bool loweredTensorCompute = true;
+    std::string diagnostic;
+    EXPECT_FALSE(lowerTensorSpirv(spirv, loweredTensorCompute, captureDiagnostic(diagnostic)));
+    EXPECT_FALSE(loweredTensorCompute);
+    EXPECT_TRUE(spirv.empty());
+    EXPECT_NE(diagnostic.find("literal"), std::string::npos);
+}
+
+TEST(TensorSpirvLowering, RejectsMalformedRankOperands) {
+    const auto valid = tensorShader();
+    size_t tensorOffset = 0;
+    uint32_t loadedTensor = 0;
+    for (size_t offset = 5; offset < valid.size(); offset += valid[offset] >> 16) {
+        const auto opcode = static_cast<spv::Op>(valid[offset] & 0xffff);
+        if (opcode == spv::Op::OpTypeTensorARM) {
+            tensorOffset = offset;
+        } else if (opcode == spv::Op::OpLoad) {
+            loadedTensor = valid[offset + 2];
+        }
+    }
+    ASSERT_NE(tensorOffset, 0u);
+    ASSERT_NE(loadedTensor, 0u);
+    for (const auto &[rank, reason] : std::vector<std::pair<uint32_t, std::string>>{
+             {valid[3], "Undefined TensorARM operand"}, {loadedTensor, "Expected an integer TensorARM operand"}}) {
+        SCOPED_TRACE(reason);
+        auto malformed = valid;
+        malformed[3] = std::max(malformed[3], rank + 1);
+        malformed[tensorOffset + 3] = rank;
+        bool loweredTensorCompute = true;
+        std::string diagnostic;
+        EXPECT_FALSE(lowerTensorSpirv(malformed, loweredTensorCompute, captureDiagnostic(diagnostic)));
+        EXPECT_FALSE(loweredTensorCompute);
+        EXPECT_TRUE(malformed.empty());
+        // Debug validation can diagnose malformed input before the lowering's own checks.
+        EXPECT_FALSE(diagnostic.empty());
+    }
+}
+
+TEST(TensorSpirvLowering, PreservesDescriptorLayoutAndUsesWideByteOffsets) {
+    auto spirv = tensorShader(R"(
+%value = OpTensorReadARM %uint %loaded %coords
+OpTensorWriteARM %loaded %coords %value
+)",
+                              6);
+    ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+    std::map<uint32_t, std::map<uint32_t, uint32_t>> memberOffsets;
+    std::map<uint32_t, uint32_t> arrayStrides;
+    uint32_t wideType = 0;
+    uint32_t metadataArray = 0;
+    size_t multiplies = 0;
+    for (size_t offset = 5; offset < spirv.size(); offset += spirv[offset] >> 16) {
+        const auto *words = spirv.data() + offset;
+        const auto opcode = static_cast<spv::Op>(words[0] & 0xffff);
+        if (opcode == spv::OpTypeInt && words[2] == 64 && words[3] == 0) {
+            wideType = words[1];
+        } else if (opcode == spv::OpMemberDecorate && words[3] == spv::DecorationOffset) {
+            memberOffsets[words[1]][words[2]] = words[4];
+        } else if (opcode == spv::OpTypeArray && words[2] == wideType) {
+            metadataArray = words[1];
+        } else if (opcode == spv::OpDecorate && words[2] == spv::DecorationArrayStride) {
+            arrayStrides[words[1]] = words[3];
+        } else if (opcode == spv::OpIMul || opcode == spv::OpIAdd) {
+            EXPECT_NE(wideType, 0u);
+            EXPECT_EQ(words[1], wideType);
+            multiplies += opcode == spv::OpIMul;
+        }
+    }
+    EXPECT_NE(metadataArray, 0u);
+    EXPECT_EQ(arrayStrides[metadataArray], 16u);
+    EXPECT_EQ(multiplies, 12u); // Six strides per access.
+    const std::map<uint32_t, uint32_t> descriptorOffsets{{0, 0}, {1, 16}, {2, 112}};
+    EXPECT_TRUE(std::any_of(memberOffsets.begin(), memberOffsets.end(),
+                            [&](const auto &entry) { return entry.second == descriptorOffsets; }));
 }
 
 TEST(TensorSpirvLowering, RejectsMalformedBinaries) {
@@ -147,6 +312,15 @@ TEST(TensorSpirvLowering, RejectsMalformedBinaries) {
     auto malformedTensor = tensorShader();
     malformedTensor.push_back(0);
     malformed.push_back(malformedTensor);
+    auto missingMemoryModel = tensorShader();
+    for (size_t offset = 5; offset < missingMemoryModel.size(); offset += missingMemoryModel[offset] >> 16) {
+        if ((missingMemoryModel[offset] & 0xffff) == static_cast<uint32_t>(spv::OpMemoryModel)) {
+            const auto instruction = missingMemoryModel.begin() + static_cast<std::ptrdiff_t>(offset);
+            missingMemoryModel.erase(instruction, instruction + 3);
+            break;
+        }
+    }
+    malformed.push_back(missingMemoryModel);
     for (const auto &input : malformed) {
         auto output = input;
         bool loweredTensorCompute = true;
@@ -197,10 +371,18 @@ TEST(TensorLoweringMode, ZeroUsesGlslToSpirv) {
     EXPECT_TRUE(spvtools::SpirvTools(SPV_ENV_VULKAN_1_3).Validate(processor.getNewSpirv()));
 }
 
-TEST(TensorLoweringMode, OneRejectsTensorWithoutFallback) {
+TEST(TensorLoweringMode, OneUsesDirectLowering) {
     const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
     EXPECT_EQ(getTensorLoweringMode(), TensorLoweringMode::DirectSpirv);
-    const TensorProcessor processor(tensorShader());
+    const TensorProcessor supported(tensorShader());
+    ASSERT_TRUE(supported.isValidShader());
+    EXPECT_TRUE(supported.isTensorComputeShader());
+    auto spirv = supported.getNewSpirv();
+    bool loweredTensorCompute = true;
+    EXPECT_TRUE(lowerTensorSpirv(spirv, loweredTensorCompute, {}));
+    EXPECT_FALSE(loweredTensorCompute);
+    EXPECT_EQ(spirv, supported.getNewSpirv());
+    const TensorProcessor processor(tensorShader("", 1, true));
     EXPECT_FALSE(processor.isValidShader());
     EXPECT_TRUE(processor.getNewSpirv().empty());
 }
