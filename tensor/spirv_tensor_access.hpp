@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <tuple>
 
 namespace mlsdk::el::layer::tensor_spirv {
@@ -29,7 +30,8 @@ inline std::unique_ptr<Instruction> makeInstruction(IRContext &context, spv::Op 
 
 struct TensorType {
     uint32_t elementType;
-    uint32_t rank;
+    uint32_t rankId;
+    std::optional<uint32_t> literalRank;
 };
 
 struct AccessState {
@@ -40,7 +42,7 @@ struct AccessState {
     uint32_t descriptorType;
     uint32_t descriptorPointerType;
     uint32_t interfacePointerType;
-    // Operation, element type, coordinate-array type, and rank identify a helper.
+    // Operation, element type, coordinate-array type, and rank ID identify a helper.
     std::map<std::tuple<spv::Op, uint32_t, uint32_t, uint32_t>, uint32_t> helpers;
 };
 

@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 #include <spirv-tools/libspirv.hpp>
+#include <spirv-tools/optimizer.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -18,6 +19,8 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace mlsdk::el::tests {
@@ -86,8 +89,8 @@ OpDecorate %data Binding 0
 %pointer = OpTypePointer UniformConstant %tensor
 %data = OpVariable %pointer UniformConstant
 %array = OpTypeArray %uint %rank
-)" + (specialised ? "%coords = OpSpecConstantComposite %array" : "%coords = OpConstantComposite %array") +
-                    zeros + R"(
+)" + (specialised ? "%coords = OpConstantNull %array" : "%coords = OpConstantComposite %array" + zeros) +
+                    R"(
 %main = OpFunction %void None %function
 %entry = OpLabel
 %loaded = OpLoad %tensor %data
@@ -217,14 +220,92 @@ TEST(TensorSpirvLowering, LowersGatherAndScatterVariants) {
     EXPECT_EQ(variants, 16u);
 }
 
-TEST(TensorSpirvLowering, RejectsSpecialisedRank) {
-    auto spirv = tensorShader("", 1, true);
-    bool loweredTensorCompute = true;
-    std::string diagnostic;
-    EXPECT_FALSE(lowerTensorSpirv(spirv, loweredTensorCompute, captureDiagnostic(diagnostic)));
-    EXPECT_FALSE(loweredTensorCompute);
-    EXPECT_TRUE(spirv.empty());
-    EXPECT_NE(diagnostic.find("literal"), std::string::npos);
+std::vector<uint32_t> specializationInstructions(const std::vector<uint32_t> &spirv) {
+    if (spirv.size() < 5) {
+        throw std::runtime_error("Truncated SPIR-V header");
+    }
+    std::vector<uint32_t> result;
+    for (size_t offset = 5; offset < spirv.size();) {
+        const auto wordCount = spirv[offset] >> 16;
+        // Check lengths before reading operands or copying instructions.
+        if (wordCount == 0 || wordCount > spirv.size() - offset) {
+            throw std::runtime_error("Invalid SPIR-V instruction length at word " + std::to_string(offset));
+        }
+        const auto opcode = static_cast<spv::Op>(spirv[offset] & 0xffff);
+        if (opcode == spv::Op::OpDecorate && wordCount < 3) {
+            throw std::runtime_error("Truncated OpDecorate at word " + std::to_string(offset));
+        }
+        if (opcode == spv::Op::OpSpecConstant || opcode == spv::Op::OpSpecConstantOp ||
+            opcode == spv::Op::OpSpecConstantComposite || opcode == spv::Op::OpSpecConstantTrue ||
+            opcode == spv::Op::OpSpecConstantFalse ||
+            (opcode == spv::Op::OpDecorate && spirv[offset + 2] == static_cast<uint32_t>(spv::DecorationSpecId))) {
+            result.insert(result.end(), spirv.data() + offset, spirv.data() + offset + wordCount);
+        }
+        offset += wordCount;
+    }
+    return result;
+}
+
+void expectSpecialized(const std::vector<uint32_t> &spirv,
+                       const std::unordered_map<uint32_t, std::vector<uint32_t>> &values) {
+    spvtools::Optimizer optimizer(SPV_ENV_VULKAN_1_3);
+    optimizer.RegisterPass(spvtools::CreateSetSpecConstantDefaultValuePass(values));
+    optimizer.RegisterPass(spvtools::CreateFreezeSpecConstantValuePass());
+    optimizer.RegisterPass(spvtools::CreateFoldSpecConstantOpAndCompositePass());
+    optimizer.RegisterPass(spvtools::CreateDeadBranchElimPass());
+    std::vector<uint32_t> specialized;
+    ASSERT_TRUE(optimizer.Run(spirv.data(), spirv.size(), &specialized));
+    EXPECT_TRUE(spvtools::SpirvTools(SPV_ENV_VULKAN_1_3).Validate(specialized));
+}
+
+TEST(TensorSpirvLowering, PreservesSpecialisedRank) {
+    const auto input = tensorShader(R"(
+%value = OpTensorReadARM %uint %loaded %coords
+OpTensorWriteARM %loaded %coords %value
+)",
+                                    1, true);
+    auto spirv = input;
+    ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+    EXPECT_EQ(specializationInstructions(spirv), specializationInstructions(input));
+    for (uint32_t rank = 1; rank <= 6; ++rank) {
+        SCOPED_TRACE(rank);
+        ASSERT_NO_FATAL_FAILURE(expectSpecialized(spirv, {{9, {rank}}}));
+    }
+}
+
+TEST(TensorSpirvLowering, LowersNumericScalarLayoutVariants) {
+    std::map<std::string_view, size_t> operators{{"cast", 0},    {"clamp", 0},   {"negate", 0},
+                                                 {"concat", 0},  {"slice", 0},   {"transpose", 0},
+                                                 {"reshape", 0}, {"reverse", 0}, {"tile", 0}};
+    for (const auto &[name, module] : compute::precompiledSpirvModules) {
+        const auto it = operators.find(name.substr(0, name.find('_')));
+        if (it == operators.end() || name.find("_bool") != std::string::npos ||
+            name.rfind("transpose_conv2d_", 0) == 0) {
+            continue;
+        }
+        SCOPED_TRACE(name);
+        const auto &[words, size] = module;
+        const std::vector<uint32_t> input(words, words + size);
+        auto spirv = input;
+        ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+        EXPECT_EQ(specializationInstructions(spirv), specializationInstructions(input));
+        ++it->second;
+    }
+    for (const auto &[name, variants] : operators) {
+        EXPECT_GT(variants, 0u) << name;
+    }
+}
+
+TEST(TensorSpirvLowering, PreservesIndependentReshapeRanks) {
+    const auto &[words, size] = compute::precompiledSpirvModules.at("reshape_float");
+    std::vector<uint32_t> spirv{words, words + size};
+    ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+    for (uint32_t inputRank = 1; inputRank <= 6; ++inputRank) {
+        for (uint32_t outputRank = 1; outputRank <= 6; ++outputRank) {
+            SCOPED_TRACE(std::to_string(inputRank) + " -> " + std::to_string(outputRank));
+            ASSERT_NO_FATAL_FAILURE(expectSpecialized(spirv, {{0, {inputRank}}, {1, {outputRank}}}));
+        }
+    }
 }
 
 TEST(TensorSpirvLowering, RejectsMalformedRankOperands) {
@@ -382,7 +463,7 @@ TEST(TensorLoweringMode, OneUsesDirectLowering) {
     EXPECT_TRUE(lowerTensorSpirv(spirv, loweredTensorCompute, {}));
     EXPECT_FALSE(loweredTensorCompute);
     EXPECT_EQ(spirv, supported.getNewSpirv());
-    const TensorProcessor processor(tensorShader("", 1, true));
+    const TensorProcessor processor(tensorShader("%values = OpTensorReadARM %array %loaded %coords"));
     EXPECT_FALSE(processor.isValidShader());
     EXPECT_TRUE(processor.getNewSpirv().empty());
 }
