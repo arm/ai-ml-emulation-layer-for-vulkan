@@ -100,8 +100,8 @@ TensorModule collectTensors(IRContext &context) {
         }
         const auto element = inst.GetSingleWordInOperand(0);
         const auto &elementType = definition(context, element);
-        if (elementType.opcode() != spv::Op::OpTypeInt && elementType.opcode() != spv::Op::OpTypeFloat) {
-            // TODO: Represent bool tensor storage with bytes.
+        if (elementType.opcode() != spv::Op::OpTypeInt && elementType.opcode() != spv::Op::OpTypeFloat &&
+            elementType.opcode() != spv::Op::OpTypeBool) {
             throw std::runtime_error("Unsupported TensorARM scalar storage type");
         }
         const auto literalRank = rank ? std::optional<uint32_t>{static_cast<uint32_t>(*rank)} : std::nullopt;
