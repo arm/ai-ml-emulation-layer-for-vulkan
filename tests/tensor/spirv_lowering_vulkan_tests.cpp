@@ -585,6 +585,96 @@ layout(constant_id = 1) const uint OUTPUT_RANK = 1;
     }
 }
 
+TEST_F(TensorLoweringForVulkan, DirectSelectBroadcastsIndependentDescriptors) {
+    const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
+    ensureDevice();
+    const auto &[words, size] = compute::precompiledSpirvModules.at("select_float");
+    const std::vector<uint32_t> shader(words, words + size);
+    const TensorSpecialization specialization{{0, 3}};
+    const Shape outputShape{vk::Format::eR32Sfloat, {2, 3, 4}, {224, 64, 8}};
+    // Predicate, true input, and false input broadcast along different axes.
+    const std::vector<std::array<Shape, 3>> cases{
+        {Shape{vk::Format::eR8Uint, {1, 3, 1}, {32, 5, 1}}, Shape{vk::Format::eR32Sfloat, {2, 1, 4}, {64, 40, 8}},
+         Shape{vk::Format::eR32Sfloat, {1, 3, 1}, {80, 16, 4}}},
+        {Shape{vk::Format::eR8Uint, {2, 1, 4}, {32, 16, 2}}, Shape{vk::Format::eR32Sfloat, {1, 3, 4}, {224, 64, 12}},
+         Shape{vk::Format::eR32Sfloat, {2, 1, 1}, {28, 12, 4}}}};
+    for (const auto &shapes : cases) {
+        SCOPED_TRACE(testing::PrintToString(shapes[0].getDimensions()));
+        std::vector<uint8_t> predicates(shapes[0].elementCount());
+        std::vector<float> trueValues(shapes[1].elementCount());
+        std::vector<float> falseValues(shapes[2].elementCount());
+        for (size_t i = 0; i < predicates.size(); ++i) {
+            predicates[i] = std::array<uint8_t, 3>{0, 1, 255}[i % 3];
+        }
+        for (size_t i = 0; i < trueValues.size(); ++i) {
+            trueValues[i] = float(i + 1);
+        }
+        for (size_t i = 0; i < falseValues.size(); ++i) {
+            falseValues[i] = -float(100 + i);
+        }
+        auto predicate = makeTestTensor(device, shapes[0], predicates);
+        auto trueInput = makeTestTensor(device, shapes[1], trueValues);
+        auto falseInput = makeTestTensor(device, shapes[2], falseValues);
+        auto output = makeTestTensor(device, outputShape);
+        const SpecializedTensorPipeline::DescriptorMap descriptors{
+            {{0, {output}}}, {{0, {predicate}}}, {{0, {trueInput}}}, {{0, {falseInput}}}};
+        SpecializedTensorPipeline pipeline(device, descriptors, shader);
+        pipeline.dispatch(descriptors, &specialization);
+
+        std::vector<float> expected(outputShape.elementCount());
+        for (size_t n = 0; n < 2; ++n) {
+            for (size_t y = 0; y < 3; ++y) {
+                for (size_t x = 0; x < 4; ++x) {
+                    auto inputIndex = [&](const Shape &shape) {
+                        const auto &dims = shape.getDimensions();
+                        const auto row = ((n % size_t(dims[0])) * size_t(dims[1])) + (y % size_t(dims[1]));
+                        return (row * size_t(dims[2])) + (x % size_t(dims[2]));
+                    };
+                    const float value = predicates[inputIndex(shapes[0])] != 0 ? trueValues[inputIndex(shapes[1])]
+                                                                               : falseValues[inputIndex(shapes[2])];
+                    expected[(((n * 3) + y) * 4) + x] = value;
+                }
+            }
+        }
+        expectTensorValues(*output, outputShape, expected);
+    }
+}
+
+TEST_F(TensorLoweringForVulkan, DirectBroadcastArithmeticAndRounding) {
+    const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
+    ensureDevice();
+    auto left = makeTestTensor<int32_t>(device, Shape{vk::Format::eR32Uint, {2, 1}, {20, 4}}, {-7, 7});
+    auto right = makeTestTensor<int32_t>(device, Shape{vk::Format::eR32Uint, {1, 3}, {40, 8}}, {0, 1, 2});
+    auto left16 = makeTestTensor<int16_t>(device, Shape{vk::Format::eR16Uint, {2, 1}, {10, 2}}, {-7, 7});
+    auto right16 = makeTestTensor<int16_t>(device, Shape{vk::Format::eR16Uint, {1, 3}, {20, 4}}, {0, 1, 2});
+    const Shape outputShape{vk::Format::eR32Uint, {2, 3}, {36, 8}};
+    const TensorSpecialization specialization{{0, 2}, {1, 2}};
+    struct Case {
+        std::string shader;
+        uint32_t control;
+        std::vector<int32_t> expected;
+    };
+    // Literal expected values distinguish signed arithmetic, both rounding modes,
+    // and MUL's shift control. The final case reads 16-bit inputs and writes 32-bit results.
+    const std::vector<Case> cases{{"elementwise_binary_ADD_int_int", 0, {-7, -6, -5, 7, 8, 9}},
+                                  {"arithmetic_right_shift_int", 0, {-7, -4, -2, 7, 3, 1}},
+                                  {"arithmetic_right_shift_int", 1, {-7, -3, -2, 7, 4, 2}},
+                                  {"mul_int_int", 0, {0, -7, -14, 0, 7, 14}},
+                                  {"mul_int_int", 1, {0, -3, -7, 0, 4, 7}},
+                                  {"mul_int16_t_int", 1, {0, -3, -7, 0, 4, 7}}};
+    for (const auto &test : cases) {
+        SCOPED_TRACE(test.shader + " control=" + std::to_string(test.control));
+        const auto &[words, size] = compute::precompiledSpirvModules.at(test.shader);
+        auto output = makeTestTensor(device, outputShape);
+        const bool narrowInputs = test.shader == "mul_int16_t_int";
+        const SpecializedTensorPipeline::DescriptorMap descriptors{
+            {{0, {output}}}, {{0, {narrowInputs ? left16 : left}}}, {{0, {narrowInputs ? right16 : right}}}};
+        SpecializedTensorPipeline pipeline(device, descriptors, {words, words + size});
+        pipeline.dispatch(descriptors, &specialization, {test.control});
+        expectTensorValues(*output, outputShape, test.expected);
+    }
+}
+
 TEST_F(TensorLoweringForVulkan, DirectRescaleScalarAndPerChannelParameters) {
     const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
     ensureDevice();
