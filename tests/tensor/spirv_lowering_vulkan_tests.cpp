@@ -6,6 +6,7 @@
 
 #include "mlel/tensor.hpp"
 #include "mlel/utils.hpp"
+#include "shaders/precompiled_shaders.hpp"
 #include "tensor_test_utils.hpp"
 #include "test_utils.hpp"
 #include "vulkan_test_utils.hpp"
@@ -122,12 +123,24 @@ class SpecializedTensorPipeline : public utilities::PipelineBase {
   public:
     using PipelineBase::PipelineBase;
 
-    void dispatch(const DescriptorMap &descriptors, const TensorSpecialization *specialization = nullptr) {
+    void dispatch(const DescriptorMap &descriptors, const TensorSpecialization *specialization = nullptr,
+                  const std::vector<uint32_t> &pushConstants = {}) {
+        auto layout = pipelineLayout;
+        if (!pushConstants.empty()) {
+            std::vector<vk::DescriptorSetLayout> layouts;
+            layouts.reserve(descriptorSetLayouts.size());
+            for (const auto &setLayout : descriptorSetLayouts) {
+                layouts.push_back(*setLayout);
+            }
+            const vk::PushConstantRange range{vk::ShaderStageFlagBits::eCompute, 0,
+                                              uint32_t(pushConstants.size() * sizeof(uint32_t))};
+            layout = std::make_shared<vk::raii::PipelineLayout>(
+                &(*device), vk::PipelineLayoutCreateInfo{{}, uint32_t(layouts.size()), layouts.data(), 1, &range});
+        }
         const auto info = specialization ? specialization->info() : vk::SpecializationInfo{};
         const vk::PipelineShaderStageCreateInfo stage{
             {}, vk::ShaderStageFlagBits::eCompute, *shaderModule, "main", specialization ? &info : nullptr};
-        const vk::raii::Pipeline pipeline{&(*device), nullptr,
-                                          vk::ComputePipelineCreateInfo{{}, stage, *pipelineLayout}};
+        const vk::raii::Pipeline pipeline{&(*device), nullptr, vk::ComputePipelineCreateInfo{{}, stage, *layout}};
         auto bindings = createDescriptorSets(descriptors);
         std::vector<vk::DescriptorSet> sets;
         for (const auto &set : bindings.sets) {
@@ -136,7 +149,10 @@ class SpecializedTensorPipeline : public utilities::PipelineBase {
         auto commands = createCommandBuffer();
         commands.begin(vk::CommandBufferBeginInfo{vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
         commands.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
-        commands.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *pipelineLayout, 0, sets, nullptr);
+        commands.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *layout, 0, sets, nullptr);
+        if (!pushConstants.empty()) {
+            commands.pushConstants<uint32_t>(*layout, vk::ShaderStageFlagBits::eCompute, 0, pushConstants);
+        }
         commands.dispatch(1, 1, 1);
         commands.end();
         submitWork(commands);
@@ -566,6 +582,132 @@ layout(constant_id = 1) const uint OUTPUT_RANK = 1;
         const std::array<uint32_t, 4> expectedResults{inputRank == 1 ? 4u : 2u, outputRank == 1 ? 8u : 2u, 0, 0};
         EXPECT_EQ(std::memcmp(results->data(), expectedResults.data(), results->size()), 0);
         EXPECT_EQ(std::memcmp(output->data(), expectedOutput.data(), output->size()), 0);
+    }
+}
+
+TEST_F(TensorLoweringForVulkan, DirectRescaleScalarAndPerChannelParameters) {
+    const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
+    ensureDevice();
+    auto input = makeTestTensor<int32_t>(device, Shape{vk::Format::eR32Uint, {2, 3}, {32, 8}}, {-2, 5, 4, 8, 1, 2});
+    const Shape outputShape{vk::Format::eR8Uint, {2, 3}, {12, 2}};
+    auto output = makeTestTensor(device, outputShape);
+    auto scalarMultiplier = makeTestTensor<int32_t>(device, Shape{vk::Format::eR32Uint, {1}, {8}}, {1 << 30});
+    auto scalarShift = makeTestTensor<uint8_t>(device, Shape{vk::Format::eR8Uint, {1}, {3}}, {32});
+    auto channelMultipliers =
+        makeTestTensor<int32_t>(device, Shape{vk::Format::eR32Uint, {3}, {8}}, {1 << 30, 1 << 29, 1 << 30});
+    auto channelShifts = makeTestTensor<uint8_t>(device, Shape{vk::Format::eR8Uint, {3}, {3}}, {31, 31, 32});
+    const SpecializedTensorPipeline::DescriptorMap initial{
+        {{0, {output}}}, {{0, {input}}}, {{0, {scalarMultiplier}}}, {{0, {scalarShift}}}};
+    const auto &[words, size] = compute::precompiledSpirvModules.at("rescale_int_int8_t_int");
+    SpecializedTensorPipeline pipeline(device, initial, {words, words + size});
+    struct Case {
+        uint32_t doubleRound;
+        uint32_t perChannel;
+        std::vector<int8_t> expected;
+    };
+    // With input/output zero points 3/-2, these values distinguish both rounding
+    // modes and reads of each channel's multiplier and shift from padded tensors.
+    const std::vector<Case> cases{{0, 0, {-3, -1, -2, -1, -2, -2}},
+                                  {1, 0, {-3, -1, -1, 0, -3, -2}},
+                                  {0, 1, {-4, -1, -2, 1, -2, -2}},
+                                  {1, 1, {-4, -1, -1, 1, -2, -2}}};
+    for (const auto &test : cases) {
+        SCOPED_TRACE(std::to_string(test.doubleRound) + "/" + std::to_string(test.perChannel));
+        std::memset(output->data(), 0xa5, output->size());
+        const TensorSpecialization specialization{{0, 2}, {1, 1}, {2, test.doubleRound}, {3, test.perChannel}};
+        const SpecializedTensorPipeline::DescriptorMap descriptors{
+            {{0, {output}}},
+            {{0, {input}}},
+            {{0, {test.perChannel ? channelMultipliers : scalarMultiplier}}},
+            {{0, {test.perChannel ? channelShifts : scalarShift}}}};
+        pipeline.dispatch(descriptors, &specialization, {3, static_cast<uint32_t>(-2)});
+        expectTensorValues(*output, outputShape, test.expected);
+    }
+}
+
+TEST_F(TensorLoweringForVulkan, DirectPadUsesFlatParametersOnMultipleAxes) {
+    const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
+    ensureDevice();
+    auto input = makeTestTensor<uint32_t>(device, Shape{vk::Format::eR32Uint, {2, 3}, {40, 8}}, {1, 2, 3, 4, 5, 6});
+    // Flat rank-1 tensor: before/after pairs for each input axis.
+    auto padding = makeTestTensor<uint32_t>(device, Shape{vk::Format::eR32Uint, {4}, {8}}, {1, 1, 2, 1});
+    const Shape outputShape{vk::Format::eR32Uint, {4, 6}, {64, 8}};
+    auto output = makeTestTensor(device, outputShape);
+    const SpecializedTensorPipeline::DescriptorMap descriptors{{{0, {output}}}, {{0, {input}}}, {{0, {padding}}}};
+    const auto &[words, size] = compute::precompiledSpirvModules.at("pad_int");
+    SpecializedTensorPipeline pipeline(device, descriptors, {words, words + size});
+    const TensorSpecialization specialization{{0, 2}};
+    // PAD's integer constant follows its real_t constant in the shader ABI.
+    std::vector<uint32_t> constants((sizeof(real_t) / sizeof(uint32_t)) + 1, 0);
+    constants.back() = 99;
+    pipeline.dispatch(descriptors, &specialization, constants);
+    expectTensorValues<uint32_t>(*output, outputShape, {99, 99, 99, 99, 99, 99, 99, 99, 1,  2,  3,  99,
+                                                        99, 99, 4,  5,  6,  99, 99, 99, 99, 99, 99, 99});
+}
+
+TEST_F(TensorLoweringForVulkan, DirectTableReadsGlobalTensorFromHelper) {
+    const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
+    ensureDevice();
+    auto input =
+        makeTestTensor<int8_t>(device, Shape{vk::Format::eR8Uint, {2, 3}, {12, 2}}, {-128, -127, -1, 0, 126, 127});
+    std::vector<int8_t> entries(256);
+    for (size_t i = 0; i < entries.size(); ++i) {
+        entries[i] = static_cast<int8_t>(127 - int(i));
+    }
+    auto table = makeTestTensor(device, Shape{vk::Format::eR8Uint, {256}, {2}}, entries);
+    const Shape outputShape{vk::Format::eR8Uint, {2, 3}, {16, 3}};
+    auto output = makeTestTensor(device, outputShape);
+    const SpecializedTensorPipeline::DescriptorMap descriptors{{{0, {output}}}, {{0, {input}}}, {{0, {table}}}};
+    const auto &[words, size] = compute::precompiledSpirvModules.at("table_int8_t_int8_t");
+    SpecializedTensorPipeline pipeline(device, descriptors, {words, words + size});
+    const TensorSpecialization specialization{{0, 2}};
+    pipeline.dispatch(descriptors, &specialization);
+    expectTensorValues<int8_t>(*output, outputShape, {127, 126, 0, -1, -127, -128});
+}
+
+TEST_F(TensorLoweringForVulkan, DirectReductionRestoresCoordinatesAfterLoopExits) {
+    const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
+    ensureDevice();
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    auto input = makeTestTensor<float>(device, Shape{vk::Format::eR32Sfloat, {2, 3, 2}, {80, 24, 8}},
+                                       {nan, 3, 2, nan, 1, 5, 7, 8, nan, -4, 6, nan});
+    const Shape outputShape{vk::Format::eR32Sfloat, {2, 1, 2}, {40, 16, 8}};
+    auto output = makeTestTensor(device, outputShape);
+    const SpecializedTensorPipeline::DescriptorMap descriptors{{{0, {output}}}, {{0, {input}}}};
+    const TensorSpecialization specialization{{0, 3}};
+    for (const auto &[shader, expected] : std::vector<std::pair<std::string, std::vector<float>>>{
+             {"reduce_REDUCE_MIN_float", {1, 3, 6, -4}}, {"reduce_REDUCE_MAX_float", {2, 5, 7, 8}}}) {
+        const auto &[words, size] = compute::precompiledSpirvModules.at(shader);
+        SpecializedTensorPipeline pipeline(device, descriptors, {words, words + size});
+        // IGNORE (2) continues past NaNs; PROPAGATE (1) breaks on the first NaN.
+        // Both must restore axis 1 before writing to the rank-3 output tensor.
+        for (const uint32_t nanMode : {2u, 1u}) {
+            SCOPED_TRACE(shader + " nanMode=" + std::to_string(nanMode));
+            std::memset(output->data(), 0xa5, output->size());
+            pipeline.dispatch(descriptors, &specialization, {1, nanMode});
+            expectTensorValues(*output, outputShape, nanMode == 2 ? expected : std::vector<float>(4, nan));
+        }
+    }
+}
+
+TEST_F(TensorLoweringForVulkan, DirectArgmaxUsesDifferentInputAndOutputRanks) {
+    const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
+    ensureDevice();
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    auto input = makeTestTensor<float>(device, Shape{vk::Format::eR32Sfloat, {2, 3, 2}, {80, 24, 8}},
+                                       {nan, 3, 2, nan, 1, 5, 7, 8, nan, -4, 6, nan});
+    const Shape outputShape{vk::Format::eR32Uint, {2, 2}, {32, 8}};
+    auto output = makeTestTensor(device, outputShape);
+    const SpecializedTensorPipeline::DescriptorMap descriptors{{{0, {output}}}, {{0, {input}}}};
+    const auto &[words, size] = compute::precompiledSpirvModules.at("argmax_float");
+    SpecializedTensorPipeline pipeline(device, descriptors, {words, words + size});
+    const TensorSpecialization specialization{{0, 3}, {1, 2}};
+    for (const auto &[nanMode, expected] :
+         std::vector<std::pair<uint32_t, std::vector<uint32_t>>>{{2, {1, 2, 0, 0}}, {1, {0, 1, 1, 2}}}) {
+        SCOPED_TRACE(nanMode);
+        std::memset(output->data(), 0xa5, output->size());
+        pipeline.dispatch(descriptors, &specialization, {1, nanMode});
+        expectTensorValues(*output, outputShape, expected);
     }
 }
 
