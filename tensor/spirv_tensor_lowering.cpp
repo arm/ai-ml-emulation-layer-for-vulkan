@@ -13,6 +13,7 @@
 #include <spirv-tools/optimizer.hpp>
 
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <memory>
 #include <stdexcept>
@@ -228,17 +229,30 @@ void lowerAccesses(AccessState &state, const TensorModule &tensors) {
             }
             const auto valueType =
                 write ? definition(context, inst->GetSingleWordInOperand(2)).type_id() : inst->type_id();
+            AccessValueInfo access{valueType, 1};
             if (valueType != tensor.elementType) {
-                // TODO: Generate element-wise helpers for array reads and writes.
-                throw std::runtime_error("TensorARM access must use a scalar matching the tensor element type");
+                const auto &valueArray = definition(context, valueType);
+                if (valueArray.opcode() != spv::Op::OpTypeArray ||
+                    valueArray.GetSingleWordInOperand(0) != tensor.elementType) {
+                    throw std::runtime_error("TensorARM access must use matching scalar or array elements");
+                }
+                const auto length = integerConstant(context, valueArray.GetSingleWordInOperand(1));
+                if (!length) {
+                    // TODO: Support specialisation-controlled access array lengths.
+                    throw std::runtime_error("TensorARM access array length must be a literal constant");
+                }
+                if (*length == 0 || *length > std::numeric_limits<uint8_t>::max()) {
+                    throw std::runtime_error("TensorARM access array length exceeds the supported limit");
+                }
+                access.elementCount = static_cast<uint32_t>(*length);
             }
             std::vector<uint32_t> arguments{descriptor, coordinates};
             uint32_t helper;
             if (write) {
                 arguments.push_back(inst->GetSingleWordInOperand(2));
-                helper = getOrCreateWriteHelper(state, tensor, coordinatesType);
+                helper = getOrCreateWriteHelper(state, tensor, coordinatesType, access);
             } else {
-                helper = getOrCreateReadHelper(state, tensor, coordinatesType);
+                helper = getOrCreateReadHelper(state, tensor, coordinatesType, access);
             }
             const auto resultType = write ? context.get_type_mgr()->GetVoidTypeId() : inst->type_id();
             result = builder.AddFunctionCall(resultType, helper, arguments)->result_id();

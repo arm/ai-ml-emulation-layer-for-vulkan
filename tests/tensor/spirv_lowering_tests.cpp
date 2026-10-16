@@ -494,6 +494,106 @@ TEST(TensorSpirvLowering, LowersSideTensorAndReductionVariants) {
     }
 }
 
+TEST(TensorSpirvLowering, LowersArrayOperatorVariants) {
+    std::map<std::string_view, size_t> families{
+        {"fft2d", 0}, {"rfft2d", 0}, {"matmul_", 0}, {"conv2d_", 0}, {"table_int16_t_", 0}};
+    for (const auto &[name, module] : compute::precompiledSpirvModules) {
+        const auto family = std::find_if(families.begin(), families.end(), [shaderName = name](const auto &entry) {
+            return shaderName.rfind(entry.first, 0) == 0;
+        });
+        if (family == families.end()) {
+            continue;
+        }
+        SCOPED_TRACE(name);
+        const auto &[words, size] = module;
+        const std::vector<uint32_t> input(words, words + size);
+        auto spirv = input;
+        ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+        EXPECT_EQ(specializationInstructions(spirv), specializationInstructions(input));
+        if (family->first == "table_int16_t_") {
+            for (const uint32_t rank : {1u, 3u, 6u}) {
+                expectSpecialized(spirv, {{0, {rank}}});
+            }
+        }
+        ++family->second;
+    }
+    for (const auto &[name, variants] : families) {
+        EXPECT_GT(variants, 0u) << name;
+    }
+}
+
+TEST(TensorSpirvLowering, DistinguishesScalarAndArrayHelpers) {
+    for (const bool specialized : {false, true}) {
+        for (const std::string elementType : {"OpTypeInt 32 1", "OpTypeFloat 32", "OpTypeBool"}) {
+            SCOPED_TRACE(elementType);
+            const auto input = assemble(R"(
+OpCapability Shader
+OpCapability TensorsARM
+OpExtension "SPV_ARM_tensors"
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main" %data
+OpExecutionMode %main LocalSize 1 1 1
+OpDecorate %data DescriptorSet 0
+OpDecorate %data Binding 0
+)" + std::string(specialized ? "OpDecorate %rank SpecId 0\n" : "") +
+                                        R"(
+%void = OpTypeVoid
+%function = OpTypeFunction %void
+%uint = OpTypeInt 32 0
+%one = OpConstant %uint 1
+%two = OpConstant %uint 2
+%four = OpConstant %uint 4
+)" + "%element = " + elementType +
+                                        "\n%rank = " + (specialized ? "OpSpecConstant" : "OpConstant") + R"( %uint 2
+%tensor = OpTypeTensorARM %element %rank
+%pointer = OpTypePointer UniformConstant %tensor
+%data = OpVariable %pointer UniformConstant
+%coordinates = OpTypeArray %uint %rank
+%coords = OpConstantNull %coordinates
+%array1 = OpTypeArray %element %one
+%array2 = OpTypeArray %element %two
+%array4 = OpTypeArray %element %four
+%main = OpFunction %void None %function
+%entry = OpLabel
+%loaded = OpLoad %tensor %data
+%scalar = OpTensorReadARM %element %loaded %coords
+%a = OpTensorReadARM %array1 %loaded %coords
+%b = OpTensorReadARM %array2 %loaded %coords
+%c = OpTensorReadARM %array4 %loaded %coords
+OpTensorWriteARM %loaded %coords %scalar
+OpTensorWriteARM %loaded %coords %a
+OpTensorWriteARM %loaded %coords %b
+OpTensorWriteARM %loaded %coords %c
+%d = OpTensorReadARM %array4 %loaded %coords
+OpTensorWriteARM %loaded %coords %d
+OpReturn
+OpFunctionEnd
+)");
+            auto spirv = input;
+            ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+            EXPECT_EQ(specializationInstructions(spirv), specializationInstructions(input));
+            std::string text;
+            ASSERT_TRUE(spvtools::SpirvTools(SPV_ENV_VULKAN_1_3).Disassemble(spirv, &text));
+            if (elementType == "OpTypeBool") {
+                EXPECT_EQ(text.find("OpCapability Int8"), std::string::npos);
+                EXPECT_NE(text.find("OpCapability StorageBuffer8BitAccess"), std::string::npos);
+            }
+            size_t functions = 0;
+            for (auto offset = text.find(" = OpFunction "); offset != std::string::npos;
+                 offset = text.find(" = OpFunction ", offset + 1)) {
+                ++functions;
+            }
+            // Entry point and a read/write pair for each distinct scalar/array type.
+            EXPECT_EQ(functions, 9u);
+            if (specialized) {
+                for (const uint32_t rank : {1u, 2u, 6u}) {
+                    expectSpecialized(spirv, {{0, {rank}}});
+                }
+            }
+        }
+    }
+}
+
 TEST(TensorSpirvLowering, RejectsMalformedRankOperands) {
     const auto valid = tensorShader();
     size_t tensorOffset = 0;
@@ -633,7 +733,8 @@ TEST(TensorLoweringMode, UnsetUsesGlslToSpirv) {
 TEST(TensorLoweringMode, ZeroUsesGlslToSpirv) {
     const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "0");
     EXPECT_EQ(getTensorLoweringMode(), TensorLoweringMode::GlslToSpirv);
-    const TensorProcessor processor(tensorShader());
+    const TensorProcessor processor(
+        tensorShader("%value = OpTensorReadARM %uint %loaded %coords OutOfBoundsValueARM %one"));
     ASSERT_TRUE(processor.isValidShader());
     EXPECT_TRUE(spvtools::SpirvTools(SPV_ENV_VULKAN_1_3).Validate(processor.getNewSpirv()));
 }
@@ -649,7 +750,8 @@ TEST(TensorLoweringMode, OneUsesDirectLowering) {
     EXPECT_TRUE(lowerTensorSpirv(spirv, loweredTensorCompute, {}));
     EXPECT_FALSE(loweredTensorCompute);
     EXPECT_EQ(spirv, supported.getNewSpirv());
-    const TensorProcessor processor(tensorShader("%values = OpTensorReadARM %array %loaded %coords"));
+    const TensorProcessor processor(
+        tensorShader("%value = OpTensorReadARM %uint %loaded %coords OutOfBoundsValueARM %one"));
     EXPECT_FALSE(processor.isValidShader());
     EXPECT_TRUE(processor.getNewSpirv().empty());
 }

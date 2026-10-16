@@ -9,6 +9,7 @@
 
 #include <cstddef>
 #include <initializer_list>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -28,10 +29,17 @@ uint32_t nullConstant(IRContext &context, uint32_t type) {
 }
 
 // Examples below are shader pseudocode; C++ uint32_t variables hold SPIR-V IDs.
+struct ArrayAccessInfo {
+    uint32_t remainingElements;
+    uint32_t innermostStride;
+};
+
 struct BoundsAndOffset {
     uint32_t inBounds;
     uint32_t byteOffset;
     uint32_t block;
+    // Multi-element accesses need both IDs to advance along the innermost dimension.
+    std::optional<ArrayAccessInfo> arrayAccess = std::nullopt;
 };
 
 /* Equivalent shader logic:
@@ -41,9 +49,13 @@ struct BoundsAndOffset {
     bool inBounds = coordinate < dimensionSize;
     uint64_t byteOffset = uint64_t(coordinate) * descriptor.strides[axis];
 
+    // For multi-element accesses on the innermost axis, also emit:
+    uint64_t remainingElements = descriptor.dimensions[axis] - uint64_t(coordinate);
+    uint64_t innermostStride = descriptor.strides[axis];
+
 */
 BoundsAndOffset emitDimensionBoundsAndByteOffset(AccessState &state, InstructionBuilder &builder, uint32_t descriptor,
-                                                 uint32_t coordinates, uint32_t axis) {
+                                                 uint32_t coordinates, uint32_t axis, uint32_t axisAccessElementCount) {
     auto &context = state.context;
     const auto boolType = context.get_type_mgr()->GetBoolTypeId();
     const auto coordinateType = context.get_type_mgr()->GetUIntTypeId();
@@ -55,15 +67,20 @@ BoundsAndOffset emitDimensionBoundsAndByteOffset(AccessState &state, Instruction
     const auto stride = builder.AddCompositeExtract(state.uint64Type, descriptor, {2, axis})->result_id();
     const auto inBounds = builder.AddBinaryOp(boolType, spv::Op::OpULessThan, coord, narrowDimension)->result_id();
     const auto byteOffset = builder.AddBinaryOp(state.uint64Type, spv::Op::OpIMul, wideCoord, stride)->result_id();
-    return {inBounds, byteOffset, 0};
+    BoundsAndOffset bounds{inBounds, byteOffset, 0};
+    if (axisAccessElementCount > 1) {
+        // Only array accesses on the last axis need per-lane bounds and offsets.
+        const auto remainingElements =
+            builder.AddBinaryOp(state.uint64Type, spv::Op::OpISub, dimension, wideCoord)->result_id();
+        bounds.arrayAccess = ArrayAccessInfo{remainingElements, stride};
+    }
+    return bounds;
 }
 
 struct AccessFunction {
     std::unique_ptr<spvtools::opt::Function> function;
     std::unique_ptr<spvtools::opt::BasicBlock> entry;
-    std::vector<std::unique_ptr<spvtools::opt::BasicBlock>> boundsBlocks;
-    std::unique_ptr<spvtools::opt::BasicBlock> access;
-    std::unique_ptr<spvtools::opt::BasicBlock> merge;
+    std::vector<std::unique_ptr<spvtools::opt::BasicBlock>> blocks;
 };
 
 std::unique_ptr<spvtools::opt::BasicBlock> createBlock(IRContext &context) {
@@ -222,20 +239,30 @@ BoundsAndOffset emitDimensionLoop(AccessState &state, AccessFunction &helper, In
     // or store. Reads also need this block ID for the zero-result OpPhi input.
     builder.SetInsertPoint(done.get());
     const auto exit = done->id();
-    helper.boundsBlocks.push_back(std::move(header));
-    helper.boundsBlocks.push_back(std::move(body));
-    helper.boundsBlocks.push_back(std::move(next));
-    helper.boundsBlocks.push_back(std::move(done));
+    helper.blocks.push_back(std::move(header));
+    helper.blocks.push_back(std::move(body));
+    helper.blocks.push_back(std::move(next));
+    helper.blocks.push_back(std::move(done));
     return {inBounds, offset, exit};
 }
 
-// Combine the local-array setup and loop above. The pipeline compiler determines
-// the specialised rank; the C++ generator does not use its default as a loop bound.
+/* Equivalent shader logic:
+
+    // Code emitted by prepareAccessArrays creates coords, dimensions and strides.
+    // Code emitted by emitDimensionLoop computes bounds.inBounds and bounds.byteOffset.
+
+    // For multi-element accesses, also emit after the loop:
+    uint last = rank - 1;
+    bounds.arrayAccess.remainingElements = dimensions[last] - uint64_t(coords[last]);
+    bounds.arrayAccess.innermostStride = strides[last];
+
+*/
+// rank retains its specialisation value for the pipeline compiler.
 template <typename EmitOffset>
 BoundsAndOffset emitSpecializedBoundsAndByteOffset(AccessState &state, AccessFunction &helper,
                                                    InstructionBuilder &builder, const TensorType &tensor,
                                                    uint32_t descriptor, uint32_t coordinates, uint32_t coordinatesType,
-                                                   const EmitOffset &emitOffset) {
+                                                   uint32_t elementCount, const EmitOffset &emitOffset) {
     auto &context = state.context;
     const auto uintType = context.get_type_mgr()->GetUIntTypeId();
     const auto boolType = context.get_type_mgr()->GetBoolTypeId();
@@ -251,7 +278,27 @@ BoundsAndOffset emitSpecializedBoundsAndByteOffset(AccessState &state, AccessFun
         const auto width = context.get_def_use_mgr()->GetDef(rankType)->GetSingleWordInOperand(0);
         rank = builder.AddUnaryOp(uintType, width == 32 ? spv::Op::OpBitcast : spv::Op::OpUConvert, rank)->result_id();
     }
-    return emitDimensionLoop(state, helper, builder, arrays, rank, boolType, emitOffset);
+    auto bounds = emitDimensionLoop(state, helper, builder, arrays, rank, boolType, emitOffset);
+    if (elementCount > 1) {
+        // The last axis is also selected by the preserved rank specialisation.
+        const auto last =
+            builder.AddBinaryOp(uintType, spv::Op::OpISub, rank, context.get_constant_mgr()->GetUIntConstId(1))
+                ->result_id();
+        const auto coordAddress =
+            builder.AddAccessChain(arrays.coordinatePointerType, arrays.coordinates, {last})->result_id();
+        const auto coord = builder.AddLoad(uintType, coordAddress)->result_id();
+        const auto wideCoord = builder.AddUnaryOp(state.uint64Type, spv::Op::OpUConvert, coord)->result_id();
+        const auto dimensionAddress =
+            builder.AddAccessChain(arrays.metadataPointerType, arrays.dimensions, {last})->result_id();
+        const auto dimension = builder.AddLoad(state.uint64Type, dimensionAddress)->result_id();
+        const auto remainingElements =
+            builder.AddBinaryOp(state.uint64Type, spv::Op::OpISub, dimension, wideCoord)->result_id();
+        const auto strideAddress =
+            builder.AddAccessChain(arrays.metadataPointerType, arrays.strides, {last})->result_id();
+        const auto innermostStride = builder.AddLoad(state.uint64Type, strideAddress)->result_id();
+        bounds.arrayAccess = ArrayAccessInfo{remainingElements, innermostStride};
+    }
+    return bounds;
 }
 
 // Emit each axis using literal-index extracts. This C++ loop produces straight-line
@@ -259,17 +306,21 @@ BoundsAndOffset emitSpecializedBoundsAndByteOffset(AccessState &state, AccessFun
 template <typename EmitOffset>
 BoundsAndOffset emitLiteralBoundsAndByteOffset(AccessState &state, AccessFunction &helper, InstructionBuilder &builder,
                                                uint32_t literalRank, uint32_t descriptor, uint32_t coordinates,
-                                               const EmitOffset &emitOffset) {
+                                               uint32_t elementCount, const EmitOffset &emitOffset) {
     auto &context = state.context;
     const auto boolType = context.get_type_mgr()->GetBoolTypeId();
     BoundsAndOffset bounds{0, nullConstant(context, state.uint64Type), helper.entry->id()};
     for (uint32_t axis = 0; axis < literalRank; ++axis) {
-        const auto dimension = emitDimensionBoundsAndByteOffset(state, builder, descriptor, coordinates, axis);
+        const auto dimension = emitDimensionBoundsAndByteOffset(state, builder, descriptor, coordinates, axis,
+                                                                axis + 1 == literalRank ? elementCount : 1);
         bounds.inBounds =
             axis == 0 ? dimension.inBounds
                       : builder.AddBinaryOp(boolType, spv::Op::OpLogicalAnd, bounds.inBounds, dimension.inBounds)
                             ->result_id();
         bounds.byteOffset = emitOffset(bounds.byteOffset, bounds.inBounds, dimension.byteOffset, 0);
+        if (axis + 1 == literalRank) {
+            bounds.arrayAccess = dimension.arrayAccess;
+        }
     }
     return bounds;
 }
@@ -278,13 +329,47 @@ BoundsAndOffset emitLiteralBoundsAndByteOffset(AccessState &state, AccessFunctio
 template <typename EmitOffset>
 BoundsAndOffset emitBoundsAndByteOffset(AccessState &state, AccessFunction &helper, InstructionBuilder &builder,
                                         const TensorType &tensor, uint32_t descriptor, uint32_t coordinates,
-                                        uint32_t coordinatesType, const EmitOffset &emitOffset) {
+                                        uint32_t coordinatesType, uint32_t elementCount, const EmitOffset &emitOffset) {
     if (tensor.literalRank) {
         return emitLiteralBoundsAndByteOffset(state, helper, builder, *tensor.literalRank, descriptor, coordinates,
-                                              emitOffset);
+                                              elementCount, emitOffset);
     }
     return emitSpecializedBoundsAndByteOffset(state, helper, builder, tensor, descriptor, coordinates, coordinatesType,
-                                              emitOffset);
+                                              elementCount, emitOffset);
+}
+
+/* Equivalent shader logic for element > 0 (element 0 reuses bounds):
+
+    uint64_t lane = uint64_t(element);
+    bool inBounds = bounds.inBounds && lane < bounds.arrayAccess.remainingElements;
+    uint64_t byteOffset = bounds.byteOffset + lane * bounds.arrayAccess.innermostStride;
+
+*/
+// Each lane stays on the starting row. Use 64-bit arithmetic to avoid coordinate
+// wraparound. remainingElements may underflow for an invalid starting coordinate;
+// bounds.inBounds still rejects all lanes of that access.
+BoundsAndOffset emitElementBounds(AccessState &state, InstructionBuilder &builder, const BoundsAndOffset &bounds,
+                                  uint32_t element, uint32_t block) {
+    if (element == 0) {
+        return bounds;
+    }
+    // Lanes after the first require metadata emitted for a multi-element access.
+    const auto &arrayAccess = bounds.arrayAccess.value();
+    auto &context = state.context;
+    auto *constants = context.get_constant_mgr();
+    const auto lane = constants
+                          ->GetDefiningInstruction(
+                              constants->GetConstant(context.get_type_mgr()->GetType(state.uint64Type), {element, 0}))
+                          ->result_id();
+    const auto boolType = context.get_type_mgr()->GetBoolTypeId();
+    const auto withinRow =
+        builder.AddBinaryOp(boolType, spv::Op::OpULessThan, lane, arrayAccess.remainingElements)->result_id();
+    const auto valid = builder.AddBinaryOp(boolType, spv::Op::OpLogicalAnd, bounds.inBounds, withinRow)->result_id();
+    const auto distance =
+        builder.AddBinaryOp(state.uint64Type, spv::Op::OpIMul, lane, arrayAccess.innermostStride)->result_id();
+    const auto offset =
+        builder.AddBinaryOp(state.uint64Type, spv::Op::OpIAdd, bounds.byteOffset, distance)->result_id();
+    return {valid, offset, block};
 }
 
 struct ElementPointer {
@@ -390,19 +475,15 @@ AccessFunction createAccessFunction(IRContext &context, uint32_t returnType,
             makeInstruction(context, spv::Op::OpFunctionParameter, parameter.type, parameter.id));
     }
     helper.entry = createBlock(context);
-    helper.access = createBlock(context);
-    helper.merge = createBlock(context);
     return helper;
 }
 
 uint32_t finishAccessFunction(IRContext &context, AccessFunction helper) {
     const auto functionId = helper.function->result_id();
     helper.function->AddBasicBlock(std::move(helper.entry));
-    for (auto &block : helper.boundsBlocks) {
+    for (auto &block : helper.blocks) {
         helper.function->AddBasicBlock(std::move(block));
     }
-    helper.function->AddBasicBlock(std::move(helper.access));
-    helper.function->AddBasicBlock(std::move(helper.merge));
     helper.function->SetFunctionEnd(makeInstruction(context, spv::Op::OpFunctionEnd, 0, 0));
     auto *defUse = context.get_def_use_mgr();
     // Register all definitions before uses so branches can reference labels in later blocks.
@@ -442,33 +523,40 @@ AccessState::AccessState(IRContext &ir) : context(ir) {
     memoryModel->SetInOperand(0, {static_cast<uint32_t>(spv::AddressingModel::PhysicalStorageBuffer64)});
 }
 
-// T is the shader element type.
+// T is the shader element type; LENGTH is the literal access element count.
 /* Equivalent shader logic:
 
-    T read(Descriptor descriptor, uint coordinates[RANK]) {
-        bool inBounds;
-        uint64_t byteOffset;
-        // Code emitted by emitBoundsAndByteOffset sets these values here,
-        // using guarded accumulation for reads.
-        int64_t elementOffset = int64_t(byteOffset) / int64_t(sizeof(StorageT));
-        if (inBounds) {
+    Bounds bounds;
+    // Code emitted by emitBoundsAndByteOffset sets bounds here,
+    // using guarded accumulation for reads.
+    T values[LENGTH];
+    for (uint element = 0; element < LENGTH; ++element) {
+        Bounds elementBounds;
+        // Code emitted by emitElementBounds sets elementBounds for this lane.
+        int64_t elementOffset = int64_t(elementBounds.byteOffset) / int64_t(sizeof(StorageT));
+        if (elementBounds.inBounds) {
             StorageT value = load(bufferAt(descriptor.address), uint(int(elementOffset)));
-            return value; // For bool tensors: return int(value) != 0.
+            values[element] = value; // For bool tensors: int(value) != 0.
+        } else {
+            values[element] = T(0); // false for bool tensors.
         }
-        return T(0); // false for bool tensors.
     }
+    return values;
 
 */
-// load denotes a typed memory instruction inside the valid branch.
-uint32_t getOrCreateReadHelper(AccessState &state, const TensorType &tensor, uint32_t coordinatesType) {
-    const auto key = std::make_tuple(spv::Op::OpTensorReadARM, tensor.elementType, coordinatesType, tensor.rankId);
+// C++ emits each lane separately, without a shader loop. Scalar reads return the
+// sole element; an array of length one still returns an array. load is a typed
+// memory instruction inside the valid branch.
+uint32_t getOrCreateReadHelper(AccessState &state, const TensorType &tensor, uint32_t coordinatesType,
+                               const AccessValueInfo &access) {
+    const AccessFunctionKey key{spv::Op::OpTensorReadARM, access.valueType, coordinatesType, tensor.rankId};
     if (const auto it = state.helpers.find(key); it != state.helpers.end()) {
         return it->second;
     }
     auto &context = state.context;
     const auto descriptor = context.TakeNextId();
     const auto coordinates = context.TakeNextId();
-    auto helper = createAccessFunction(context, tensor.elementType,
+    auto helper = createAccessFunction(context, access.valueType,
                                        {{state.descriptorType, descriptor}, {coordinatesType, coordinates}});
     InstructionBuilder builder(&context, helper.entry.get());
     const auto zero = nullConstant(context, state.uint64Type);
@@ -477,40 +565,58 @@ uint32_t getOrCreateReadHelper(AccessState &state, const TensorType &tensor, uin
         const auto guarded = builder.AddSelect(state.uint64Type, inBounds, contribution, zero)->result_id();
         return builder.AddNaryOp(state.uint64Type, spv::Op::OpIAdd, {offset, guarded}, resultId)->result_id();
     };
-    const auto bounds =
-        emitBoundsAndByteOffset(state, helper, builder, tensor, descriptor, coordinates, coordinatesType, emitOffset);
     // Convert byte offsets to signed element offsets before branching, then use a
     // uint32_t index into the typed buffer. Keep this sequence intact: simplifying
     // it to base + byteOffset let Mesa 25.2.8 discard the guarded offset and flatten
     // an out-of-bounds read into an unconditional load.
     auto *const signedType = context.get_type_mgr()->GetIntType(64, true);
     const auto signedTypeId = context.get_type_mgr()->GetTypeInstruction(signedType);
-    const auto *element = context.get_def_use_mgr()->GetDef(getStorageType(state, tensor));
-    const auto elementSize = element->GetSingleWordInOperand(0) / 8;
+    const auto *storageType = context.get_def_use_mgr()->GetDef(getStorageType(state, tensor));
+    const auto elementSize = storageType->GetSingleWordInOperand(0) / 8;
     const auto *sizeConstant = context.get_constant_mgr()->GetConstant(signedType, {elementSize, 0});
     const auto size = context.get_constant_mgr()->GetDefiningInstruction(sizeConstant)->result_id();
-    const auto signedOffset = builder.AddUnaryOp(signedTypeId, spv::Op::OpBitcast, bounds.byteOffset)->result_id();
-    const auto elementOffset = builder.AddBinaryOp(signedTypeId, spv::Op::OpSDiv, signedOffset, size)->result_id();
-    builder.AddConditionalBranch(bounds.inBounds, helper.access->id(), helper.merge->id(), helper.merge->id());
+    const auto bounds = emitBoundsAndByteOffset(state, helper, builder, tensor, descriptor, coordinates,
+                                                coordinatesType, access.elementCount, emitOffset);
+    auto block = bounds.block;
+    std::vector<uint32_t> elements;
+    for (uint32_t element = 0; element < access.elementCount; ++element) {
+        const auto elementBounds = emitElementBounds(state, builder, bounds, element, block);
+        auto load = createBlock(context);
+        auto merge = createBlock(context);
+        const auto signedOffset =
+            builder.AddUnaryOp(signedTypeId, spv::Op::OpBitcast, elementBounds.byteOffset)->result_id();
+        const auto elementOffset = builder.AddBinaryOp(signedTypeId, spv::Op::OpSDiv, signedOffset, size)->result_id();
+        builder.AddConditionalBranch(elementBounds.inBounds, load->id(), merge->id(), merge->id());
 
-    builder.SetInsertPoint(helper.access.get());
-    const auto pointer = emitReadElementPointer(state, builder, tensor, descriptor, elementOffset);
-    auto value = builder.AddLoad(pointer.storageType, pointer.id, pointer.alignment)->result_id();
-    if (context.get_type_mgr()->GetType(tensor.elementType)->AsBool()) {
-        // Widen before comparing so byte storage does not require Int8 arithmetic.
-        // Every nonzero byte represents true.
-        const auto integerType = context.get_type_mgr()->GetSIntTypeId();
-        value = builder.AddUnaryOp(integerType, spv::Op::OpSConvert, value)->result_id();
-        value =
-            builder.AddBinaryOp(tensor.elementType, spv::Op::OpINotEqual, value, nullConstant(context, integerType))
-                ->result_id();
+        builder.SetInsertPoint(load.get());
+        const auto pointer = emitReadElementPointer(state, builder, tensor, descriptor, elementOffset);
+        auto value = builder.AddLoad(pointer.storageType, pointer.id, pointer.alignment)->result_id();
+        if (context.get_type_mgr()->GetType(tensor.elementType)->AsBool()) {
+            // Widen before comparing so byte storage does not require Int8 arithmetic.
+            // Every nonzero byte represents true.
+            const auto integerType = context.get_type_mgr()->GetSIntTypeId();
+            value = builder.AddUnaryOp(integerType, spv::Op::OpSConvert, value)->result_id();
+            value =
+                builder
+                    .AddBinaryOp(tensor.elementType, spv::Op::OpINotEqual, value, nullConstant(context, integerType))
+                    ->result_id();
+        }
+        builder.AddBranch(merge->id());
+
+        builder.SetInsertPoint(merge.get());
+        elements.push_back(builder
+                               .AddPhi(tensor.elementType, {nullConstant(context, tensor.elementType),
+                                                            elementBounds.block, value, load->id()})
+                               ->result_id());
+        block = merge->id();
+        helper.blocks.push_back(std::move(load));
+        helper.blocks.push_back(std::move(merge));
     }
-    builder.AddBranch(helper.merge->id());
-
-    builder.SetInsertPoint(helper.merge.get());
-    auto *const result = builder.AddPhi(
-        tensor.elementType, {nullConstant(context, tensor.elementType), bounds.block, value, helper.access->id()});
-    builder.AddUnaryOp(0, spv::Op::OpReturnValue, result->result_id());
+    // Even an array of length one keeps its composite type at the call site.
+    const auto result = access.valueType == tensor.elementType
+                            ? elements.front()
+                            : builder.AddCompositeConstruct(access.valueType, elements)->result_id();
+    builder.AddUnaryOp(0, spv::Op::OpReturnValue, result);
     const auto functionId = finishAccessFunction(context, std::move(helper));
     state.helpers.emplace(key, functionId);
     return functionId;
@@ -518,63 +624,79 @@ uint32_t getOrCreateReadHelper(AccessState &state, const TensorType &tensor, uin
 
 /* Equivalent shader logic:
 
-    void write(Descriptor descriptor, uint coordinates[RANK], T value) {
-        bool inBounds;
-        uint64_t byteOffset;
-        // Code emitted by emitBoundsAndByteOffset sets these values here,
-        // accumulating the full offset for writes.
-        if (inBounds) {
-            store(descriptor.address + byteOffset, value);
-            // For bool tensors, store int8_t(value ? 1 : 0) instead.
+    Bounds bounds;
+    // Code emitted by emitBoundsAndByteOffset sets bounds here,
+    // accumulating the full offset for writes.
+    for (uint element = 0; element < LENGTH; ++element) {
+        Bounds elementBounds;
+        // Code emitted by emitElementBounds sets elementBounds for this lane.
+        if (elementBounds.inBounds) {
+            store(descriptor.address + elementBounds.byteOffset, values[element]);
+            // For bool tensors, store int8_t(values[element] ? 1 : 0) instead.
         }
     }
 
 */
-// store denotes a typed memory instruction. Bool selection uses 32-bit integers
-// before narrowing.
-uint32_t getOrCreateWriteHelper(AccessState &state, const TensorType &tensor, uint32_t coordinatesType) {
-    const auto key = std::make_tuple(spv::Op::OpTensorWriteARM, tensor.elementType, coordinatesType, tensor.rankId);
+// C++ emits each lane separately, without a shader loop. Scalar writes use the
+// scalar argument directly. store is a typed memory instruction; bool selection
+// uses 32-bit integers before narrowing.
+uint32_t getOrCreateWriteHelper(AccessState &state, const TensorType &tensor, uint32_t coordinatesType,
+                                const AccessValueInfo &access) {
+    const AccessFunctionKey key{spv::Op::OpTensorWriteARM, access.valueType, coordinatesType, tensor.rankId};
     if (const auto it = state.helpers.find(key); it != state.helpers.end()) {
         return it->second;
     }
     auto &context = state.context;
     const auto descriptor = context.TakeNextId();
     const auto coordinates = context.TakeNextId();
-    const auto element = context.TakeNextId();
+    const auto elements = context.TakeNextId();
     auto helper = createAccessFunction(
         context, context.get_type_mgr()->GetVoidTypeId(),
-        {{state.descriptorType, descriptor}, {coordinatesType, coordinates}, {tensor.elementType, element}});
+        {{state.descriptorType, descriptor}, {coordinatesType, coordinates}, {access.valueType, elements}});
     InstructionBuilder builder(&context, helper.entry.get());
     // Accumulate the full offset; the final bounds check controls whether the store executes.
     const auto emitOffset = [&](uint32_t offset, uint32_t, uint32_t contribution, uint32_t resultId) {
         return builder.AddNaryOp(state.uint64Type, spv::Op::OpIAdd, {offset, contribution}, resultId)->result_id();
     };
-    const auto bounds =
-        emitBoundsAndByteOffset(state, helper, builder, tensor, descriptor, coordinates, coordinatesType, emitOffset);
-    builder.AddConditionalBranch(bounds.inBounds, helper.access->id(), helper.merge->id(), helper.merge->id());
+    const auto bounds = emitBoundsAndByteOffset(state, helper, builder, tensor, descriptor, coordinates,
+                                                coordinatesType, access.elementCount, emitOffset);
+    auto block = bounds.block;
+    for (uint32_t element = 0; element < access.elementCount; ++element) {
+        const auto elementBounds = emitElementBounds(state, builder, bounds, element, block);
+        auto store = createBlock(context);
+        auto merge = createBlock(context);
+        builder.AddConditionalBranch(elementBounds.inBounds, store->id(), merge->id(), merge->id());
 
-    builder.SetInsertPoint(helper.access.get());
-    const auto pointer = emitElementPointer(state, builder, tensor, descriptor, bounds.byteOffset);
-    auto storedValue = element;
-    if (context.get_type_mgr()->GetType(tensor.elementType)->AsBool()) {
-        const auto integerType = context.get_type_mgr()->GetSIntTypeId();
-        auto *constants = context.get_constant_mgr();
-        const auto one =
-            constants->GetDefiningInstruction(constants->GetConstant(context.get_type_mgr()->GetType(integerType), {1}))
-                ->result_id();
-        // Select canonical 0/1 in 32 bits, then narrow only for the byte store.
-        storedValue = builder.AddSelect(integerType, element, one, nullConstant(context, integerType))->result_id();
-        storedValue = builder.AddUnaryOp(pointer.storageType, spv::Op::OpSConvert, storedValue)->result_id();
+        builder.SetInsertPoint(store.get());
+        const auto pointer = emitElementPointer(state, builder, tensor, descriptor, elementBounds.byteOffset);
+        auto storedValue = access.valueType == tensor.elementType
+                               ? elements
+                               : builder.AddCompositeExtract(tensor.elementType, elements, {element})->result_id();
+        if (context.get_type_mgr()->GetType(tensor.elementType)->AsBool()) {
+            const auto integerType = context.get_type_mgr()->GetSIntTypeId();
+            auto *constants = context.get_constant_mgr();
+            const auto one =
+                constants
+                    ->GetDefiningInstruction(constants->GetConstant(context.get_type_mgr()->GetType(integerType), {1}))
+                    ->result_id();
+            // Select canonical 0/1 in 32 bits, then narrow only for the byte store.
+            storedValue =
+                builder.AddSelect(integerType, storedValue, one, nullConstant(context, integerType))->result_id();
+            storedValue = builder.AddUnaryOp(pointer.storageType, spv::Op::OpSConvert, storedValue)->result_id();
+        }
+        builder.AddInstruction(
+            makeInstruction(context, spv::Op::OpStore, 0, 0,
+                            {idOperand(pointer.id),
+                             idOperand(storedValue),
+                             {SPV_OPERAND_TYPE_MEMORY_ACCESS, {static_cast<uint32_t>(spv::MemoryAccessMask::Aligned)}},
+                             {SPV_OPERAND_TYPE_LITERAL_INTEGER, {pointer.alignment}}}));
+        builder.AddBranch(merge->id());
+
+        builder.SetInsertPoint(merge.get());
+        block = merge->id();
+        helper.blocks.push_back(std::move(store));
+        helper.blocks.push_back(std::move(merge));
     }
-    builder.AddInstruction(
-        makeInstruction(context, spv::Op::OpStore, 0, 0,
-                        {idOperand(pointer.id),
-                         idOperand(storedValue),
-                         {SPV_OPERAND_TYPE_MEMORY_ACCESS, {static_cast<uint32_t>(spv::MemoryAccessMask::Aligned)}},
-                         {SPV_OPERAND_TYPE_LITERAL_INTEGER, {pointer.alignment}}}));
-    builder.AddBranch(helper.merge->id());
-
-    builder.SetInsertPoint(helper.merge.get());
     builder.AddNullaryOp(0, spv::Op::OpReturn);
     const auto functionId = finishAccessFunction(context, std::move(helper));
     state.helpers.emplace(key, functionId);

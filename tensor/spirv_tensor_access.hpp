@@ -34,6 +34,25 @@ struct TensorType {
     std::optional<uint32_t> literalRank;
 };
 
+struct AccessValueInfo {
+    uint32_t valueType;
+    uint32_t elementCount;
+};
+
+// Identifies generated helpers with the same operation and SPIR-V argument types.
+// Rank IDs remain distinct even when their specialisation defaults match.
+struct AccessFunctionKey {
+    spv::Op operation;
+    uint32_t valueType;
+    uint32_t coordinatesType;
+    uint32_t rankId;
+
+    bool operator<(const AccessFunctionKey &other) const {
+        return std::tie(operation, valueType, coordinatesType, rankId) <
+               std::tie(other.operation, other.valueType, other.coordinatesType, other.rankId);
+    }
+};
+
 struct AccessState {
     explicit AccessState(IRContext &context);
 
@@ -42,12 +61,13 @@ struct AccessState {
     uint32_t descriptorType;
     uint32_t descriptorPointerType;
     uint32_t interfacePointerType;
-    // Operation, element type, coordinate-array type, and rank ID identify a helper.
-    std::map<std::tuple<spv::Op, uint32_t, uint32_t, uint32_t>, uint32_t> helpers;
+    std::map<AccessFunctionKey, uint32_t> helpers;
 };
 
-uint32_t getOrCreateReadHelper(AccessState &state, const TensorType &tensor, uint32_t coordinatesType);
-uint32_t getOrCreateWriteHelper(AccessState &state, const TensorType &tensor, uint32_t coordinatesType);
+uint32_t getOrCreateReadHelper(AccessState &state, const TensorType &tensor, uint32_t coordinatesType,
+                               const AccessValueInfo &access);
+uint32_t getOrCreateWriteHelper(AccessState &state, const TensorType &tensor, uint32_t coordinatesType,
+                                const AccessValueInfo &access);
 uint32_t emitSizeQuery(AccessState &state, InstructionBuilder &builder, uint32_t descriptor, uint32_t dimension);
 
 } // namespace mlsdk::el::layer::tensor_spirv
