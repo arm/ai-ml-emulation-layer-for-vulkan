@@ -61,10 +61,25 @@ class TensorLoweringForVulkan : public testing::Test {
         }
         vk::PhysicalDeviceFeatures2 features{};
         features.features.shaderInt64 = VK_TRUE;
+        const auto supported = vkPhysical.getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceTensorFeaturesARM,
+                                                       vk::PhysicalDeviceDescriptorIndexingFeatures>();
+        // The tensor layer enables the native feature needed for dynamic descriptor indexing.
+        dynamicIndexingSupported =
+            supported.get<vk::PhysicalDeviceTensorFeaturesARM>().shaderStorageTensorArrayDynamicIndexing;
+        vk::PhysicalDeviceDescriptorIndexingFeatures indexing{};
+        indexing.descriptorBindingUniformBufferUpdateAfterBind =
+            supported.get<vk::PhysicalDeviceDescriptorIndexingFeatures>().descriptorBindingUniformBufferUpdateAfterBind;
+        // Tensor descriptors are represented by uniform-buffer descriptors.
+        updateAfterBindSupported =
+            supported.get<vk::PhysicalDeviceTensorFeaturesARM>().descriptorBindingStorageTensorUpdateAfterBind &&
+            indexing.descriptorBindingUniformBufferUpdateAfterBind;
+        indexing.pNext = inlineSupported ? &maintenance5 : nullptr;
         vk::PhysicalDeviceTensorFeaturesARM tensors{};
         tensors.tensors = VK_TRUE;
         tensors.shaderTensorAccess = VK_TRUE;
-        tensors.pNext = inlineSupported ? &maintenance5 : nullptr;
+        tensors.shaderStorageTensorArrayDynamicIndexing = dynamicIndexingSupported;
+        tensors.descriptorBindingStorageTensorUpdateAfterBind = updateAfterBindSupported;
+        tensors.pNext = &indexing;
         features.pNext = &tensors;
         device = std::make_shared<utilities::Device>(physical, extensions, &features);
     }
@@ -117,6 +132,8 @@ class TensorLoweringForVulkan : public testing::Test {
 
     std::shared_ptr<utilities::Device> device;
     bool inlineSupported = false;
+    bool dynamicIndexingSupported = false;
+    bool updateAfterBindSupported = false;
 };
 
 class SpecializedTensorPipeline : public utilities::PipelineBase {
@@ -516,6 +533,153 @@ layout(set = 0, binding = 2, std430) buffer Results {
         expectTensorValues(*output, outputShape, values);
         tensors.insert(tensors.end(), {input, output});
     }
+}
+
+TEST_F(TensorLoweringForVulkan, DirectDescriptorArraysAndPartialUpdates) {
+    const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
+    ensureDevice();
+    if (!dynamicIndexingSupported) {
+        GTEST_SKIP() << "Tensor descriptor arrays require dynamic indexing";
+    }
+    TensorShaderSource source;
+    source.tensors = {{"sources", "uint", "2", 0, 0, "readonly", "3"},
+                      {"destinations", "uint", "2", 0, 1, "writeonly", "3"},
+                      {"results", "uint", "1", 0, 2},
+                      {"selection", "uint", "1", 0, 3}};
+    source.body = R"(
+    uint index;
+    tensorReadARM(selection, uint[](0), index);
+    uint height = tensorSizeARM(sources[index], 0);
+    uint width = tensorSizeARM(sources[index], 1);
+    uint value;
+    tensorReadARM(sources[index], uint[](height - 1, width - 1), value);
+    tensorWriteARM(destinations[index], uint[](height - 1, width - 1), value);
+    tensorWriteARM(results, uint[](0), height);
+    tensorWriteARM(results, uint[](1), width);
+    tensorWriteARM(results, uint[](2), value);
+    tensorReadARM(sources[index], uint[](0, width), value);
+    tensorWriteARM(results, uint[](3), value);
+    tensorReadARM(sources[2], uint[](0, 0), value);
+    tensorWriteARM(destinations[2], uint[](0, 0), value);
+)";
+    const auto shader = compileTensorShader(source);
+    std::vector<utilities::Shape> shapes{
+        {vk::Format::eR32Uint, {2, 3}, {24, 4}},
+        {vk::Format::eR32Uint, {3, 2}, {32, 8}},
+        {vk::Format::eR32Uint, {2, 4}, {48, 8}},
+        {vk::Format::eR32Uint, {1, 5}, {64, 12}},
+    };
+    std::vector<std::shared_ptr<utilities::Tensor>> inputs;
+    std::vector<std::shared_ptr<utilities::Tensor>> outputs;
+    std::vector<std::vector<uint32_t>> values;
+    for (size_t i = 0; i < shapes.size(); ++i) {
+        values.emplace_back(shapes[i].elementCount());
+        for (size_t element = 0; element < values.back().size(); ++element) {
+            values.back()[element] = static_cast<uint32_t>((100 * (i + 1)) + element);
+        }
+        inputs.push_back(makeTestTensor(device, shapes[i], values.back()));
+        outputs.push_back(makeTestTensor(device, shapes[i], std::vector<uint32_t>(values.back().size(), 0)));
+    }
+    const utilities::Shape resultsShape{vk::Format::eR32Uint, {4}};
+    auto results = makeTestTensor(device, resultsShape);
+    auto selection = makeTestTensor(device, {vk::Format::eR32Uint, {1}});
+    const utilities::TensorComputePipeline::DescriptorMap descriptors{{{0, {inputs[0], inputs[1], inputs[2]}},
+                                                                       {1, {outputs[0], outputs[1], outputs[2]}},
+                                                                       {2, {results}},
+                                                                       {3, {selection}}}};
+    utilities::TensorComputePipeline pipeline(device, descriptors, shader);
+    const auto bindings = pipeline.createDescriptorSets(descriptors);
+    std::vector<std::vector<uint32_t>> expected;
+    expected.reserve(shapes.size());
+    for (const auto &shape : shapes) {
+        expected.emplace_back(shape.elementCount(), 0);
+    }
+    for (const bool replaced : {false, true}) {
+        SCOPED_TRACE(replaced);
+        if (replaced) {
+            // Replace only the middle entries; the neighbours must retain their descriptors.
+            inputs[3]->updateDescriptorSet(bindings.sets.front(), 0, 1);
+            outputs[3]->updateDescriptorSet(bindings.sets.front(), 1, 1);
+        }
+        for (uint32_t index = 0; index < 3; ++index) {
+            SCOPED_TRACE(index);
+            std::memcpy(selection->data(), &index, sizeof(index));
+            pipeline.dispatchSubmit(bindings.sets, 1, 1, 1);
+            const auto selected = replaced && index == 1 ? 3u : index;
+            const auto &dimensions = shapes[selected].getDimensions();
+            expectTensorValues<uint32_t>(*results, resultsShape,
+                                         {static_cast<uint32_t>(dimensions[0]), static_cast<uint32_t>(dimensions[1]),
+                                          values[selected].back(), 0});
+            expected[selected].back() = values[selected].back();
+            expected[2][0] = values[2][0];
+            for (size_t i = 0; i < shapes.size(); ++i) {
+                expectTensorValues(*outputs[i], shapes[i], expected[i]);
+            }
+        }
+    }
+}
+
+TEST_F(TensorLoweringForVulkan, DirectDescriptorReplacementAfterBinding) {
+    const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
+    ensureDevice();
+    if (!updateAfterBindSupported) {
+        GTEST_SKIP() << "Tensor descriptor replacement requires tensor and uniform-buffer update-after-bind support";
+    }
+    TensorShaderSource source;
+    source.tensors = {{"inputData", "uint", "1", 0, 0}, {"outputData", "uint", "1", 0, 1}};
+    source.body = R"(
+    uint size = tensorSizeARM(inputData, 0);
+    uint value;
+    tensorReadARM(inputData, uint[](size - 1), value);
+    tensorWriteARM(outputData, uint[](0), size);
+    tensorWriteARM(outputData, uint[](1), value);
+)";
+    const auto shader = compileTensorShader(source);
+    const auto original = makeTestTensor<uint32_t>(device, {vk::Format::eR32Uint, {2}}, {11, 22});
+    const auto replacement = makeTestTensor<uint32_t>(device, {vk::Format::eR32Uint, {5}, {12}}, {31, 32, 33, 34, 35});
+    const auto output = makeTestTensor<uint32_t>(device, {vk::Format::eR32Uint, {2}}, {0, 0});
+    const auto &vkDevice = &(*device);
+    const std::array<vk::DescriptorSetLayoutBinding, 2> bindings{{
+        {0, vk::DescriptorType::eTensorARM, 1, vk::ShaderStageFlagBits::eCompute},
+        {1, vk::DescriptorType::eTensorARM, 1, vk::ShaderStageFlagBits::eCompute},
+    }};
+    const std::array<vk::DescriptorBindingFlags, 2> flags{vk::DescriptorBindingFlagBits::eUpdateAfterBind, {}};
+    const vk::DescriptorSetLayoutBindingFlagsCreateInfo bindingFlags{flags};
+    const vk::raii::DescriptorSetLayout descriptorLayout{
+        vkDevice, vk::DescriptorSetLayoutCreateInfo{vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool,
+                                                    bindings, &bindingFlags}};
+    const vk::DescriptorSetLayout rawLayout = *descriptorLayout;
+    const vk::raii::PipelineLayout layout{vkDevice, vk::PipelineLayoutCreateInfo{{}, 1, &rawLayout}};
+    const vk::raii::ShaderModule module{vkDevice, vk::ShaderModuleCreateInfo{{}, shader}};
+    const vk::PipelineShaderStageCreateInfo stage{{}, vk::ShaderStageFlagBits::eCompute, *module, "main"};
+    const vk::raii::Pipeline pipeline{vkDevice, nullptr, vk::ComputePipelineCreateInfo{{}, stage, *layout}};
+    const vk::DescriptorPoolSize poolSize{vk::DescriptorType::eTensorARM, 2};
+    const vk::raii::DescriptorPool pool{
+        vkDevice, vk::DescriptorPoolCreateInfo{vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet |
+                                                   vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind,
+                                               1, 1, &poolSize}};
+    const vk::raii::DescriptorSets sets{vkDevice, vk::DescriptorSetAllocateInfo{*pool, 1, &rawLayout}};
+    original->updateDescriptorSet(sets.front(), 0, 0);
+    output->updateDescriptorSet(sets.front(), 1, 0);
+    const auto queueFamily = device->getPhysicalDevice()->getComputeFamilyIndex();
+    const vk::raii::CommandPool commandPool{vkDevice, vk::CommandPoolCreateInfo{{}, queueFamily}};
+    const vk::raii::CommandBuffers commands{
+        vkDevice, vk::CommandBufferAllocateInfo{*commandPool, vk::CommandBufferLevel::ePrimary, 1}};
+    const auto &command = commands.front();
+    command.begin(vk::CommandBufferBeginInfo{vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    command.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
+    command.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *layout, 0, {*sets.front()}, {});
+    command.dispatch(1, 1, 1);
+    const vk::MemoryBarrier barrier{vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eHostRead};
+    command.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eHost, {}, {barrier},
+                            {}, {});
+    command.end();
+    // The recorded dispatch must observe the replacement's address, size and stride.
+    replacement->updateDescriptorSet(sets.front(), 0, 0);
+    const vk::raii::Queue queue{vkDevice, queueFamily, 0};
+    queue.submit(vk::SubmitInfo{{}, {}, *command}, nullptr);
+    queue.waitIdle();
+    expectTensorValues<uint32_t>(*output, {vk::Format::eR32Uint, {2}}, {5, 35});
 }
 
 TEST_F(TensorLoweringForVulkan, DirectSpecializedRanksAndInt64Storage) {

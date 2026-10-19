@@ -34,6 +34,7 @@ struct TensorShaderBinding {
     uint32_t set;
     uint32_t binding;
     std::string memoryQualifiers = {};
+    std::string arrayLength = {};
 };
 
 struct TensorShaderSource {
@@ -51,7 +52,7 @@ inline std::vector<uint32_t> compileTensorShader(const TensorShaderSource &shade
     for (const auto &tensor : shader.tensors) {
         source += "layout(set = " + std::to_string(tensor.set) + ", binding = " + std::to_string(tensor.binding) +
                   ") " + tensor.memoryQualifiers + " uniform tensorARM<" + tensor.elementType + ", " + tensor.rank +
-                  "> " + tensor.name + ";\n";
+                  "> " + tensor.name + (tensor.arrayLength.empty() ? "" : "[" + tensor.arrayLength + "]") + ";\n";
     }
     return compileGlsl(source + "\nvoid main() {\n" + shader.body + "\n}\n");
 }
