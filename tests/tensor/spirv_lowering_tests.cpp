@@ -546,6 +546,35 @@ TEST(TensorSpirvLowering, LowersConvolutionPoolingAndResizeVariants) {
     }
 }
 
+TEST(TensorSpirvLowering, LowersBlockMatchingVariants) {
+    for (const auto *name : {"block_match_0", "block_match_1", "block_match_2_uint8_t", "block_match_2_uint16_t"}) {
+        SCOPED_TRACE(name);
+        const auto &[words, size] = compute::precompiledSpirvModules.at(name);
+        const std::vector<uint32_t> input(words, words + size);
+        auto spirv = input;
+        ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+        EXPECT_EQ(specializationInstructions(spirv), specializationInstructions(input));
+
+        // Exercise raster and spiral search with non-default kernel, stride and padding values.
+        for (const uint32_t pattern : {0u, 1u}) {
+            SCOPED_TRACE(pattern);
+            ASSERT_NO_FATAL_FAILURE(expectSpecialized(spirv, {{0, {3}},
+                                                              {1, {5}},
+                                                              {2, {3}},
+                                                              {3, {3}},
+                                                              {4, {2}},
+                                                              {5, {3}},
+                                                              {6, {2}},
+                                                              {7, {1}},
+                                                              {8, {1}},
+                                                              {9, {1}},
+                                                              {10, {1}},
+                                                              {11, {2}},
+                                                              {12, {pattern}}}));
+        }
+    }
+}
+
 TEST(TensorSpirvLowering, PreservesResizePreciseArithmetic) {
     const auto &[words, size] = compute::precompiledSpirvModules.at("resize_float_float");
     const std::vector<uint32_t> input(words, words + size);
