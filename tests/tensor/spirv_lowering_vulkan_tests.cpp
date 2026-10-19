@@ -412,6 +412,112 @@ INSTANTIATE_TEST_SUITE_P(LoweringModes, TensorRuntimeBoundsForVulkan, testing::V
                              return std::string(info.param) == "0" ? "GlslToSpirv" : "DirectSpirv";
                          });
 
+TEST_F(TensorLoweringForVulkan, DirectReusesPipelineWithMixedBufferAndTensorDescriptors) {
+    const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
+    ensureDevice();
+    TensorShaderSource source;
+    source.tensors = {{"source", "uint", "2", 0, 0, "readonly"}, {"destination", "uint", "2", 0, 1, "writeonly"}};
+    source.declarations = R"(
+layout(set = 0, binding = 2, std430) buffer Results {
+    uint bias;
+    uint height;
+    uint width;
+    uint sum;
+} results;
+)";
+    source.body = R"(
+    results.height = tensorSizeARM(source, 0);
+    results.width = tensorSizeARM(source, 1);
+    uint sum = 0;
+    for (uint y = 0; y < results.height; ++y) {
+        for (uint x = 0; x < results.width; ++x) {
+            uint value;
+            tensorReadARM(source, uint[](y, x), value);
+            value += results.bias;
+            tensorWriteARM(destination, uint[](y, x), value);
+            sum += value;
+        }
+    }
+    results.sum = sum;
+)";
+    const auto shader = compileTensorShader(source);
+    const auto &vkDevice = &(*device);
+    const std::array<vk::DescriptorSetLayoutBinding, 3> bindings{{
+        {0, vk::DescriptorType::eTensorARM, 1, vk::ShaderStageFlagBits::eCompute},
+        {1, vk::DescriptorType::eTensorARM, 1, vk::ShaderStageFlagBits::eCompute},
+        {2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+    }};
+    const vk::raii::DescriptorSetLayout descriptorLayout{vkDevice, vk::DescriptorSetLayoutCreateInfo{{}, bindings}};
+    const vk::DescriptorSetLayout rawLayout = *descriptorLayout;
+    const vk::raii::PipelineLayout layout{vkDevice, vk::PipelineLayoutCreateInfo{{}, 1, &rawLayout}};
+    const vk::raii::ShaderModule module{vkDevice, vk::ShaderModuleCreateInfo{{}, shader}};
+    const vk::PipelineShaderStageCreateInfo stage{{}, vk::ShaderStageFlagBits::eCompute, *module, "main"};
+    const vk::raii::Pipeline pipeline{vkDevice, nullptr, vk::ComputePipelineCreateInfo{{}, stage, *layout}};
+    const std::array<vk::DescriptorPoolSize, 2> sizes{
+        {{vk::DescriptorType::eTensorARM, 2}, {vk::DescriptorType::eStorageBuffer, 1}}};
+    const vk::raii::DescriptorPool pool{
+        vkDevice, vk::DescriptorPoolCreateInfo{vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 1, sizes}};
+    const vk::raii::DescriptorSets sets{vkDevice, vk::DescriptorSetAllocateInfo{*pool, 1, &rawLayout}};
+    const vk::raii::Buffer buffer{
+        vkDevice, vk::BufferCreateInfo{{}, 4 * sizeof(uint32_t), vk::BufferUsageFlagBits::eStorageBuffer}};
+    const auto requirements = buffer.getMemoryRequirements();
+    const auto memory = device->allocateDeviceMemory(
+        requirements.size, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+        requirements.memoryTypeBits);
+    buffer.bindMemory(**memory, 0);
+    const vk::DescriptorBufferInfo bufferInfo{*buffer, 0, 4 * sizeof(uint32_t)};
+    vkDevice.updateDescriptorSets(
+        {vk::WriteDescriptorSet{*sets.front(), 2, 0, 1, vk::DescriptorType::eStorageBuffer, nullptr, &bufferInfo}}, {});
+    const auto queueFamily = device->getPhysicalDevice()->getComputeFamilyIndex();
+    const vk::raii::CommandPool commandPool{vkDevice, vk::CommandPoolCreateInfo{{}, queueFamily}};
+    const vk::raii::Queue queue{vkDevice, queueFamily, 0};
+
+    // Reuse the same shader module and pipeline while all tensor metadata changes.
+    // Keep earlier allocations alive so later tensors have different addresses.
+    std::vector<std::shared_ptr<utilities::Tensor>> tensors;
+    for (const auto &[height, width, rowStride, elementStride] :
+         std::vector<std::array<int64_t, 4>>{{2, 3, 12, 4}, {3, 2, 40, 8}, {2, 4, 16, 4}}) {
+        SCOPED_TRACE(testing::PrintToString(std::array{height, width, rowStride, elementStride}));
+        const utilities::Shape inputShape{vk::Format::eR32Uint, {height, width}, {rowStride, elementStride}};
+        const utilities::Shape outputShape{vk::Format::eR32Uint, {height, width}, {(width * 8) + 16, 8}};
+        std::vector<uint32_t> values(static_cast<size_t>(height * width));
+        for (size_t i = 0; i < values.size(); ++i) {
+            values[i] = static_cast<uint32_t>(i * 17) + static_cast<uint32_t>(height);
+        }
+        const auto input = makeTestTensor(device, inputShape, values);
+        const auto output = makeTestTensor(device, outputShape, std::vector<uint32_t>(values.size(), 0));
+        input->updateDescriptorSet(sets.front(), 0, 0);
+        output->updateDescriptorSet(sets.front(), 1, 0);
+        const auto bias = uint32_t(height + width);
+        const std::array<uint32_t, 4> initial{bias, 0xa5a5a5a5, 0xa5a5a5a5, 0xa5a5a5a5};
+        auto *mapped = memory->mapMemory(0, VK_WHOLE_SIZE);
+        std::memcpy(mapped, initial.data(), sizeof(initial));
+        const vk::raii::CommandBuffers commands{
+            vkDevice, vk::CommandBufferAllocateInfo{*commandPool, vk::CommandBufferLevel::ePrimary, 1}};
+        const auto &command = commands.front();
+        command.begin(vk::CommandBufferBeginInfo{vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+        command.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
+        command.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *layout, 0, {*sets.front()}, {});
+        command.dispatch(1, 1, 1);
+        const vk::MemoryBarrier barrier{vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eHostRead};
+        command.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eHost, {},
+                                {barrier}, {}, {});
+        command.end();
+        queue.submit(vk::SubmitInfo{{}, {}, *command}, nullptr);
+        queue.waitIdle();
+        uint32_t sum = 0;
+        for (auto &value : values) {
+            value += bias;
+            sum += value;
+        }
+        const std::array<uint32_t, 4> expected{bias, uint32_t(height), uint32_t(width), sum};
+        EXPECT_EQ(std::memcmp(mapped, expected.data(), sizeof(expected)), 0);
+        memory->unmapMemory();
+        expectTensorValues(*output, outputShape, values);
+        tensors.insert(tensors.end(), {input, output});
+    }
+}
+
 TEST_F(TensorLoweringForVulkan, DirectSpecializedRanksAndInt64Storage) {
     const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
     ensureDevice();
