@@ -522,6 +522,66 @@ TEST(TensorSpirvLowering, LowersArrayOperatorVariants) {
     }
 }
 
+TEST(TensorSpirvLowering, LowersConvolutionPoolingAndResizeVariants) {
+    std::map<std::string_view, size_t> families{{"depthwise_conv2d_", 0}, {"conv3d_", 0},    {"transpose_conv2d_", 0},
+                                                {"avgpool2d_", 0},        {"maxpool2d_", 0}, {"resize_", 0}};
+    for (const auto &[name, module] : compute::precompiledSpirvModules) {
+        const auto family = std::find_if(families.begin(), families.end(), [shaderName = name](const auto &entry) {
+            return shaderName.rfind(entry.first, 0) == 0;
+        });
+        if (family == families.end()) {
+            continue;
+        }
+        SCOPED_TRACE(name);
+        const auto &[words, size] = module;
+        const std::vector<uint32_t> input(words, words + size);
+        auto spirv = input;
+        // Includes validation of the nested loops and merge blocks.
+        ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+        EXPECT_EQ(specializationInstructions(spirv), specializationInstructions(input));
+        ++family->second;
+    }
+    for (const auto &[name, variants] : families) {
+        EXPECT_GT(variants, 0u) << name;
+    }
+}
+
+TEST(TensorSpirvLowering, PreservesResizePreciseArithmetic) {
+    const auto &[words, size] = compute::precompiledSpirvModules.at("resize_float_float");
+    const std::vector<uint32_t> input(words, words + size);
+    auto spirv = input;
+    ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+    spvtools::SpirvTools tools(SPV_ENV_VULKAN_1_3);
+    std::string original;
+    std::string lowered;
+    // Numeric IDs make it possible to check the original arithmetic instructions
+    // and their NoContraction targets without depending on generated debug names.
+    ASSERT_TRUE(tools.Disassemble(input, &original, SPV_BINARY_TO_TEXT_OPTION_NO_HEADER));
+    ASSERT_TRUE(tools.Disassemble(spirv, &lowered, SPV_BINARY_TO_TEXT_OPTION_NO_HEADER));
+    size_t precisionCount = 0;
+    size_t arithmeticCount = 0;
+    for (size_t offset = 0; offset < original.size();) {
+        const auto end = original.find('\n', offset);
+        const auto line = original.substr(offset, end == std::string::npos ? end : end - offset);
+        const bool precision =
+            line.find("OpDecorate ") != std::string::npos && line.find(" NoContraction") != std::string::npos;
+        const bool arithmetic =
+            line.find(" = OpFAdd ") != std::string::npos || line.find(" = OpFSub ") != std::string::npos ||
+            line.find(" = OpFMul ") != std::string::npos || line.find(" = OpFDiv ") != std::string::npos;
+        if (precision || arithmetic) {
+            EXPECT_NE(lowered.find(line + "\n"), std::string::npos) << line;
+            precisionCount += precision;
+            arithmeticCount += arithmetic;
+        }
+        if (end == std::string::npos) {
+            break;
+        }
+        offset = end + 1;
+    }
+    EXPECT_GT(precisionCount, 0u);
+    EXPECT_GT(arithmeticCount, 0u);
+}
+
 TEST(TensorSpirvLowering, DistinguishesScalarAndArrayHelpers) {
     for (const bool specialized : {false, true}) {
         for (const std::string elementType : {"OpTypeInt 32 1", "OpTypeFloat 32", "OpTypeBool"}) {

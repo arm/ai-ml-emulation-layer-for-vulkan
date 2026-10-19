@@ -954,5 +954,148 @@ TEST_F(TensorLoweringForVulkan, DirectTableInterpolatesTwoElementReads) {
     expectTensorValues<int32_t>(*output, outputShape, {-32768, -32767, -1, 0, 32640, 32767});
 }
 
+TEST_F(TensorLoweringForVulkan, DirectDepthwiseConvolutionDilationAndChannelMultiplier) {
+    const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
+    ensureDevice();
+    using utilities::Shape;
+    auto input = makeTestTensor<int8_t>(device, Shape{vk::Format::eR8Uint, {1, 3, 3, 2}, {256, 80, 20, 3}},
+                                        {1, 10, 2, 20, 3, 30, 4, 40, 5, 50, 6, 60, 7, 70, 8, 80, 9, 90});
+    auto weights = makeTestTensor<int8_t>(device, Shape{vk::Format::eR8Uint, {2, 2, 2, 2}, {128, 48, 12, 3}},
+                                          {1, 2, -1, 1, 1, 2, -1, 1, 1, 2, -1, 1, 1, 2, -1, 1});
+    auto bias = makeTestTensor<int32_t>(device, Shape{vk::Format::eR32Uint, {4}, {8}}, {1, 2, 3, 4});
+    const Shape outputShape{vk::Format::eR32Uint, {1, 2, 2, 4}, {256, 112, 48, 8}};
+    auto output = makeTestTensor(device, outputShape);
+    const SpecializedTensorPipeline::DescriptorMap descriptors{
+        {{0, {output}}}, {{0, {input}}}, {{0, {weights}}}, {{0, {bias}}}};
+    const auto &[words, size] = compute::precompiledSpirvModules.at("depthwise_conv2d_int8_t_int8_t_int_int");
+    SpecializedTensorPipeline pipeline(device, descriptors, {words, words + size});
+    // Zero points, top/left padding, stride 1 and dilation 2.
+    pipeline.dispatch(descriptors, nullptr, {0, 0, 1, 0, 1, 0, 1, 1, 2, 2});
+    expectTensorValues<int32_t>(*output, outputShape,
+                                {6, 12, -47, 54, 11, 22, -97, 104, 11, 22, -97, 104, 21, 42, -197, 204});
+}
+
+TEST_F(TensorLoweringForVulkan, DirectConv3DFiveDimensionalStridesAndPaddedKernel) {
+    const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
+    ensureDevice();
+    using utilities::Shape;
+    auto input = makeTestTensor<int8_t>(device, Shape{vk::Format::eR8Uint, {1, 2, 2, 2, 2}, {256, 128, 48, 16, 3}},
+                                        {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16});
+    auto weights = makeTestTensor<int8_t>(
+        device, Shape{vk::Format::eR8Uint, {2, 2, 2, 2, 2}, {256, 128, 48, 16, 3}},
+        {1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1});
+    auto bias = makeTestTensor<int32_t>(device, Shape{vk::Format::eR32Uint, {2}, {12}}, {10, 20});
+    const Shape outputShape{vk::Format::eR32Uint, {1, 2, 2, 2, 2}, {1024, 512, 192, 64, 12}};
+    auto output = makeTestTensor(device, outputShape);
+    const SpecializedTensorPipeline::DescriptorMap descriptors{
+        {{0, {output}}}, {{0, {input}}}, {{0, {weights}}}, {{0, {bias}}}};
+    const auto &[words, size] = compute::precompiledSpirvModules.at("conv3d_int8_t_int8_t_int_int");
+    SpecializedTensorPipeline pipeline(device, descriptors, {words, words + size});
+    // The 2x2x2 kernel crosses the front, top and left boundaries. Later output
+    // positions traverse the full kernel, including both input/output channels.
+    pipeline.dispatch(descriptors, nullptr, {1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1});
+    expectTensorValues<int32_t>(*output, outputShape,
+                                {12, 21, 20, 22, 26, 22, 54, 24, 38, 22, 78, 24, 90, 24, 194, 28});
+}
+
+TEST_F(TensorLoweringForVulkan, DirectTransposeConvolutionStrideAndScalarBias) {
+    const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
+    ensureDevice();
+    using utilities::Shape;
+    auto input = makeTestTensor<int8_t>(device, Shape{vk::Format::eR8Uint, {1, 2, 2, 1}, {64, 24, 8, 2}}, {1, 2, 3, 4});
+    auto weights = makeTestTensor<int8_t>(device, Shape{vk::Format::eR8Uint, {2, 2, 2, 1}, {64, 24, 8, 2}},
+                                          {1, 2, 3, 4, -1, -2, -3, -4});
+    auto bias = makeTestTensor<int32_t>(device, Shape{vk::Format::eR32Uint, {1}, {8}}, {7});
+    const Shape outputShape{vk::Format::eR32Uint, {1, 3, 3, 2}, {512, 144, 40, 8}};
+    auto output = makeTestTensor(device, outputShape);
+    const SpecializedTensorPipeline::DescriptorMap descriptors{
+        {{0, {output}}}, {{0, {input}}}, {{0, {weights}}}, {{0, {bias}}}};
+    const auto &[words, size] = compute::precompiledSpirvModules.at("transpose_conv2d_int8_t_int8_t_int_int");
+    SpecializedTensorPipeline pipeline(device, descriptors, {words, words + size});
+    // Crop one row/column from a stride-2 transpose convolution. Alternating
+    // outputs take different modulo branches when locating their input samples.
+    const auto negativeOne = static_cast<uint32_t>(-1);
+    pipeline.dispatch(descriptors, nullptr, {0, 0, negativeOne, 0, negativeOne, 0, 2, 2});
+    expectTensorValues<int32_t>(*output, outputShape,
+                                {11, 3, 13, 1, 15, -1, 13, 1, 11, 3, 15, -1, 19, -5, 19, -5, 23, -9});
+}
+
+TEST_F(TensorLoweringForVulkan, DirectAveragePoolPaddingCountsAndSignedRounding) {
+    const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
+    ensureDevice();
+    using utilities::Shape;
+    auto input =
+        makeTestTensor<int8_t>(device, Shape{vk::Format::eR8Uint, {1, 2, 2, 1}, {64, 24, 8, 2}}, {-4, -1, 2, 5});
+    const Shape outputShape{vk::Format::eR8Uint, {1, 3, 3, 1}, {128, 32, 8, 2}};
+    auto output = makeTestTensor(device, outputShape);
+    const SpecializedTensorPipeline::DescriptorMap descriptors{{{0, {output}}}, {{0, {input}}}};
+    const auto &[words, size] = compute::precompiledSpirvModules.at("avgpool2d_int8_t_int");
+    SpecializedTensorPipeline pipeline(device, descriptors, {words, words + size});
+    // Kernel, stride, padding, and input/output zero points. Corners, edges and
+    // the centre average one, two and four valid samples respectively.
+    pipeline.dispatch(descriptors, nullptr, {2, 2, 1, 1, 1, 1, 1, 1, 1, 2});
+    expectTensorValues<int8_t>(*output, outputShape, {-3, -2, 0, 0, 1, 3, 3, 5, 6});
+}
+
+TEST_F(TensorLoweringForVulkan, DirectMaxPoolNaNContinueAndEarlyWrite) {
+    const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
+    ensureDevice();
+    using utilities::Shape;
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    auto input = makeTestTensor<float>(device, Shape{vk::Format::eR32Sfloat, {1, 2, 3, 2}, {256, 112, 32, 8}},
+                                       {nan, 2, 3, 4, 5, 6, 7, nan, 9, 10, 11, 12});
+    const Shape outputShape{vk::Format::eR32Sfloat, {1, 2, 3, 2}, {320, 144, 40, 12}};
+    auto output = makeTestTensor(device, outputShape);
+    const SpecializedTensorPipeline::DescriptorMap descriptors{{{0, {output}}}, {{0, {input}}}};
+    const auto &[words, size] = compute::precompiledSpirvModules.at("maxpool2d_float");
+    SpecializedTensorPipeline pipeline(device, descriptors, {words, words + size});
+    for (const auto &[mode, expected] : std::vector<std::pair<uint32_t, std::vector<float>>>{
+             {2, {std::numeric_limits<float>::lowest(), 2, 3, 4, 5, 6, 7, 2, 9, 10, 11, 12}},
+             {1, {nan, 2, nan, 4, 5, 6, nan, nan, nan, nan, 11, 12}}}) {
+        SCOPED_TRACE(mode);
+        std::memset(output->data(), 0xa5, output->size());
+        // IGNORE continues after NaNs; PROPAGATE writes and returns from inside
+        // the nested kernel loop. Other invocations still reach the normal store.
+        pipeline.dispatch(descriptors, nullptr, {2, 2, 1, 1, 1, 0, 1, 0, mode});
+        expectTensorValues(*output, outputShape, expected);
+    }
+}
+
+TEST_F(TensorLoweringForVulkan, DirectResizeInterpolationBordersAndLargeValues) {
+    const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
+    ensureDevice();
+    using utilities::Shape;
+    const float large = std::numeric_limits<float>::max();
+    struct Case {
+        uint32_t mode;
+        int32_t offset;
+        std::vector<float> input;
+        std::vector<float> expected;
+    };
+    const std::vector<Case> cases{
+        {2, 0, {2, 6, 10, 14}, {2, 4, 6, 6, 8, 10, 10, 12, 14}},
+        {1, 0, {2, 6, 10, 14}, {2, 6, 6, 10, 14, 14, 10, 14, 14}},
+        {2, -1, {2, 6, 10, 14}, {2, 2, 4, 2, 2, 4, 6, 6, 8}},
+        {1, -1, {2, 6, 10, 14}, {2, 2, 6, 2, 2, 6, 10, 10, 14}},
+        // Rewriting interpolation in terms of differences can overflow for these
+        // finite samples. Preserve the shader's precise weighted-sum arithmetic.
+        {2, 0, {large, -large, large, -large}, {large, 0, -large, large, 0, -large, large, 0, -large}}};
+    const Shape inputShape{vk::Format::eR32Sfloat, {1, 2, 2, 1}, {128, 48, 16, 8}};
+    const Shape outputShape{vk::Format::eR32Sfloat, {1, 3, 3, 1}, {256, 80, 20, 8}};
+    const auto &[words, size] = compute::precompiledSpirvModules.at("resize_float_float");
+    for (size_t i = 0; i < cases.size(); ++i) {
+        SCOPED_TRACE(i);
+        const auto &test = cases[i];
+        auto input = makeTestTensor(device, inputShape, test.input);
+        auto output = makeTestTensor(device, outputShape);
+        const SpecializedTensorPipeline::DescriptorMap descriptors{{{0, {output}}}, {{0, {input}}}};
+        SpecializedTensorPipeline pipeline(device, descriptors, {words, words + size});
+        const auto offset = static_cast<uint32_t>(test.offset);
+        // Scale numerator/denominator for y and x, offsets, borders, then mode.
+        pipeline.dispatch(descriptors, nullptr, {2, 1, 2, 1, offset, offset, 0, 0, test.mode});
+        expectTensorValues(*output, outputShape, test.expected);
+    }
+}
+
 } // namespace
 } // namespace mlsdk::el::tests
