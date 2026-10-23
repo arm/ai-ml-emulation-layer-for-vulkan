@@ -13,6 +13,7 @@
   native install trees without rebuilding them or modifying package sources.
 - Standardized the installed wheel payload directory as `binaries`, matching the
   other native SDK pip packages.
+- Raised the minimum supported Python version from 3.10 to 3.11.
 
 ### Performance
 
