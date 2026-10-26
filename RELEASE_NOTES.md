@@ -22,6 +22,8 @@
 
 ### Bug Fixes
 
+- Fixed dynamic and non-uniform tensor descriptor indexing feature reporting and
+  device creation to check and enable the required uniform-buffer indexing support.
 - Fixed TOSA `SIN` and `COS` handling for positive and negative infinity by
   returning `NaN` before invoking driver-dependent trigonometric functions.
 - Fix optical-flow search range mapping to align with reference

@@ -14,6 +14,7 @@
 #include <iostream>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <tuple>
 #include <vector>
 #include <vulkan/vulkan_beta.h>
@@ -335,9 +336,204 @@ TEST(MLEmulationLayerForVulkan, CheckTensorFeature) {
     vk::raii::Context ctx{};
     auto instance = createInstance(ctx, {"VK_LAYER_ML_Tensor_Emulation"});
     auto [device, physicalDevice] = createDevice(instance, {"VK_LAYER_ML_Tensor_Emulation"});
-    auto features = physicalDevice.getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceTensorFeaturesARM>();
+    auto features = physicalDevice.getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceTensorFeaturesARM,
+                                                vk::PhysicalDeviceVulkan12Features>();
     const auto &tensorFeature = features.template get<vk::PhysicalDeviceTensorFeaturesARM>();
     ASSERT_TRUE(tensorFeature.shaderTensorAccess) << "shaderTensorAccess not supported!";
+    EXPECT_EQ(tensorFeature.shaderStorageTensorArrayDynamicIndexing,
+              features.get<vk::PhysicalDeviceFeatures2>().features.shaderUniformBufferArrayDynamicIndexing);
+    EXPECT_EQ(tensorFeature.shaderStorageTensorArrayNonUniformIndexing,
+              features.get<vk::PhysicalDeviceVulkan12Features>().shaderUniformBufferArrayNonUniformIndexing);
+}
+
+VKAPI_ATTR vk::Bool32 VKAPI_CALL collectFeatureValidationError(vk::DebugUtilsMessageSeverityFlagBitsEXT,
+                                                               vk::DebugUtilsMessageTypeFlagsEXT,
+                                                               const vk::DebugUtilsMessengerCallbackDataEXT *data,
+                                                               void *userData) {
+    static_cast<std::vector<std::string> *>(userData)->emplace_back(data->pMessage);
+    return VK_TRUE;
+}
+
+TEST(MLEmulationLayerForVulkan, TensorDynamicIndexingEnablesUniformBufferFeature) {
+    vk::raii::Context ctx{};
+    const auto layers = ctx.enumerateInstanceLayerProperties();
+    if (std::none_of(layers.begin(), layers.end(), [](const auto &layer) {
+            return std::strcmp(layer.layerName, "VK_LAYER_KHRONOS_validation") == 0;
+        })) {
+        GTEST_SKIP() << "Validation layer is required to check enabled downstream features";
+    }
+    // Validation must see the device and shader after the tensor layer has translated them.
+    auto instance = createInstance(ctx, {"VK_LAYER_ML_Tensor_Emulation", "VK_LAYER_KHRONOS_validation"},
+                                   {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+    std::vector<std::string> errors;
+    const vk::DebugUtilsMessengerCreateInfoEXT messengerInfo{{},
+                                                             vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
+                                                             vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation,
+                                                             collectFeatureValidationError,
+                                                             &errors};
+    const vk::raii::DebugUtilsMessengerEXT messenger{instance, messengerInfo};
+
+    for (const auto &physicalDevice : vk::raii::PhysicalDevices{instance}) {
+        const auto supported =
+            physicalDevice.getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceTensorFeaturesARM>();
+        if (!supported.get<vk::PhysicalDeviceTensorFeaturesARM>().shaderStorageTensorArrayDynamicIndexing) {
+            continue;
+        }
+        const auto queueInfos = getQueueCreateInfo(physicalDevice, vk::QueueFlagBits::eCompute);
+        if (queueInfos.empty()) {
+            continue;
+        }
+        std::vector<const char *> extensions{VK_ARM_TENSORS_EXTENSION_NAME};
+        if (mlsdk::el::utils::hasExtension(physicalDevice.enumerateDeviceExtensionProperties(),
+                                           VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)) {
+            extensions.push_back(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+        }
+        const auto spirv = compileGlsl(R"(
+#version 460
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) uniform Source { uint value; } sources[2];
+layout(set = 0, binding = 1) buffer Result { uint value; } result;
+layout(push_constant) uniform Selection { uint index; } selection;
+void main() { result.value = sources[selection.index].value; }
+)");
+        // Cover both ways to supply core features, and the case where none were supplied.
+        enum class FeatureSource { Features2, EnabledFeatures, None };
+        for (const auto featureSource :
+             {FeatureSource::Features2, FeatureSource::EnabledFeatures, FeatureSource::None}) {
+            SCOPED_TRACE(static_cast<int>(featureSource));
+            vk::PhysicalDeviceFeatures coreFeatures{};
+            vk::PhysicalDeviceFeatures2 features2{};
+            vk::PhysicalDeviceTensorFeaturesARM tensors{};
+            tensors.tensors = VK_TRUE;
+            tensors.shaderTensorAccess = VK_TRUE;
+            tensors.shaderStorageTensorArrayDynamicIndexing = VK_TRUE;
+            features2.pNext = &tensors;
+            vk::DeviceCreateInfo createInfo{};
+            createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueInfos.size());
+            createInfo.pQueueCreateInfos = queueInfos.data();
+            createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+            createInfo.ppEnabledExtensionNames = extensions.data();
+            createInfo.pNext = featureSource == FeatureSource::Features2 ? static_cast<void *>(&features2) : &tensors;
+            createInfo.pEnabledFeatures = featureSource == FeatureSource::EnabledFeatures ? &coreFeatures : nullptr;
+            const vk::raii::Device device{physicalDevice, createInfo};
+            // This native shader probes the actual enabled feature. It must be valid even
+            // though the application requested only the corresponding tensor feature.
+            const vk::ShaderModuleCreateInfo shaderInfo{{}, spirv.size() * sizeof(uint32_t), spirv.data()};
+            EXPECT_NO_THROW((vk::raii::ShaderModule{device, shaderInfo}));
+            EXPECT_FALSE(features2.features.shaderUniformBufferArrayDynamicIndexing);
+            EXPECT_FALSE(coreFeatures.shaderUniformBufferArrayDynamicIndexing);
+            EXPECT_EQ(features2.pNext, &tensors);
+            EXPECT_EQ(tensors.pNext, nullptr);
+            for (const auto &error : errors) {
+                ADD_FAILURE() << error;
+            }
+            errors.clear();
+        }
+        return;
+    }
+    GTEST_SKIP() << "Dynamic tensor descriptor indexing is not supported";
+}
+
+TEST(MLEmulationLayerForVulkan, TensorNonUniformIndexingEnablesUniformBufferFeature) {
+    vk::raii::Context ctx{};
+    const auto layers = ctx.enumerateInstanceLayerProperties();
+    if (std::none_of(layers.begin(), layers.end(), [](const auto &layer) {
+            return std::strcmp(layer.layerName, "VK_LAYER_KHRONOS_validation") == 0;
+        })) {
+        GTEST_SKIP() << "Validation layer is required to check enabled downstream features";
+    }
+    auto instance = createInstance(ctx, {"VK_LAYER_ML_Tensor_Emulation", "VK_LAYER_KHRONOS_validation"},
+                                   {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+    std::vector<std::string> errors;
+    const vk::DebugUtilsMessengerCreateInfoEXT messengerInfo{{},
+                                                             vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
+                                                             vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation,
+                                                             collectFeatureValidationError,
+                                                             &errors};
+    const vk::raii::DebugUtilsMessengerEXT messenger{instance, messengerInfo};
+
+    for (const auto &physicalDevice : vk::raii::PhysicalDevices{instance}) {
+        const auto supported =
+            physicalDevice.getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceTensorFeaturesARM>();
+        const auto &tensorFeatures = supported.get<vk::PhysicalDeviceTensorFeaturesARM>();
+        if (!tensorFeatures.shaderStorageTensorArrayNonUniformIndexing) {
+            continue;
+        }
+        const auto queueInfos = getQueueCreateInfo(physicalDevice, vk::QueueFlagBits::eCompute);
+        if (queueInfos.empty()) {
+            continue;
+        }
+        std::vector<const char *> extensions{VK_ARM_TENSORS_EXTENSION_NAME};
+        if (mlsdk::el::utils::hasExtension(physicalDevice.enumerateDeviceExtensionProperties(),
+                                           VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)) {
+            extensions.push_back(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+        }
+        for (const bool dynamicIndexing : {false, true}) {
+            if (dynamicIndexing && !tensorFeatures.shaderStorageTensorArrayDynamicIndexing) {
+                continue;
+            }
+            SCOPED_TRACE(dynamicIndexing);
+            std::string shader = R"(
+#version 460
+#extension GL_EXT_nonuniform_qualifier : require
+layout(local_size_x = 2) in;
+layout(set = 0, binding = 0) uniform Source { uint value; } sources[2];
+layout(set = 0, binding = 1) buffer Result { uint values[2]; } result;
+layout(push_constant) uniform Selection { uint index; } selection;
+void main() {
+    uint value = sources[nonuniformEXT(gl_LocalInvocationID.x)].value;
+)";
+            if (dynamicIndexing) {
+                shader += "value += sources[selection.index].value;\n";
+            }
+            shader += "result.values[gl_LocalInvocationID.x] = value; }\n";
+            const auto spirv = compileGlsl(shader);
+            enum class FeatureSource { Vulkan12, DescriptorIndexing, None };
+            for (const auto featureSource :
+                 {FeatureSource::Vulkan12, FeatureSource::DescriptorIndexing, FeatureSource::None}) {
+                SCOPED_TRACE(static_cast<int>(featureSource));
+                vk::PhysicalDeviceFeatures2 features2{};
+                vk::PhysicalDeviceVulkan12Features vulkan12{};
+                vk::PhysicalDeviceDescriptorIndexingFeatures indexing{};
+                vk::PhysicalDeviceTensorFeaturesARM tensors{};
+                tensors.tensors = VK_TRUE;
+                tensors.shaderTensorAccess = VK_TRUE;
+                tensors.shaderStorageTensorArrayDynamicIndexing = dynamicIndexing;
+                tensors.shaderStorageTensorArrayNonUniformIndexing = VK_TRUE;
+                if (featureSource == FeatureSource::Vulkan12) {
+                    tensors.pNext = &vulkan12;
+                } else if (featureSource == FeatureSource::DescriptorIndexing) {
+                    tensors.pNext = &indexing;
+                }
+                features2.pNext = &tensors;
+                vk::DeviceCreateInfo createInfo{};
+                createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueInfos.size());
+                createInfo.pQueueCreateInfos = queueInfos.data();
+                createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+                createInfo.ppEnabledExtensionNames = extensions.data();
+                createInfo.pNext = &features2;
+                const auto originalFeatures = features2;
+                const auto originalTensors = tensors;
+                const auto originalVulkan12 = vulkan12;
+                const auto originalIndexing = indexing;
+                const vk::raii::Device device{physicalDevice, createInfo};
+                // A native shader checks the actual downstream features independently
+                // of TensorARM shader lowering. Only tensor features were requested.
+                const vk::ShaderModuleCreateInfo shaderInfo{{}, spirv.size() * sizeof(uint32_t), spirv.data()};
+                EXPECT_NO_THROW((vk::raii::ShaderModule{device, shaderInfo}));
+                EXPECT_EQ(features2, originalFeatures);
+                EXPECT_EQ(tensors, originalTensors);
+                EXPECT_EQ(vulkan12, originalVulkan12);
+                EXPECT_EQ(indexing, originalIndexing);
+                for (const auto &error : errors) {
+                    ADD_FAILURE() << error;
+                }
+                errors.clear();
+            }
+        }
+        return;
+    }
+    GTEST_SKIP() << "Non-uniform tensor descriptor indexing is not supported";
 }
 
 TEST(MLEmulationLayerForVulkan, CreateTensor) {
