@@ -12,9 +12,16 @@
 #include <vector>
 
 namespace mlsdk::el::layer {
+
+enum class TensorLoweringMode { GlslToSpirv, DirectSpirv };
+
+// Set VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE before starting the application. Only "1"
+// selects direct SPIR-V lowering; unset, "0", and other values retain the default.
+TensorLoweringMode getTensorLoweringMode();
+
 class TensorProcessor {
   public:
-    explicit TensorProcessor(std::vector<uint32_t> spirv_);
+    explicit TensorProcessor(std::vector<uint32_t> spirv_, TensorLoweringMode mode = getTensorLoweringMode());
     bool isTensorComputeShader() const;
     bool isValidShader() const;
     std::vector<uint32_t> getNewSpirv() const;

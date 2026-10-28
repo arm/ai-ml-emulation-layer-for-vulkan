@@ -9,12 +9,13 @@
 #include "mlel/device.hpp"
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace mlsdk::el::tests {
 
 class ScopedEnvironment {
   public:
-    ScopedEnvironment(const char *_name, const std::string &_value);
+    ScopedEnvironment(std::string_view _name, std::optional<std::string_view> _value);
     ~ScopedEnvironment();
 
     ScopedEnvironment(const ScopedEnvironment &) = delete;

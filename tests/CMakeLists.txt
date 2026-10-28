@@ -89,6 +89,7 @@ set(MLEL_CPU_TEST_SOURCES
     graph/interval_memory_planner_tests.cpp
     graph/pipeline_cache_tests.cpp
     tensor/descriptor_binding_tests.cpp
+    tensor/spirv_lowering_tests.cpp
     tensor/tensor_arm_tests.cpp
     tensor/shape_tests.cpp)
 set(MLEL_VULKAN_TEST_SOURCES
@@ -104,7 +105,8 @@ set(MLEL_VULKAN_TEST_SOURCES
     graph/properties_tests.cpp
     graph/storage_test_utils.cpp
     graph/storage_tests.cpp
-    tensor/vulkan_tests.cpp)
+    tensor/vulkan_tests.cpp
+    tensor/spirv_lowering_vulkan_tests.cpp)
 if(NOT APPLE)
     list(APPEND MLEL_VULKAN_TEST_SOURCES graph/optical_flow_tests.cpp)
 endif()
@@ -152,6 +154,7 @@ set(MLEL_CPU_GROUPED_SUITES
     TensorDescriptors
     TensorARM
     TensorShape
+    TensorSpirvLowering
     PipelineCache
     PipelineCache/PrecompiledShader)
 
@@ -161,7 +164,8 @@ else()
     mlel_add_test(
         TARGET mlel_cpu_tests
         GROUPED_SUITES ${MLEL_CPU_GROUPED_SUITES}
-        SOURCES ${MLEL_CPU_TEST_SOURCES}
+        SOURCES ${MLEL_CPU_TEST_SOURCES} test_utils.cpp
+        INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}
         LIBRARIES mlelutilities VkLayer_Common MLELGraph MLELTensor
         PROPERTIES LABELS cpu
     )

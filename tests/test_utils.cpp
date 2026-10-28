@@ -10,12 +10,16 @@
 
 namespace mlsdk::el::tests {
 
-ScopedEnvironment::ScopedEnvironment(const char *_name, const std::string &_value) : name{_name} {
+ScopedEnvironment::ScopedEnvironment(std::string_view _name, std::optional<std::string_view> _value) : name{_name} {
     const auto *const currentValue = std::getenv(name.c_str());
     if (currentValue != nullptr) {
         oldValue = currentValue;
     }
-    set(_value);
+    if (_value.has_value()) {
+        set(std::string{*_value});
+    } else {
+        unset();
+    }
 }
 
 ScopedEnvironment::~ScopedEnvironment() {
