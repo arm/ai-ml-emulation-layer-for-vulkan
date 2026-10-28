@@ -79,11 +79,21 @@ paths:
 - ``VkPhysicalDeviceTensorFeaturesARM.shaderTensorAccess`` is enabled.
 - ``VkPhysicalDeviceTensorFeaturesARM.tensors`` is enabled.
 - ``VkPhysicalDeviceTensorFeaturesARM.shaderStorageTensorArrayDynamicIndexing``
-  follows the underlying storage-buffer dynamic-indexing capability.
+  follows the underlying uniform-buffer dynamic-indexing capability
+  (``VkPhysicalDeviceFeatures.shaderUniformBufferArrayDynamicIndexing``).
 - ``VkPhysicalDeviceTensorFeaturesARM.shaderStorageTensorArrayNonUniformIndexing``
-  follows the underlying storage-buffer non-uniform-indexing capability.
+  follows the underlying uniform-buffer non-uniform-indexing capability
+  (``VkPhysicalDeviceVulkan12Features.shaderUniformBufferArrayNonUniformIndexing``).
 - ``VkPhysicalDeviceTensorFeaturesARM.descriptorBindingStorageTensorUpdateAfterBind``
   follows the underlying storage-buffer update-after-bind capability.
+
+Tensor descriptors are represented by uniform buffers containing the tensor data
+address, dimensions, and strides. The tensor elements remain in storage buffers.
+When an application enables ``shaderStorageTensorArrayDynamicIndexing``, the layer
+enables ``shaderUniformBufferArrayDynamicIndexing`` on the underlying device.
+Likewise, ``shaderStorageTensorArrayNonUniformIndexing`` enables
+``shaderUniformBufferArrayNonUniformIndexing``, using either the Vulkan 1.2 feature
+structure or the separate descriptor-indexing feature structure.
 
 The tensor property query currently reports:
 

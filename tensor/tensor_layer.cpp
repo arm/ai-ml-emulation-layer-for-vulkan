@@ -814,9 +814,9 @@ class TensorLayer : public VulkanLayerImpl {
             pTensorFeatures->tensorNonPacked = VK_TRUE;
             pTensorFeatures->shaderTensorAccess = VK_TRUE;
             pTensorFeatures->shaderStorageTensorArrayDynamicIndexing =
-                pFeatures->features.shaderStorageBufferArrayDynamicIndexing;
+                pFeatures->features.shaderUniformBufferArrayDynamicIndexing;
             pTensorFeatures->shaderStorageTensorArrayNonUniformIndexing =
-                queryVulkan12Feature.shaderStorageBufferArrayNonUniformIndexing;
+                queryVulkan12Feature.shaderUniformBufferArrayNonUniformIndexing;
             pTensorFeatures->descriptorBindingStorageTensorUpdateAfterBind =
                 queryVulkan12Feature.descriptorBindingStorageBufferUpdateAfterBind;
             pTensorFeatures->tensors = VK_TRUE;
@@ -869,8 +869,43 @@ class TensorLayer : public VulkanLayerImpl {
         auto originCreateInfoChain = dumpVkStructureList(createInfo);
 
         VkDeviceCreateInfo newCreateInfo{*createInfo};
-        findAndRemoveType<VkPhysicalDeviceTensorFeaturesARM>(&newCreateInfo,
-                                                             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_FEATURES_ARM);
+        const auto tensorFeatures = findAndRemoveType<VkPhysicalDeviceTensorFeaturesARM>(
+            &newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_FEATURES_ARM);
+        // Tensor descriptor arrays are represented by uniform-buffer descriptor arrays.
+        // Enable their native indexing features without changing the application's feature flags.
+        VkPhysicalDeviceFeatures features{};
+        VkPhysicalDeviceFeatures2 features2{};
+        if (tensorFeatures.current && tensorFeatures.current->shaderStorageTensorArrayDynamicIndexing) {
+            if (findType<VkPhysicalDeviceFeatures2>(newCreateInfo.pNext,
+                                                    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2)) {
+                replaceOrAppendFeature(&newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, features2,
+                                       [](VkPhysicalDeviceFeatures2 &value) {
+                                           value.features.shaderUniformBufferArrayDynamicIndexing = VK_TRUE;
+                                       });
+            } else {
+                if (createInfo->pEnabledFeatures) {
+                    features = *createInfo->pEnabledFeatures;
+                }
+                features.shaderUniformBufferArrayDynamicIndexing = VK_TRUE;
+                newCreateInfo.pEnabledFeatures = &features;
+            }
+        }
+        VkPhysicalDeviceVulkan12Features vulkan12Features{};
+        VkPhysicalDeviceDescriptorIndexingFeatures indexingFeatures{};
+        if (tensorFeatures.current && tensorFeatures.current->shaderStorageTensorArrayNonUniformIndexing) {
+            if (findType<VkPhysicalDeviceVulkan12Features>(newCreateInfo.pNext,
+                                                           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES)) {
+                replaceOrAppendFeature(&newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+                                       vulkan12Features, [](VkPhysicalDeviceVulkan12Features &value) {
+                                           value.shaderUniformBufferArrayNonUniformIndexing = VK_TRUE;
+                                       });
+            } else {
+                replaceOrAppendFeature(&newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
+                                       indexingFeatures, [](VkPhysicalDeviceDescriptorIndexingFeatures &value) {
+                                           value.shaderUniformBufferArrayNonUniformIndexing = VK_TRUE;
+                                       });
+            }
+        }
         auto result = VulkanLayerImpl::vkCreateDevice(physicalDevice, &newCreateInfo, allocator, device);
         if (result == VK_SUCCESS) {
             auto handle = VulkanLayerImpl::getHandle(*device);
