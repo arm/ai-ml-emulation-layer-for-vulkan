@@ -139,6 +139,22 @@ To enable and run tests, use the `--test` option. To lint the tests, use the
 the documentation, you must have `sphinx` and `doxygen` installed on your
 machine.
 
+To build only the documentation without configuring or compiling the native
+project, run these commands from the emulation-layer repository root:
+
+```bash
+uv sync --locked --no-install-project --no-default-groups --group tooling
+uv run --no-sync cmake -S docs -B build-docs -G Ninja
+cmake --build build-docs
+```
+
+The standalone documentation build requires Doxygen 1.9.1 or later and the
+locked Sphinx tooling dependencies. The HTML entry page is
+`build-docs/docs/out/index.html`. Use a separate build directory for the native
+project; the two CMake entry points cannot share one cache. The build script's
+`--doc` and `--doc-only` options continue to use the native project during the
+transition.
+
 You can install the build artifacts for this project into a specified location.
 To install the build artifacts, pass the `--install` option with the required
 path.
