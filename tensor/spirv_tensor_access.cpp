@@ -47,6 +47,24 @@ BoundsAndOffset emitDimensionBoundsAndByteOffset(AccessState &state, Instruction
     return {inBounds, byteOffset};
 }
 
+// Share the fixed-rank bounds traversal while callers choose how to accumulate offsets.
+template <typename EmitOffset>
+BoundsAndOffset emitBoundsAndByteOffset(AccessState &state, InstructionBuilder &builder, const TensorType &tensor,
+                                        uint32_t descriptor, uint32_t coordinates, const EmitOffset &emitOffset) {
+    auto &context = state.context;
+    const auto boolType = context.get_type_mgr()->GetBoolTypeId();
+    BoundsAndOffset bounds{0, nullConstant(context, state.uint64Type)};
+    for (uint32_t axis = 0; axis < tensor.rank; ++axis) {
+        const auto dimension = emitDimensionBoundsAndByteOffset(state, builder, descriptor, coordinates, axis);
+        bounds.inBounds =
+            axis == 0 ? dimension.inBounds
+                      : builder.AddBinaryOp(boolType, spv::Op::OpLogicalAnd, bounds.inBounds, dimension.inBounds)
+                            ->result_id();
+        bounds.byteOffset = emitOffset(bounds.byteOffset, bounds.inBounds, dimension.byteOffset);
+    }
+    return bounds;
+}
+
 struct ElementPointer {
     uint32_t id;
     uint32_t alignment;
@@ -110,6 +128,11 @@ struct FunctionParameter {
     uint32_t id;
 };
 
+std::unique_ptr<spvtools::opt::BasicBlock> createBlock(IRContext &context) {
+    return std::make_unique<spvtools::opt::BasicBlock>(
+        makeInstruction(context, spv::Op::OpLabel, 0, context.TakeNextId()));
+}
+
 AccessFunction createAccessFunction(IRContext &context, uint32_t returnType,
                                     std::initializer_list<FunctionParameter> parameters) {
     Instruction::OperandList signature{idOperand(returnType)};
@@ -127,12 +150,9 @@ AccessFunction createAccessFunction(IRContext &context, uint32_t returnType,
         helper.function->AddParameter(
             makeInstruction(context, spv::Op::OpFunctionParameter, parameter.type, parameter.id));
     }
-    helper.entry = std::make_unique<spvtools::opt::BasicBlock>(
-        makeInstruction(context, spv::Op::OpLabel, 0, context.TakeNextId()));
-    helper.access = std::make_unique<spvtools::opt::BasicBlock>(
-        makeInstruction(context, spv::Op::OpLabel, 0, context.TakeNextId()));
-    helper.merge = std::make_unique<spvtools::opt::BasicBlock>(
-        makeInstruction(context, spv::Op::OpLabel, 0, context.TakeNextId()));
+    helper.entry = createBlock(context);
+    helper.access = createBlock(context);
+    helper.merge = createBlock(context);
     return helper;
 }
 
@@ -191,21 +211,13 @@ uint32_t getOrCreateReadHelper(AccessState &state, const TensorType &tensor, uin
     auto helper = createAccessFunction(context, tensor.elementType,
                                        {{state.descriptorType, descriptor}, {coordinatesType, coordinates}});
     InstructionBuilder builder(&context, helper.entry.get());
-    const auto boolType = context.get_type_mgr()->GetBoolTypeId();
     const auto zero = nullConstant(context, state.uint64Type);
-    BoundsAndOffset bounds{0, zero};
     // Stop accumulating after the first invalid coordinate, preserving the valid prefix.
-    for (uint32_t axis = 0; axis < tensor.rank; ++axis) {
-        const auto dimension = emitDimensionBoundsAndByteOffset(state, builder, descriptor, coordinates, axis);
-        bounds.inBounds =
-            axis == 0 ? dimension.inBounds
-                      : builder.AddBinaryOp(boolType, spv::Op::OpLogicalAnd, bounds.inBounds, dimension.inBounds)
-                            ->result_id();
-        const auto contribution =
-            builder.AddSelect(state.uint64Type, bounds.inBounds, dimension.byteOffset, zero)->result_id();
-        bounds.byteOffset =
-            builder.AddBinaryOp(state.uint64Type, spv::Op::OpIAdd, bounds.byteOffset, contribution)->result_id();
-    }
+    const auto emitOffset = [&](uint32_t offset, uint32_t inBounds, uint32_t contribution) {
+        const auto guarded = builder.AddSelect(state.uint64Type, inBounds, contribution, zero)->result_id();
+        return builder.AddBinaryOp(state.uint64Type, spv::Op::OpIAdd, offset, guarded)->result_id();
+    };
+    const auto bounds = emitBoundsAndByteOffset(state, builder, tensor, descriptor, coordinates, emitOffset);
     // Convert byte offsets to signed element offsets before branching, then use a
     // uint32_t index into the typed buffer. Keep this sequence intact: simplifying
     // it to base + byteOffset let Mesa 25.2.8 discard the guarded offset and flatten
@@ -247,19 +259,11 @@ uint32_t getOrCreateWriteHelper(AccessState &state, const TensorType &tensor, ui
         context, context.get_type_mgr()->GetVoidTypeId(),
         {{state.descriptorType, descriptor}, {coordinatesType, coordinates}, {tensor.elementType, value}});
     InstructionBuilder builder(&context, helper.entry.get());
-    const auto boolType = context.get_type_mgr()->GetBoolTypeId();
-    BoundsAndOffset bounds{0, nullConstant(context, state.uint64Type)};
     // Accumulate the full offset; the final bounds check controls whether the store executes.
-    for (uint32_t axis = 0; axis < tensor.rank; ++axis) {
-        const auto dimension = emitDimensionBoundsAndByteOffset(state, builder, descriptor, coordinates, axis);
-        bounds.inBounds =
-            axis == 0 ? dimension.inBounds
-                      : builder.AddBinaryOp(boolType, spv::Op::OpLogicalAnd, bounds.inBounds, dimension.inBounds)
-                            ->result_id();
-        bounds.byteOffset =
-            builder.AddBinaryOp(state.uint64Type, spv::Op::OpIAdd, bounds.byteOffset, dimension.byteOffset)
-                ->result_id();
-    }
+    const auto emitOffset = [&](uint32_t offset, uint32_t, uint32_t contribution) {
+        return builder.AddBinaryOp(state.uint64Type, spv::Op::OpIAdd, offset, contribution)->result_id();
+    };
+    const auto bounds = emitBoundsAndByteOffset(state, builder, tensor, descriptor, coordinates, emitOffset);
     builder.AddConditionalBranch(bounds.inBounds, helper.access->id(), helper.merge->id(), helper.merge->id());
 
     builder.SetInsertPoint(helper.access.get());
