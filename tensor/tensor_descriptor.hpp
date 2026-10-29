@@ -7,27 +7,14 @@
 #pragma once
 
 #include "mlel/vulkan_layer.hpp"
-#include "tensor_arm.hpp"
+#include "tensor_descriptor_layout.hpp"
 #include <vulkan/vulkan.hpp>
 
 namespace mlsdk::el::layer {
 
 class TensorDescriptor {
-    template <typename T, size_t ALIGN> struct alignas(ALIGN) AlignAs {
-        T v;
-
-        template <typename U> AlignAs &operator=(const U &val) {
-            v = val;
-            return *this;
-        }
-    };
-
   public:
-    struct DescriptorBuffer {
-        VkDeviceAddress address;
-        AlignAs<int64_t, 16> dimensions[TensorARM::TENSOR_MAX_DIMENSIONS];
-        AlignAs<int64_t, 16> strides[TensorARM::TENSOR_MAX_DIMENSIONS];
-    };
+    using DescriptorBuffer = TensorDescriptorLayout;
 
     TensorDescriptor() = default;
     virtual ~TensorDescriptor() = default;

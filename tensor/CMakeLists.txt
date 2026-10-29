@@ -15,6 +15,7 @@ mlel_enable_coverage(MLELTensor)
 
 target_sources(MLELTensor PRIVATE
     spirv_glsl_tensor_buffer.cpp
+    spirv_tensor_access.cpp
     spirv_tensor_lowering.cpp
     tensor_arm.cpp
     tensor_descriptor.cpp
