@@ -25,6 +25,93 @@ using namespace utilities;
 
 namespace {
 
+struct FloatConvCase {
+    int64_t batches, inputChannels, outputChannels, kernel;
+    std::array<int32_t, 4> pad;
+    std::array<int32_t, 2> stride, dilation;
+    bool scalarBias;
+};
+
+void expectFloatConv(std::shared_ptr<Device> &device, const FloatConvCase &test) {
+    const int64_t height = 7, width = 9;
+    const auto outputHeight =
+        (height + test.pad[0] + test.pad[1] - (test.kernel - 1) * test.dilation[0] - 1) / test.stride[0] + 1;
+    const auto outputWidth =
+        (width + test.pad[2] + test.pad[3] - (test.kernel - 1) * test.dilation[1] - 1) / test.stride[1] + 1;
+    const auto input = std::make_shared<Tensor>(
+        device, Shape{vk::Format::eR32Sfloat, {test.batches, height, width, test.inputChannels}});
+    const auto weights = std::make_shared<Tensor>(
+        device, Shape{vk::Format::eR32Sfloat, {test.outputChannels, test.kernel, test.kernel, test.inputChannels}});
+    const auto bias =
+        std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, {test.scalarBias ? 1 : test.outputChannels}});
+    const auto output = std::make_shared<Tensor>(
+        device, Shape{vk::Format::eR32Sfloat, {test.batches, outputHeight, outputWidth, test.outputChannels}});
+    auto fill = [](const auto &tensor, int multiplier, int modulus) {
+        std::vector<float> values(tensor->size() / sizeof(float));
+        for (size_t i = 0; i < values.size(); ++i) {
+            values[i] = float((i * multiplier) % modulus) / 8.0f - 1.0f;
+        }
+        std::memcpy(tensor->data(), values.data(), tensor->size());
+        return values;
+    };
+    const auto inputs = fill(input, 7, 17);
+    const auto weightValues = fill(weights, 5, 19);
+    const auto biases = fill(bias, 3, 11);
+    std::memset(output->data(), 0xff, output->size());
+    auto source = fileToString("conv2d_fp32.spvasm");
+    const std::vector<std::pair<std::string, int32_t>> attributes{
+        {"pad_top", test.pad[0]},         {"pad_bottom", test.pad[1]},     {"pad_left", test.pad[2]},
+        {"pad_right", test.pad[3]},       {"stride_y", test.stride[0]},    {"stride_x", test.stride[1]},
+        {"dilation_y", test.dilation[0]}, {"dilation_x", test.dilation[1]}};
+    for (const auto &[name, value] : attributes) {
+        const auto marker = "@" + name + "@";
+        source.replace(source.find(marker), marker.size(), std::to_string(value));
+    }
+    const GraphPipeline::DescriptorMap descriptors{{{0, {input}}, {1, {weights}}, {2, {bias}}, {3, {output}}}};
+    const GraphConstants constants;
+    GraphPipeline pipeline(device, descriptors, constants, assembleSpirv(source));
+    pipeline.dispatchSubmit();
+
+    std::vector<float> expected;
+    for (int64_t n = 0; n < test.batches; ++n) {
+        for (int64_t oy = 0; oy < outputHeight; ++oy) {
+            for (int64_t ox = 0; ox < outputWidth; ++ox) {
+                for (int64_t oc = 0; oc < test.outputChannels; ++oc) {
+                    float sum = 0;
+                    for (int64_t ky = 0; ky < test.kernel; ++ky) {
+                        for (int64_t kx = 0; kx < test.kernel; ++kx) {
+                            const auto y = oy * test.stride[0] - test.pad[0] + ky * test.dilation[0];
+                            const auto x = ox * test.stride[1] - test.pad[2] + kx * test.dilation[1];
+                            if (y < 0 || y >= height || x < 0 || x >= width) {
+                                continue;
+                            }
+                            for (int64_t ic = 0; ic < test.inputChannels; ++ic) {
+                                const auto in = ((n * height + y) * width + x) * test.inputChannels + ic;
+                                const auto w = ((oc * test.kernel + ky) * test.kernel + kx) * test.inputChannels + ic;
+                                sum += inputs[in] * weightValues[w];
+                            }
+                        }
+                    }
+                    expected.push_back(sum + biases[test.scalarBias ? 0 : oc]);
+                }
+            }
+        }
+    }
+    // Dyadic inputs keep every product and sum exact, including channel tails.
+    ASSERT_EQ(std::memcmp(output->data(), expected.data(), output->size()), 0);
+}
+
+TEST_F(MLEmulationLayerGraphForVulkan, Conv2DPointwiseSharedWeights) {
+    for (const auto &test : std::vector<FloatConvCase>{{1, 16, 16, 1, {0, 0, 0, 0}, {1, 1}, {1, 1}, false},
+                                                       {2, 17, 19, 1, {1, 2, 2, 1}, {2, 1}, {1, 1}, true},
+                                                       {1, 33, 35, 1, {0, 0, 0, 0}, {1, 1}, {2, 3}, false},
+                                                       {1, 3, 5, 1, {0, 0, 0, 0}, {1, 1}, {1, 1}, true},
+                                                       {1, 17, 19, 2, {0, 0, 0, 0}, {1, 1}, {1, 1}, false}}) {
+        SCOPED_TRACE(testing::Message() << test.inputChannels << "x" << test.outputChannels << " k=" << test.kernel);
+        ASSERT_NO_FATAL_FAILURE(expectFloatConv(device, test));
+    }
+}
+
 void expectConv2DStorageFormats(std::shared_ptr<Device> &device, vk::Format inputFormat, vk::Format weightFormat,
                                 vk::Format outputFormat, bool negateWeights = false) {
 

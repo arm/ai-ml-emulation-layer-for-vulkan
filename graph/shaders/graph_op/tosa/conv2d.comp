@@ -36,6 +36,10 @@ layout(set = 1, binding = 0) uniform tensorARM<IN_T, 4> inputData;
 layout(set = 2, binding = 0) uniform tensorARM<WEIGHT_T, 4> weightsData;
 layout(set = 3, binding = 0) uniform tensorARM<OUT_T, 1> biasesData;
 
+#ifdef COOPERATIVE_WEIGHTS
+shared float weightTile[16 * 16];
+#endif
+
 void main() {
     ACC_T acc[4] = {ACC_T(0), ACC_T(0), ACC_T(0), ACC_T(0)};
     uint batches = tensorSizeARM(outputData, 0);
@@ -46,11 +50,14 @@ void main() {
     uint oc = pushConstants.outputPositionOffset[2] + gl_GlobalInvocationID.z * 4;
     uint[4] ocs = {oc, oc + 1, oc + 2, oc + 3};
 
-    if (oy >= tensorSizeARM(outputData, 1) ||
-        ox >= tensorSizeARM(outputData, 2) ||
-        oc >= tensorSizeARM(outputData, 3)) {
+    bool validOutput = oy < tensorSizeARM(outputData, 1) &&
+                       ox < tensorSizeARM(outputData, 2) &&
+                       oc < tensorSizeARM(outputData, 3);
+#ifndef COOPERATIVE_WEIGHTS
+    if (!validOutput) {
         return;
     }
+#endif
 
     uint iy = oy * pushConstants.stride[0] - pushConstants.pad[0];
     uint ix = ox * pushConstants.stride[1] - pushConstants.pad[2];
@@ -60,18 +67,43 @@ void main() {
             uint y = iy + ky * pushConstants.dilation[0];
             uint x = ix + kx * pushConstants.dilation[1];
 
-            if (y < tensorSizeARM(inputData, 1) && x < tensorSizeARM(inputData, 2)) {
-                const uint IC = tensorSizeARM(inputData, 3);
+            const uint IC = tensorSizeARM(inputData, 3);
+#ifdef COOPERATIVE_WEIGHTS
+            for (uint tileIC = 0; tileIC < IC; tileIC += 16) {
+                uint tileIndex = gl_LocalInvocationIndex * 4;
+                uint tileOC = pushConstants.outputPositionOffset[2] + gl_WorkGroupID.z * 16;
+                float loaded[4];
+                tensorReadARM(weightsData, uint[](tileOC + tileIndex / 16, ky, kx, tileIC + tileIndex % 16), loaded);
+                for (uint lane = 0; lane < 4; ++lane) {
+                    weightTile[tileIndex + lane] = loaded[lane];
+                }
+                // Every invocation participates, including spatial and channel tails.
+                barrier();
+#endif
+            if (validOutput && y < tensorSizeARM(inputData, 1) && x < tensorSizeARM(inputData, 2)) {
+#ifdef COOPERATIVE_WEIGHTS
+                for (uint ic = tileIC; ic < min(tileIC + 16, IC); ic += 4) {
+#else
                 for (uint ic = 0; ic < IC; ic += 4) {
+#endif
                     IN_T tempValue[4];
                     tensorReadARM(inputData, uint[](n, y, x, ic), tempValue);
                     VEC4 value = VEC4(CONV_TO_ACC_INPUT(tempValue[0]), CONV_TO_ACC_INPUT(tempValue[1]), CONV_TO_ACC_INPUT(tempValue[2]), CONV_TO_ACC_INPUT(tempValue[3]));
 
                     WEIGHT_T weight[4][4];
+#ifdef COOPERATIVE_WEIGHTS
+                    for (uint outputLane = 0; outputLane < 4; ++outputLane) {
+                        uint tileRow = gl_LocalInvocationID.z * 4 + outputLane;
+                        for (uint inputLane = 0; inputLane < 4; ++inputLane) {
+                            weight[outputLane][inputLane] = weightTile[tileRow * 16 + ic - tileIC + inputLane];
+                        }
+                    }
+#else
                     tensorReadARM(weightsData, uint[](ocs[0], ky, kx, ic), weight[0]);
                     tensorReadARM(weightsData, uint[](ocs[1], ky, kx, ic), weight[1]);
                     tensorReadARM(weightsData, uint[](ocs[2], ky, kx, ic), weight[2]);
                     tensorReadARM(weightsData, uint[](ocs[3], ky, kx, ic), weight[3]);
+#endif
 
                     VEC4 outValue = value - pushConstants.inputZeroPoint;
                     VEC4 outWeight0 = VEC4(CONV_TO_ACC_WEIGHT(weight[0][0]), CONV_TO_ACC_WEIGHT(weight[0][1]), CONV_TO_ACC_WEIGHT(weight[0][2]), CONV_TO_ACC_WEIGHT(weight[0][3])) - pushConstants.weightZeroPoint;
@@ -91,7 +123,15 @@ void main() {
                     }
                 }
             }
+#ifdef COOPERATIVE_WEIGHTS
+                barrier();
+            }
+#endif
         }
+    }
+
+    if (!validOutput) {
+        return;
     }
 
     if (tensorSizeARM(biasesData, 0) == 1) {

@@ -848,14 +848,16 @@ Conv2D::Conv2D(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoade
                const std::shared_ptr<TensorDescriptor> &_biases, const std::vector<int32_t> &_pad,
                const std::vector<int32_t> &_stride, const std::vector<int32_t> &_dilation, const int8_t _inputZeroPoint,
                const int8_t _weightZeroPoint, const uint32_t _accType, const std::array<uint32_t, 3> &_maxGroupCount,
-               const std::string &debugName)
-    : ComputePipeline(
-          _loader, _device, createDescriptorMap(_input, _output, _weights, _biases),
-          {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
-          createSpirv(_pipelineCache, _input->getFormat(), _output->getFormat(), _weights->getFormat(), _accType),
-          debugName),
+               const bool cooperativeWeights, const std::string &debugName)
+    : ComputePipeline(_loader, _device, createDescriptorMap(_input, _output, _weights, _biases),
+                      {&pushConstant, sizeof(pushConstant)}, _pipelineCache,
+                      cooperativeWeights ? _pipelineCache->lookup("conv2d_cooperative", {})
+                                         : createSpirv(_pipelineCache, _input->getFormat(), _output->getFormat(),
+                                                       _weights->getFormat(), _accType),
+                      debugName),
       pushConstant{createPushConstant(_pad, _stride, _dilation, _inputZeroPoint, _weightZeroPoint)},
-      maxGroupCount{_maxGroupCount} {}
+      maxGroupCount{_maxGroupCount}, warpX{cooperativeWeights ? 4u : 8u}, warpY{cooperativeWeights ? 4u : 8u},
+      warpZ{cooperativeWeights ? 4u : 1u} {}
 
 Conv2D::PushConstant Conv2D::createPushConstant(const std::vector<int32_t> &pad, const std::vector<int32_t> &stride,
                                                 const std::vector<int32_t> &dilation, const int8_t inputZeroPoint,
@@ -2288,8 +2290,16 @@ void GraphPipeline::makeConv2D(const std::shared_ptr<TensorDescriptor> &input,
                                const std::vector<int32_t> &stride, const std::vector<int32_t> &dilation,
                                const int8_t inputZeroPoint, const int8_t weightZeroPoint, const uint32_t accType,
                                const std::string &debugName) {
+    const auto &weightShape = weights->getDimensions();
+    const auto &outputShape = output->getDimensions();
+    // Require enough channels and spatial reuse to amortize the shared tile.
+    const bool cooperativeWeights =
+        input->getFormat() == VK_FORMAT_R32_SFLOAT && output->getFormat() == VK_FORMAT_R32_SFLOAT &&
+        weights->getFormat() == VK_FORMAT_R32_SFLOAT && accScalarType(accType) == ScalarType::Float32 &&
+        weightShape[1] == 1 && weightShape[2] == 1 && weightShape[0] >= 16 && weightShape[3] >= 16 &&
+        outputShape[1] >= 4 && outputShape[0] * outputShape[2] >= 4;
     makePipeline<Conv2D>(input, output, weights, biases, pad, stride, dilation, inputZeroPoint, weightZeroPoint,
-                         accType, maxComputeWorkGroupCount, debugName);
+                         accType, maxComputeWorkGroupCount, cooperativeWeights, debugName);
 }
 
 void GraphPipeline::makeConv3D(const std::shared_ptr<TensorDescriptor> &input,

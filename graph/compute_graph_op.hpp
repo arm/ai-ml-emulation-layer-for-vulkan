@@ -412,7 +412,7 @@ class Conv2D : public ComputePipeline {
            const std::shared_ptr<TensorDescriptor> &_biases, const std::vector<int32_t> &_pad,
            const std::vector<int32_t> &_stride, const std::vector<int32_t> &_dilation, int8_t _inputZeroPoint,
            int8_t _weightZeroPoint, uint32_t _accType, const std::array<uint32_t, 3> &_maxGroupCount,
-           const std::string &debugName);
+           bool cooperativeWeights, const std::string &debugName);
 
     static SpirvBinary createSpirv(const std::shared_ptr<PipelineCache> &pipelineCache, VkFormat inputFormat,
                                    VkFormat outputFormat, VkFormat weightsFormat, uint32_t accType);
@@ -443,9 +443,9 @@ class Conv2D : public ComputePipeline {
 
     static constexpr std::string_view shaderName = "conv2d";
 
-    static const uint32_t warpX = 8;
-    static const uint32_t warpY = 8;
-    static const uint32_t warpZ = 1;
+    const uint32_t warpX;
+    const uint32_t warpY;
+    const uint32_t warpZ;
 };
 
 /*******************************************************************************
