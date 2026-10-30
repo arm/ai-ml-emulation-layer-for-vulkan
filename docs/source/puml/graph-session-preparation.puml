@@ -1,0 +1,33 @@
+@startuml
+<style>
+root {
+  FontName SansSerif
+  Shadowing 0
+}
+element {
+  Shadowing 0
+}
+sequenceDiagram {
+  participant {
+    Padding 10
+  }
+  arrow {
+    HorizontalAlignment center
+  }
+}
+</style>
+participant Application as app
+participant "Graph layer" as graph
+app -> graph : vkCreateDataGraphPipelineSessionARM()
+graph -> graph : Instantiate intermediates\nand memory planner
+graph --> app : session
+app -> graph : vkGetDataGraphPipelineSession\nBindPointRequirementsARM()
+graph --> app : required bind points
+loop each reported memory requirement
+app -> graph : vkGetDataGraphPipelineSession\nMemoryRequirementsARM()
+graph --> app : size, alignment, memory types
+app -> app : Allocate suitable device memory
+app -> graph : vkBindDataGraphPipelineSessionMemoryARM()\nallocation + base offset
+graph -> graph : Bind planned tensor offsets\nUpdate session descriptors
+end
+@enduml

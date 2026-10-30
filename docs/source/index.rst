@@ -13,6 +13,7 @@ ML Emulation Layer for Vulkan®
    cloning.rst
    building.rst
    usage.rst
+   architecture.rst
    support.rst
    limitations.rst
    license.rst

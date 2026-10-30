@@ -1,0 +1,44 @@
+@startuml
+<style>
+root {
+  FontName SansSerif
+  Shadowing 0
+}
+element {
+  Shadowing 0
+}
+rectangle {
+  BackgroundColor #EFF6FF
+  HorizontalAlignment center
+}
+arrow {
+  LineColor #334155
+}
+.wide {
+  MinimumWidth 460
+}
+.medium {
+  MinimumWidth 280
+}
+.narrow {
+  MinimumWidth 197
+}
+</style>
+top to bottom direction
+skinparam linetype ortho
+skinparam ranksep 90
+hide stereotype
+rectangle "Application / runtime consumer" as app <<wide>>
+rectangle "Vulkan® loader" as loader <<wide>>
+rectangle "Graph layer" as graph <<narrow>>
+rectangle "Tensor layer" as tensor <<medium>>
+rectangle "Underlying Vulkan® implementation\nCompute execution and device resources" as driver <<wide>>
+app -down-> loader : Vulkan® calls<color:transparent>xx</color>
+loader -down-> graph : graph use<color:transparent>xx</color>
+ ' Transparent glyphs reserve clearance between labels and orthogonal arrows.
+graph -down-> tensor : tensor and<color:transparent>xx</color>\nsupporting calls<color:transparent>xx</color>
+tensor "compute and\nsupporting calls" -down-> driver
+ ' Bypass paths do not constrain the centered stack above.
+loader -[norank]-> tensor : <color:transparent>x</color>tensor\n<color:transparent>x</color>only use
+loader -[norank]-> driver : other Vulkan®\ncalls\n<color:transparent>xxxxxxxxxxxxxxxxxxxxxxxx</color>
+@enduml

@@ -1,0 +1,33 @@
+@startuml
+<style>
+root {
+  FontName SansSerif
+  Shadowing 0
+}
+element {
+  Shadowing 0
+}
+sequenceDiagram {
+  participant {
+    Padding 10
+  }
+  arrow {
+    HorizontalAlignment center
+  }
+}
+</style>
+participant Application as app
+participant "Graph layer" as graph
+participant "Lower Vulkan® chain" as lower
+app -> graph : vkUpdateDescriptorSets()\ntensor views
+graph -> graph : Track views; update existing mappings
+app -> graph : vkCmdBindPipeline()\nvkCmdBindDescriptorSets()
+app -> graph : vkCmdDispatchDataGraphARM(session)
+graph -> graph : Resolve external compute descriptors\non first use; reuse on later use
+graph -> graph : Merge constants + intermediates\n+ external descriptors
+loop ordered compute operations
+graph -> lower : Bind pipeline / descriptors\nPush constants; tensor barriers\nCompute dispatches
+end
+graph --> app : recording returns
+app -> lower : Submit command buffer later
+@enduml

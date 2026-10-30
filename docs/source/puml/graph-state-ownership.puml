@@ -1,0 +1,20 @@
+@startuml
+<style>
+root {
+  FontName SansSerif
+  Shadowing 0
+}
+element {
+  Shadowing 0
+}
+rectangle {
+  BackgroundColor #EFF6FF
+}
+</style>
+top to bottom direction
+rectangle "Application resources\nExternal tensors, views, descriptors\nand session VkDeviceMemory" as app
+rectangle "Graph session\nIntermediate tensors and descriptors\nMemory planner" as session
+rectangle "Graph pipeline\nCompute operations and layouts\nTensor metadata; constant allocations" as pipeline
+app ..> session : binds memory; retains allocation ownership
+session --> pipeline : retains shared reference
+@enduml
