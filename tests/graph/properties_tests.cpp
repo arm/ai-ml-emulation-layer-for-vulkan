@@ -357,30 +357,38 @@ TEST_F(MLEmulationLayerGraphForVulkan, GetExternalTensorPropertiesARM) {
     const auto &physicalDevice = device->getPhysicalDevice();
     const auto &vkPhysicalDevice = &(*physicalDevice);
 
-    const VkExternalMemoryHandleTypeFlagBits handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
-
     const std::vector<int64_t> dimensions = {1, 32, 4};
     const VkTensorDescriptionARM tensorDesc = {VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM,
                                                nullptr,
                                                VK_TENSOR_TILING_LINEAR_ARM,
                                                VK_FORMAT_R8_UINT,
-                                               1,
+                                               static_cast<uint32_t>(dimensions.size()),
                                                dimensions.data(),
                                                nullptr,
                                                VK_TENSOR_USAGE_SHADER_BIT_ARM};
-    const VkPhysicalDeviceExternalTensorInfoARM externalTensorInfoARM = {
-        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_TENSOR_INFO_ARM, nullptr, {}, &tensorDesc, handleType};
-    const auto properties = vkPhysicalDevice.getExternalTensorPropertiesARM(externalTensorInfoARM);
+    // Other handle types catch accidentally querying opaque-FD capabilities for every request.
+    for (const auto handleType :
+         {VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT, VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT,
+          VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT}) {
+        SCOPED_TRACE(vk::to_string(vk::ExternalMemoryHandleTypeFlagBits(handleType)));
+        const VkPhysicalDeviceExternalTensorInfoARM externalTensorInfoARM = {
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_TENSOR_INFO_ARM, nullptr, {}, &tensorDesc, handleType};
+        const auto properties = vkPhysicalDevice.getExternalTensorPropertiesARM(externalTensorInfoARM);
 
-    const VkPhysicalDeviceExternalBufferInfo externalBufferInfo = {
-        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_BUFFER_INFO,
-        nullptr,
-        {},
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-        VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT};
-    const auto bufferProperties = vkPhysicalDevice.getExternalBufferProperties(externalBufferInfo);
+        const VkPhysicalDeviceExternalBufferInfo externalBufferInfo = {
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_BUFFER_INFO,
+            nullptr,
+            {},
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            handleType};
+        const auto bufferProperties = vkPhysicalDevice.getExternalBufferProperties(externalBufferInfo);
 
-    ASSERT_EQ(properties.externalMemoryProperties, bufferProperties.externalMemoryProperties);
+        const auto &actual = properties.externalMemoryProperties;
+        const auto &expected = bufferProperties.externalMemoryProperties;
+        EXPECT_EQ(actual.externalMemoryFeatures, expected.externalMemoryFeatures);
+        EXPECT_EQ(actual.exportFromImportedHandleTypes, expected.exportFromImportedHandleTypes);
+        EXPECT_EQ(actual.compatibleHandleTypes, expected.compatibleHandleTypes);
+    }
 }
 
 } // namespace
