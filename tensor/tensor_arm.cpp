@@ -13,88 +13,9 @@
 using namespace mlsdk::el::utils;
 
 namespace mlsdk::el::layer {
-namespace tensor_arm_detail {
-
-bool usesImageAliasing(const VkTensorDescriptionARM &description) {
-    return (description.usage & VK_TENSOR_USAGE_IMAGE_ALIASING_BIT_ARM) != 0;
-}
-
-void updateAliasedStrides(const std::size_t rank, std::vector<int64_t> &strides,
-                          const VkSubresourceLayout &imageLayout) {
-    if (rank == 4) {
-        // alias to 3D image
-        strides[0] = static_cast<int64_t>(imageLayout.depthPitch);
-        strides[1] = static_cast<int64_t>(imageLayout.rowPitch);
-    } else if (rank == 3) {
-        // alias to 2D image
-        strides[0] = static_cast<int64_t>(imageLayout.rowPitch);
-    }
-}
-
-} // namespace tensor_arm_detail
-
-VkBufferCreateFlags TensorARM::TensorInfo::convertToBufferCreateFlags(VkTensorCreateFlagsARM tensorFlags) {
-    VkBufferCreateFlags bufferFlags = {};
-    if (tensorFlags & VK_TENSOR_CREATE_PROTECTED_BIT_ARM) {
-        bufferFlags |= VK_BUFFER_CREATE_PROTECTED_BIT;
-    }
-    if (tensorFlags & VK_TENSOR_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_ARM) {
-        bufferFlags |= VK_BUFFER_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT;
-    }
-    return bufferFlags;
-}
-
-VkBufferUsageFlags TensorARM::TensorInfo::convertToBufferUsageFlags(VkTensorUsageFlagsARM tensorUsage) {
-    VkBufferUsageFlags bufferUsage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
-    bufferUsage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-#endif
-    if (tensorUsage & VK_TENSOR_USAGE_SHADER_BIT_ARM) {
-        bufferUsage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    }
-    if (tensorUsage & VK_TENSOR_USAGE_TRANSFER_SRC_BIT_ARM) {
-        bufferUsage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-    }
-    if (tensorUsage & VK_TENSOR_USAGE_TRANSFER_DST_BIT_ARM) {
-        bufferUsage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    }
-    if (tensorUsage & VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM) {
-        bufferUsage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-    }
-    return bufferUsage;
-}
-
-TensorARM::TensorInfo::TensorInfo(const VkTensorCreateInfoARM &createInfo) {
-    const VkTensorDescriptionARM &desc = *createInfo.pDescription;
-    format = desc.format;
-    if (desc.dimensionCount <= 0 || desc.dimensionCount > TENSOR_MAX_DIMENSIONS) {
-        throw std::runtime_error(std::string("Tensor dimension count not supported: ") +
-                                 std::to_string(desc.dimensionCount));
-    }
-    usesImageAliasing = tensor_arm_detail::usesImageAliasing(desc);
-
-    usage = convertToBufferUsageFlags(desc.usage);
-    flags = convertToBufferCreateFlags(createInfo.flags);
-
-    uint32_t dimensionCount = desc.dimensionCount;
-    dimensions = std::vector<int64_t>{desc.pDimensions, desc.pDimensions + dimensionCount};
-    elementSize = vk::blockSize(vk::Format(desc.format));
-    if (desc.pStrides == nullptr) {
-        // calculate strides
-        strides.resize(dimensionCount);
-        strides.back() = static_cast<int64_t>(elementSize);
-        for (size_t i = dimensionCount - 1; i > 0; --i) {
-            strides[i - 1] = strides[i] * static_cast<int64_t>(dimensions[i]);
-        }
-    } else {
-        strides = std::vector<int64_t>{desc.pStrides, desc.pStrides + dimensionCount};
-    }
-    size = static_cast<size_t>(dimensions[0] * strides[0]);
-}
-
 VkResult TensorARM::create(const Device &dev, const VkTensorCreateInfoARM &createInfo,
                            const VkAllocationCallbacks *allocator) {
-    m_info = TensorInfo(createInfo);
+    m_info = TensorLayout(createInfo);
     const auto *pCaptureDescriptorInfo = findType<VkOpaqueCaptureDescriptorDataCreateInfoEXT>(
         createInfo.pNext, VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT);
     const VkBufferCreateInfo bufferInfo = {
@@ -121,7 +42,7 @@ void TensorARM::getMemoryRequirements(const Device &dev, VkMemoryRequirements *r
 
 void TensorARM::getDeviceTensorMemoryRequirements(const Device &dev, const VkTensorCreateInfoARM &createInfo,
                                                   VkMemoryRequirements2 *requirements) {
-    TensorInfo info(createInfo);
+    TensorLayout info(createInfo);
     const VkBufferCreateInfo bufferInfo = {
         VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         nullptr,
@@ -169,7 +90,7 @@ void TensorARM::updateAliasedTensorInfo(const Device &dev, VkImage image) {
         };
         VkSubresourceLayout imageSubresourceLayout{};
         dev.loader->vkGetImageSubresourceLayout(dev.device, image, &imageSubresource, &imageSubresourceLayout);
-        tensor_arm_detail::updateAliasedStrides(rank, m_info.strides, imageSubresourceLayout);
+        tensor_description_detail::updateAliasedStrides(rank, m_info.strides, imageSubresourceLayout);
     }
 }
 

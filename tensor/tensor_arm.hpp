@@ -7,7 +7,7 @@
 #pragma once
 
 #include "mlel/vulkan_layer.hpp"
-#include "tensor_descriptor_layout.hpp"
+#include "tensor_description.hpp"
 
 #include <unordered_map>
 #include <vector>
@@ -15,45 +15,17 @@
 #include <vulkan/vulkan.hpp>
 
 namespace mlsdk::el::layer {
-namespace tensor_arm_detail {
-
-bool usesImageAliasing(const VkTensorDescriptionARM &description);
-
-void updateAliasedStrides(std::size_t rank, std::vector<int64_t> &strides, const VkSubresourceLayout &imageLayout);
-
-} // namespace tensor_arm_detail
-
 class TensorCopyPipeline;
 
 class TensorARM {
   public:
-    static constexpr size_t TENSOR_MAX_DIMENSIONS = maxTensorRank;
-
-    class TensorInfo {
-      public:
-        TensorInfo() = default;
-
-        explicit TensorInfo(const VkTensorCreateInfoARM &createInfo);
-        std::vector<int64_t> dimensions;
-        std::vector<int64_t> strides;
-        size_t size = 0;
-        size_t elementSize = 0;
-        VkBufferUsageFlags usage = 0;
-        VkBufferCreateFlags flags = 0;
-        VkFormat format = VK_FORMAT_UNDEFINED;
-        bool usesImageAliasing = false;
-
-        static VkBufferCreateFlags convertToBufferCreateFlags(VkTensorCreateFlagsARM flags);
-        static VkBufferUsageFlags convertToBufferUsageFlags(VkTensorUsageFlagsARM usage);
-    };
-
     TensorARM() = default;
     virtual ~TensorARM() = default;
     TensorARM(const TensorARM &) = delete;
     TensorARM &operator=(const TensorARM &) = delete;
 
     VkBuffer getTensorBuffer() const { return m_tensorBuffer; };
-    const TensorInfo &getTensorInfo() const { return m_info; };
+    const TensorLayout &getTensorInfo() const { return m_info; };
 
     VkResult create(const Device &dev, const VkTensorCreateInfoARM &createInfo, const VkAllocationCallbacks *allocator);
     void destroy(const Device &dev, const VkAllocationCallbacks *pAllocator);
@@ -67,7 +39,7 @@ class TensorARM {
 
   private:
     VkBuffer m_tensorBuffer = {};
-    TensorInfo m_info;
+    TensorLayout m_info;
     std::shared_ptr<TensorCopyPipeline> m_copy_pipeline;
 };
 
@@ -82,9 +54,9 @@ class TensorCopyPipeline {
 
   private:
     struct PushConstant {
-        int64_t dimensions[TensorARM::TENSOR_MAX_DIMENSIONS];
-        uint64_t srcStrides[TensorARM::TENSOR_MAX_DIMENSIONS];
-        uint64_t dstStrides[TensorARM::TENSOR_MAX_DIMENSIONS];
+        int64_t dimensions[TensorLayout::MAX_DIMENSIONS];
+        uint64_t srcStrides[TensorLayout::MAX_DIMENSIONS];
+        uint64_t dstStrides[TensorLayout::MAX_DIMENSIONS];
     };
 
     VkDescriptorPool createDescriptorPool() const;

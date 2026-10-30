@@ -29,9 +29,11 @@ TEST(TensorARM, LinearImageAliasingUsesImageRowPitch) {
         0, 64, 16, 64, 64,
     };
 
-    ASSERT_TRUE(mlsdk::el::layer::tensor_arm_detail::usesImageAliasing(description));
+    const VkTensorCreateInfoARM createInfo{
+        VK_STRUCTURE_TYPE_TENSOR_CREATE_INFO_ARM, nullptr, 0, &description, VK_SHARING_MODE_EXCLUSIVE, 0, nullptr};
+    ASSERT_TRUE(mlsdk::el::layer::TensorLayout(createInfo).usesImageAliasing);
 
-    mlsdk::el::layer::tensor_arm_detail::updateAliasedStrides(dimensions.size(), strides, imageLayout);
+    mlsdk::el::layer::tensor_description_detail::updateAliasedStrides(dimensions.size(), strides, imageLayout);
 
     EXPECT_EQ(strides[0], static_cast<int64_t>(imageLayout.rowPitch));
 }
