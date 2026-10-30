@@ -334,7 +334,7 @@ class TensorLayer : public VulkanLayerImpl {
         VkPhysicalDevice physicalDevice, const VkPhysicalDeviceExternalTensorInfoARM *pExternalTensorInfo,
         VkExternalTensorPropertiesARM *pExternalTensorProperties) {
         auto handle = VulkanLayerImpl::getHandle(physicalDevice);
-        VkExternalMemoryHandleTypeFlagBits handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+        VkExternalMemoryHandleTypeFlagBits handleType = pExternalTensorInfo->handleType;
 
         VkPhysicalDeviceExternalBufferInfo externalBufferInfo{
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_BUFFER_INFO, nullptr,
