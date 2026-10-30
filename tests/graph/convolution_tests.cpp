@@ -207,12 +207,26 @@ TEST_F(MLEmulationLayerGraphForVulkan, Conv2DPointwiseSharedWeights) {
     }
 }
 
-TEST_F(MLEmulationLayerGraphForVulkan, Conv2DPointwisePreservesRoundingOrder) {
-    const FloatConvCase test{1, 17, 19, 1, {0, 0, 0, 0}, {1, 1}, {1, 1}, false, true};
+TEST_F(MLEmulationLayerGraphForVulkan, Conv2DThreeByThreeSharedWeights) {
+    for (const auto &test :
+         std::vector<FloatConvCase>{{1, 16, 16, 3, {1, 1, 1, 1}, {1, 1}, {1, 1}, false, true},
+                                    {2, 17, 19, 3, {2, 4, 1, 3}, {2, 1}, {2, 2}, true, true},
+                                    {1, 33, 35, 3, {0, 0, 0, 0}, {1, 1}, {1, 1}, false, true},
+                                    {1, 17, 19, 3, {5, 0, 4, 1}, {1, 1}, {1, 1}, false, false},
+                                    {1, 3, 5, 3, {0, 0, 0, 0}, {1, 1}, {1, 1}, true, false},
+                                    {1, 17, 19, 5, {2, 2, 2, 2}, {1, 1}, {1, 1}, false, false},
+                                    {1, 256, 16, 3, {64, 64, 64, 64}, {1, 1}, {1, 1}, false, false, 1, 1}}) {
+        SCOPED_TRACE(testing::Message() << test.inputChannels << "x" << test.outputChannels << " k=" << test.kernel);
+        ASSERT_NO_FATAL_FAILURE(expectFloatConv(device, test));
+    }
+}
+
+void expectConvRounding(const std::shared_ptr<Device> &device, int64_t kernel) {
+    const FloatConvCase test{1, 17, 19, kernel, {0, 0, 0, 0}, {1, 1}, {1, 1}, false, true};
     auto input = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, {1, 7, 9, 17}});
-    auto weights = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, {19, 1, 1, 17}});
+    auto weights = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, {19, kernel, kernel, 17}});
     auto bias = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, {19}});
-    auto output = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, {1, 7, 9, 19}});
+    auto output = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, {1, 8 - kernel, 10 - kernel, 19}});
     auto *values = reinterpret_cast<float *>(input->data());
     std::fill_n(values, input->size() / sizeof(float), 0.0f);
     for (size_t i = 0; i < input->size() / sizeof(float); i += 17) {
@@ -231,6 +245,10 @@ TEST_F(MLEmulationLayerGraphForVulkan, Conv2DPointwisePreservesRoundingOrder) {
     ASSERT_NO_FATAL_FAILURE(dispatchFloatConv(device, {input, weights, bias, output}, test));
     EXPECT_EQ(std::memcmp(output->data(), reference.data(), output->size()), 0);
 }
+
+TEST_F(MLEmulationLayerGraphForVulkan, Conv2DPointwisePreservesRoundingOrder) { expectConvRounding(device, 1); }
+
+TEST_F(MLEmulationLayerGraphForVulkan, Conv2DThreeByThreePreservesRoundingOrder) { expectConvRounding(device, 3); }
 
 void expectConv2DStorageFormats(std::shared_ptr<Device> &device, vk::Format inputFormat, vk::Format weightFormat,
                                 vk::Format outputFormat, bool negateWeights = false) {

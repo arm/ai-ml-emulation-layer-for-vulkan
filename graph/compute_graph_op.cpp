@@ -2294,12 +2294,13 @@ void GraphPipeline::makeConv2D(const std::shared_ptr<TensorDescriptor> &input,
     const auto &weightShape = weights->getDimensions();
     const auto &outputShape = output->getDimensions();
     const auto &inputShape = input->getDimensions();
+    const bool sharedKernel =
+        (weightShape[1] == 1 && weightShape[2] == 1) || (weightShape[1] == 3 && weightShape[2] == 3);
     // Require enough channels and spatial reuse to amortize the shared tile.
     const bool cooperativeWeights =
         input->getFormat() == VK_FORMAT_R32_SFLOAT && output->getFormat() == VK_FORMAT_R32_SFLOAT &&
-        weights->getFormat() == VK_FORMAT_R32_SFLOAT && accScalarType(accType) == ScalarType::Float32 &&
-        weightShape[1] == 1 && weightShape[2] == 1 && weightShape[0] >= COOPERATIVE_CONV_TILE_SIZE &&
-        weightShape[3] >= COOPERATIVE_CONV_TILE_SIZE &&
+        weights->getFormat() == VK_FORMAT_R32_SFLOAT && accScalarType(accType) == ScalarType::Float32 && sharedKernel &&
+        weightShape[0] >= COOPERATIVE_CONV_TILE_SIZE && weightShape[3] >= COOPERATIVE_CONV_TILE_SIZE &&
         // Extended padding defeats spatial reuse of the shared weights.
         std::max(pad[0], pad[1]) <= std::min(inputShape[1], (weightShape[1] - 1) * dilation[0]) &&
         std::max(pad[2], pad[3]) <= std::min(inputShape[2], (weightShape[2] - 1) * dilation[1]) &&
