@@ -2292,11 +2292,15 @@ void GraphPipeline::makeConv2D(const std::shared_ptr<TensorDescriptor> &input,
                                const std::string &debugName) {
     const auto &weightShape = weights->getDimensions();
     const auto &outputShape = output->getDimensions();
+    const auto &inputShape = input->getDimensions();
     // Require enough channels and spatial reuse to amortize the shared tile.
     const bool cooperativeWeights =
         input->getFormat() == VK_FORMAT_R32_SFLOAT && output->getFormat() == VK_FORMAT_R32_SFLOAT &&
         weights->getFormat() == VK_FORMAT_R32_SFLOAT && accScalarType(accType) == ScalarType::Float32 &&
         weightShape[1] == 1 && weightShape[2] == 1 && weightShape[0] >= 16 && weightShape[3] >= 16 &&
+        // Extended padding defeats spatial reuse of the shared weights.
+        std::max(pad[0], pad[1]) <= std::min(inputShape[1], (weightShape[1] - 1) * dilation[0]) &&
+        std::max(pad[2], pad[3]) <= std::min(inputShape[2], (weightShape[2] - 1) * dilation[1]) &&
         outputShape[1] >= 4 && outputShape[0] * outputShape[2] >= 4;
     makePipeline<Conv2D>(input, output, weights, biases, pad, stride, dilation, inputZeroPoint, weightZeroPoint,
                          accType, maxComputeWorkGroupCount, cooperativeWeights, debugName);

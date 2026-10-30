@@ -4,6 +4,7 @@
  *
  */
 
+#include "compute_graph_op.hpp"
 #include "mlel/pipeline.hpp"
 #include "mlel/tensor.hpp"
 #include "mlel/utils.hpp"
@@ -30,10 +31,99 @@ struct FloatConvCase {
     std::array<int32_t, 4> pad;
     std::array<int32_t, 2> stride, dilation;
     bool scalarBias;
+    bool cooperative;
+    int64_t height = 7, width = 9;
 };
 
+// Use the real selector and shaders with small dispatch limits to cover every offset axis.
+void dispatchFloatConv(const std::shared_ptr<Device> &device, const std::array<std::shared_ptr<Tensor>, 4> &tensors,
+                       const FloatConvCase &test, bool fallback = false) {
+    namespace graph = compute::graph_op;
+    const auto &vkDevice = &(*device);
+    const auto &physical = &(*device->getPhysicalDevice());
+    const auto &instance = &(*device->getPhysicalDevice()->getInstance());
+    auto loader =
+        std::make_shared<vk::detail::DispatchLoaderDynamic>(*instance, instance.getDispatcher()->vkGetInstanceProcAddr,
+                                                            *vkDevice, vkDevice.getDispatcher()->vkGetDeviceProcAddr);
+    auto cache = std::make_shared<compute::PipelineCache>(nullptr, 0, VK_NULL_HANDLE);
+    static thread_local const auto cooperativeCode = cache->lookup("conv2d_cooperative", {});
+    static thread_local PFN_vkCreateShaderModule createShaderModule;
+    static thread_local PFN_vkCmdDispatch cmdDispatch;
+    static thread_local bool selected;
+    static thread_local uint32_t dispatches;
+    createShaderModule = loader->vkCreateShaderModule;
+    cmdDispatch = loader->vkCmdDispatch;
+    selected = false;
+    dispatches = 0;
+    loader->vkCreateShaderModule = [](VkDevice dev, const VkShaderModuleCreateInfo *info,
+                                      const VkAllocationCallbacks *allocator, VkShaderModule *module) {
+        selected = info->codeSize == cooperativeCode.size() * sizeof(uint32_t) &&
+                   std::memcmp(info->pCode, cooperativeCode.data(), info->codeSize) == 0;
+        return createShaderModule(dev, info, allocator, module);
+    };
+    loader->vkCmdDispatch = [](VkCommandBuffer command, uint32_t x, uint32_t y, uint32_t z) {
+        ++dispatches;
+        cmdDispatch(command, x, y, z);
+    };
+    loader->vkGetPhysicalDeviceProperties = [](VkPhysicalDevice, VkPhysicalDeviceProperties *properties) {
+        *properties = {};
+        std::fill_n(properties->limits.maxComputeWorkGroupCount, 3, 1u);
+    };
+
+    std::array<std::shared_ptr<compute::TensorDescriptor>, 4> descriptions;
+    std::vector<vk::raii::DeviceMemory> memory;
+    graph::TensorDescriptorMap bindings;
+    for (size_t i = 0; i < tensors.size(); ++i) {
+        descriptions[i] = std::make_shared<compute::TensorDescriptor>(loader, *physical, *vkDevice,
+                                                                      tensors[i]->getTensorDescription());
+        auto tensor = compute::TensorDescriptor::makeTensor(descriptions[i]);
+        auto allocation = descriptions[i]->createInitializeDeviceMemory(tensors[i]->data());
+        memory.emplace_back(vkDevice, allocation);
+        tensor->bindTensorMemory(allocation, 0);
+        bindings.emplace(descriptions[i], std::move(tensor));
+    }
+    const std::vector<int32_t> pad(test.pad.begin(), test.pad.end());
+    const std::vector<int32_t> stride(test.stride.begin(), test.stride.end());
+    const std::vector<int32_t> dilation(test.dilation.begin(), test.dilation.end());
+    graph::GraphPipeline graphPipeline(loader, *physical, *vkDevice, cache);
+    std::shared_ptr<graph::ComputePipelineBase> kernel;
+    if (fallback) {
+        kernel = std::make_shared<graph::Conv2D>(loader, *vkDevice, cache, descriptions[0], descriptions[3],
+                                                 descriptions[1], descriptions[2], pad, stride, dilation, 0, 0, 3,
+                                                 std::array<uint32_t, 3>{1, 1, 1}, false, "reference");
+    } else {
+        graphPipeline.makeConv2D(descriptions[0], descriptions[3], descriptions[1], descriptions[2], pad, stride,
+                                 dilation, 0, 0, 3, "test");
+        ASSERT_EQ(graphPipeline.getPipelines().size(), 1u);
+        kernel = graphPipeline.getPipelines().front();
+    }
+    EXPECT_EQ(selected, !fallback && test.cooperative);
+    graph::ComputeDescriptorSetMap sets;
+    kernel->getComputePipelineLayout()->makeDescriptorSets(sets, bindings);
+    for (const auto &[_, set] : sets) {
+        set->updateDescriptorSet();
+    }
+    vk::raii::CommandPool pool(vkDevice, {{}, device->getPhysicalDevice()->getComputeFamilyIndex()});
+    vk::raii::CommandBuffers commands(vkDevice, {*pool, vk::CommandBufferLevel::ePrimary, 1});
+    auto &command = commands.front();
+    command.begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    kernel->cmdBindAndDispatch(*command, sets);
+    const vk::MemoryBarrier hostRead{vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eHostRead};
+    command.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eHost, {}, hostRead,
+                            {}, {});
+    command.end();
+    EXPECT_GT(dispatches, 1u);
+    vk::raii::Queue queue(vkDevice, device->getPhysicalDevice()->getComputeFamilyIndex(), 0);
+    const vk::CommandBuffer rawCommand = *command;
+    queue.submit(vk::SubmitInfo{{}, {}, rawCommand}, nullptr);
+    queue.waitIdle();
+    const auto *result = memory.back().mapMemory(0, VK_WHOLE_SIZE);
+    std::memcpy(tensors[3]->data(), result, tensors[3]->size());
+    memory.back().unmapMemory();
+}
+
 void expectFloatConv(std::shared_ptr<Device> &device, const FloatConvCase &test) {
-    const int64_t height = 7, width = 9;
+    const auto height = test.height, width = test.width;
     const auto outputHeight =
         (height + test.pad[0] + test.pad[1] - (test.kernel - 1) * test.dilation[0] - 1) / test.stride[0] + 1;
     const auto outputWidth =
@@ -99,17 +189,47 @@ void expectFloatConv(std::shared_ptr<Device> &device, const FloatConvCase &test)
     }
     // Dyadic inputs keep every product and sum exact, including channel tails.
     ASSERT_EQ(std::memcmp(output->data(), expected.data(), output->size()), 0);
+    std::memset(output->data(), 0xff, output->size());
+    ASSERT_NO_FATAL_FAILURE(dispatchFloatConv(device, {input, weights, bias, output}, test));
+    ASSERT_EQ(std::memcmp(output->data(), expected.data(), output->size()), 0);
 }
 
 TEST_F(MLEmulationLayerGraphForVulkan, Conv2DPointwiseSharedWeights) {
-    for (const auto &test : std::vector<FloatConvCase>{{1, 16, 16, 1, {0, 0, 0, 0}, {1, 1}, {1, 1}, false},
-                                                       {2, 17, 19, 1, {1, 2, 2, 1}, {2, 1}, {1, 1}, true},
-                                                       {1, 33, 35, 1, {0, 0, 0, 0}, {1, 1}, {2, 3}, false},
-                                                       {1, 3, 5, 1, {0, 0, 0, 0}, {1, 1}, {1, 1}, true},
-                                                       {1, 17, 19, 2, {0, 0, 0, 0}, {1, 1}, {1, 1}, false}}) {
+    for (const auto &test :
+         std::vector<FloatConvCase>{{1, 16, 16, 1, {0, 0, 0, 0}, {1, 1}, {1, 1}, false, true},
+                                    {2, 17, 19, 1, {1, 2, 2, 1}, {2, 1}, {1, 1}, true, false},
+                                    {1, 33, 35, 1, {0, 0, 0, 0}, {1, 1}, {2, 3}, false, true},
+                                    {1, 3, 5, 1, {0, 0, 0, 0}, {1, 1}, {1, 1}, true, false},
+                                    {1, 17, 19, 2, {0, 0, 0, 0}, {1, 1}, {1, 1}, false, false},
+                                    {1, 256, 16, 1, {64, 64, 64, 64}, {1, 1}, {1, 1}, false, false, 1, 1}}) {
         SCOPED_TRACE(testing::Message() << test.inputChannels << "x" << test.outputChannels << " k=" << test.kernel);
         ASSERT_NO_FATAL_FAILURE(expectFloatConv(device, test));
     }
+}
+
+TEST_F(MLEmulationLayerGraphForVulkan, Conv2DPointwisePreservesRoundingOrder) {
+    const FloatConvCase test{1, 17, 19, 1, {0, 0, 0, 0}, {1, 1}, {1, 1}, false, true};
+    auto input = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, {1, 7, 9, 17}});
+    auto weights = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, {19, 1, 1, 17}});
+    auto bias = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, {19}});
+    auto output = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, {1, 7, 9, 19}});
+    auto *values = reinterpret_cast<float *>(input->data());
+    std::fill_n(values, input->size() / sizeof(float), 0.0f);
+    for (size_t i = 0; i < input->size() / sizeof(float); i += 17) {
+        // (2^24 + 1) - 2^24 is zero; regrouping to 2^24 + (1 - 2^24) gives one.
+        values[i] = 16777216.0f;
+        values[i + 1] = 1.0f;
+        values[i + 2] = -16777216.0f;
+    }
+    std::fill_n(reinterpret_cast<float *>(weights->data()), weights->size() / sizeof(float), 1.0f);
+    std::memset(bias->data(), 0, bias->size());
+    std::memset(output->data(), 0xff, output->size());
+    ASSERT_NO_FATAL_FAILURE(dispatchFloatConv(device, {input, weights, bias, output}, test, true));
+    std::vector<float> reference(output->size() / sizeof(float));
+    ASSERT_EQ(std::memcmp(output->data(), reference.data(), output->size()), 0);
+    std::memset(output->data(), 0xff, output->size());
+    ASSERT_NO_FATAL_FAILURE(dispatchFloatConv(device, {input, weights, bias, output}, test));
+    EXPECT_EQ(std::memcmp(output->data(), reference.data(), output->size()), 0);
 }
 
 void expectConv2DStorageFormats(std::shared_ptr<Device> &device, vk::Format inputFormat, vk::Format weightFormat,
