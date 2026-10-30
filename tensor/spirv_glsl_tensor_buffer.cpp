@@ -6,6 +6,7 @@
 
 #include "spirv_glsl_tensor_buffer.hpp"
 #include "mlel/utils.hpp"
+#include "tensor_descriptor_layout.hpp"
 #include <exception>
 #include <set>
 
@@ -13,6 +14,17 @@ using namespace spirv_cross;
 using namespace mlsdk::el::utils;
 
 namespace mlsdk::el::layer {
+
+namespace {
+bool supports32BitTensorAccess(const SPIRType &coordinates, const SPIRType &value) {
+    return coordinates.basetype == SPIRType::UInt && coordinates.width == 32 && coordinates.vecsize == 1 &&
+           coordinates.columns == 1 && coordinates.array.size() == 1 && coordinates.array_size_literal[0] &&
+           coordinates.array[0] > 0 && coordinates.array[0] <= maxTensorRank && value.vecsize == 1 &&
+           value.columns == 1 &&
+           (value.array.empty() ||
+            (value.array.size() == 1 && value.array_size_literal[0] && value.array[0] > 0 && value.array[0] <= 4));
+}
+} // namespace
 
 const std::string CompilerTensorAsBuffer::tensorDefines =
 #include "shaders/tensor.glsl"
@@ -48,6 +60,7 @@ CompilerTensorAsBuffer::CompilerTensorAsBuffer(std::vector<uint32_t> spirv_) : C
         struct _Tensor_Descriptor_TYPE
         {
             _Tensor_Buffer_TYPE address;
+            uint narrowOffsets;
             uint64_t shape[6];
             uint64_t stride[6];
         };
@@ -220,8 +233,11 @@ void CompilerTensorAsBuffer::emit_instruction(const Instruction &instruction) {
             throw std::runtime_error("The emulation layer doesn't support more than 5 arguments to tensorReadARM.");
         }
 
-        const std::string macroName =
+        std::string macroName =
             is_array(outType) ? "_emu_GL_ARM_tensors_read_array" : "_emu_GL_ARM_tensors_read_scalar";
+        if (supports32BitTensorAccess(expression_type(ops[3]), outType)) {
+            macroName += "_u32";
+        }
         statement(macroName, "(",                            // Macro name
                   to_expression(ops[2]), ", ",               // tensor
                   getTensorBufferExpression(ops[2]), ", ",   // tensor data buffer
@@ -253,8 +269,11 @@ void CompilerTensorAsBuffer::emit_instruction(const Instruction &instruction) {
             throw std::runtime_error("The emulation layer doesn't support more than 4 arguments to tensorReadARM.");
         }
 
-        const std::string macroName =
+        std::string macroName =
             is_array(outType) ? "_emu_GL_ARM_tensors_write_array" : "_emu_GL_ARM_tensors_write_scalar";
+        if (supports32BitTensorAccess(expression_type(ops[1]), outType)) {
+            macroName += "_u32";
+        }
         statement(macroName, "(",                          // Macro name
                   to_expression(ops[0]), ", ",             // tensor
                   getTensorBufferExpression(ops[0]), ", ", // tensor data buffer
@@ -407,32 +426,29 @@ uint32_t CompilerTensorAsBuffer::createTensorBDA(uint32_t tensorTypeId) {
 void CompilerTensorAsBuffer::createTensorStruct(uint32_t tensorTypeId, uint32_t bufferPtrId) {
     // Create uniform struct to replace the tensorARM
     [[maybe_unused]] const auto [memberArrayTypeId, _] = getTensorDimTypeIds();
+    const auto flagsTypeId = ir.increase_bound_by(1);
+    auto &flagsType = set<SPIRType>(flagsTypeId, spv::OpTypeInt);
+    flagsType.basetype = SPIRType::UInt;
+    flagsType.width = 32;
 
     // Create a SPIRType for the struct
     auto &tensorStruct = set<SPIRType>(tensorTypeId, spv::OpTypeStruct);
     tensorStruct.basetype = SPIRType::Struct;
     tensorStruct.member_types.push_back(bufferPtrId);
+    tensorStruct.member_types.push_back(flagsTypeId);
     tensorStruct.member_types.push_back(memberArrayTypeId);
     tensorStruct.member_types.push_back(memberArrayTypeId);
 
-    // Struct members need to be decorated with byte offsets.
-    // Struct members need to be aligned to the maximum aligement for all members
-    // Sum sizes of preceding members to get the offset.
-    auto packing = BufferPackingStd140;
-    uint32_t alignment = 1;
-    for (const auto &memberType : tensorStruct.member_types) {
-        alignment = std::max(alignment, type_to_packed_alignment(get<SPIRType>(memberType), {}, packing));
-    }
-    uint32_t offset = 0;
-    for (uint32_t i = 0; i < tensorStruct.member_types.size(); i++) {
-        ir.set_member_decoration(tensorStruct.self, i, spv::DecorationOffset, offset);
-        const auto &memberType = get<SPIRType>(tensorStruct.member_types[i]);
-        offset += roundUp(type_to_packed_size(memberType, {}, packing), alignment);
+    const size_t offsets[]{offsetof(TensorDescriptorLayout, address), offsetof(TensorDescriptorLayout, narrowOffsets),
+                           offsetof(TensorDescriptorLayout, dimensions), offsetof(TensorDescriptorLayout, strides)};
+    for (uint32_t i = 0; i < tensorStruct.member_types.size(); ++i) {
+        ir.set_member_decoration(tensorStruct.self, i, spv::DecorationOffset, static_cast<uint32_t>(offsets[i]));
     }
 
     ir.set_member_name(tensorStruct.self, 0, "address");
-    ir.set_member_name(tensorStruct.self, 1, "shape");
-    ir.set_member_name(tensorStruct.self, 2, "stride");
+    ir.set_member_name(tensorStruct.self, 1, "narrowOffsets");
+    ir.set_member_name(tensorStruct.self, 2, "shape");
+    ir.set_member_name(tensorStruct.self, 3, "stride");
 }
 
 void CompilerTensorAsBuffer::createTensorPtr(uint32_t tensorPtrId) {

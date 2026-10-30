@@ -151,6 +151,35 @@ TEST_F(TensorLoweringForVulkan, ZeroCreatesTensorPipeline) {
     EXPECT_EQ(createPipeline(tensorShader(), false), VK_SUCCESS);
 }
 
+TEST_F(TensorLoweringForVulkan, WideArrayAccessPreservesBoundsAndTails) {
+    const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "0");
+    ensureDevice();
+    auto input = std::make_shared<utilities::Tensor>(device, utilities::Shape{vk::Format::eR32Uint, {3}});
+    auto output = std::make_shared<utilities::Tensor>(device, utilities::Shape{vk::Format::eR32Uint, {5}});
+    const std::array<uint32_t, 3> initial{100, 101, 102};
+    std::memcpy(input->data(), initial.data(), input->size());
+    const auto shader = compileGlsl(R"(
+#version 460
+#extension GL_ARM_tensors : require
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) uniform tensorARM<uint, 1> inputData;
+layout(set = 0, binding = 1) uniform tensorARM<uint, 1> outputData;
+void main() {
+    uint values[5];
+    tensorReadARM(inputData, uint[](0), values);
+    tensorWriteARM(outputData, uint[](0), values);
+    tensorWriteARM(inputData, uint[](1), uint[](7, 8, 9, 10, 11));
+}
+)");
+    const utilities::TensorComputePipeline::DescriptorMap descriptors{{{0, {input}}, {1, {output}}}};
+    utilities::TensorComputePipeline pipeline(device, descriptors, shader);
+    pipeline.dispatchSubmit(1, 1, 1);
+    const std::array<uint32_t, 5> expected{100, 101, 102, 0, 0};
+    const std::array<uint32_t, 3> written{100, 7, 8};
+    EXPECT_EQ(std::memcmp(output->data(), expected.data(), output->size()), 0);
+    EXPECT_EQ(std::memcmp(input->data(), written.data(), input->size()), 0);
+}
+
 TEST_F(TensorLoweringForVulkan, DirectCreatesScalarTensorModule) {
     const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
     EXPECT_EQ(createModule(tensorShader()), VK_SUCCESS);

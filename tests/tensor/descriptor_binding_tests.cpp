@@ -7,10 +7,41 @@
 #include <gtest/gtest.h>
 
 #include "descriptor_binding.hpp"
+#include "tensor_descriptor_layout.hpp"
 
 #include <vector>
 
 namespace {
+
+TEST(TensorDescriptors, NarrowOffsetsPreserveDescriptorLayout) {
+    using mlsdk::el::layer::TensorDescriptorLayout;
+    EXPECT_EQ(offsetof(TensorDescriptorLayout, address), 0u);
+    EXPECT_EQ(offsetof(TensorDescriptorLayout, narrowOffsets), 8u);
+    EXPECT_EQ(offsetof(TensorDescriptorLayout, dimensions), 16u);
+    EXPECT_EQ(offsetof(TensorDescriptorLayout, strides), 112u);
+    EXPECT_EQ(sizeof(TensorDescriptorLayout), 208u);
+}
+
+TEST(TensorDescriptors, NarrowOffsetsRequireBoundedProductsAndSums) {
+    using mlsdk::el::layer::supports32BitTensorOffsets;
+    constexpr int64_t limit = std::numeric_limits<int32_t>::max();
+    EXPECT_TRUE(supports32BitTensorOffsets({2, 3}, {32, 4}));
+    EXPECT_TRUE(supports32BitTensorOffsets({6, 7}, {0, 0}));
+    EXPECT_TRUE(supports32BitTensorOffsets({2, 2}, {limit - 1, 1}));
+    EXPECT_FALSE(supports32BitTensorOffsets({2, 2}, {limit, 1}));
+    EXPECT_TRUE(supports32BitTensorOffsets({3}, {limit / 2}));
+    EXPECT_FALSE(supports32BitTensorOffsets({3}, {limit / 2 + 1}));
+    EXPECT_FALSE(supports32BitTensorOffsets({1}, {limit + 1}));
+    EXPECT_FALSE(supports32BitTensorOffsets({limit + 1}, {0}));
+    EXPECT_FALSE(supports32BitTensorOffsets({limit}, {std::numeric_limits<int64_t>::max()}));
+    EXPECT_FALSE(supports32BitTensorOffsets({2}, {-4}));
+    EXPECT_FALSE(supports32BitTensorOffsets({0}, {4}));
+    EXPECT_FALSE(supports32BitTensorOffsets({-1}, {4}));
+    EXPECT_FALSE(supports32BitTensorOffsets({}, {}));
+    EXPECT_FALSE(supports32BitTensorOffsets({2}, {4, 4}));
+    EXPECT_TRUE(supports32BitTensorOffsets(std::vector<int64_t>(6, 1), std::vector<int64_t>(6, 4)));
+    EXPECT_FALSE(supports32BitTensorOffsets(std::vector<int64_t>(7, 1), std::vector<int64_t>(7, 4)));
+}
 
 TEST(TensorDescriptors, NonTensorBindingFlagsAreNotDuplicated) {
     const std::vector<VkDescriptorSetLayoutBinding> bindings{
