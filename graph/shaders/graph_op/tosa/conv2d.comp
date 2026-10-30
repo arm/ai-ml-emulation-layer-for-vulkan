@@ -37,7 +37,7 @@ layout(set = 2, binding = 0) uniform tensorARM<WEIGHT_T, 4> weightsData;
 layout(set = 3, binding = 0) uniform tensorARM<OUT_T, 1> biasesData;
 
 #ifdef COOPERATIVE_WEIGHTS
-shared float weightTile[16 * 16];
+shared float weightTile[WEIGHT_TILE_SIZE * WEIGHT_TILE_SIZE];
 #endif
 
 void main() {
@@ -69,11 +69,11 @@ void main() {
 
             const uint IC = tensorSizeARM(inputData, 3);
 #ifdef COOPERATIVE_WEIGHTS
-            for (uint tileIC = 0; tileIC < IC; tileIC += 16) {
+            for (uint tileIC = 0; tileIC < IC; tileIC += WEIGHT_TILE_SIZE) {
                 uint tileIndex = gl_LocalInvocationIndex * 4;
-                uint tileOC = pushConstants.outputPositionOffset[2] + gl_WorkGroupID.z * 16;
+                uint tileOC = pushConstants.outputPositionOffset[2] + gl_WorkGroupID.z * WEIGHT_TILE_SIZE;
                 float loaded[4];
-                tensorReadARM(weightsData, uint[](tileOC + tileIndex / 16, ky, kx, tileIC + tileIndex % 16), loaded);
+                tensorReadARM(weightsData, uint[](tileOC + tileIndex / WEIGHT_TILE_SIZE, ky, kx, tileIC + tileIndex % WEIGHT_TILE_SIZE), loaded);
                 for (uint lane = 0; lane < 4; ++lane) {
                     weightTile[tileIndex + lane] = loaded[lane];
                 }
@@ -82,7 +82,7 @@ void main() {
 #endif
             if (validOutput && y < tensorSizeARM(inputData, 1) && x < tensorSizeARM(inputData, 2)) {
 #ifdef COOPERATIVE_WEIGHTS
-                for (uint ic = tileIC; ic < min(tileIC + 16, IC); ic += 4) {
+                for (uint ic = tileIC; ic < min(tileIC + WEIGHT_TILE_SIZE, IC); ic += 4) {
 #else
                 for (uint ic = 0; ic < IC; ic += 4) {
 #endif
@@ -95,7 +95,7 @@ void main() {
                     for (uint outputLane = 0; outputLane < 4; ++outputLane) {
                         uint tileRow = gl_LocalInvocationID.z * 4 + outputLane;
                         for (uint inputLane = 0; inputLane < 4; ++inputLane) {
-                            weight[outputLane][inputLane] = weightTile[tileRow * 16 + ic - tileIC + inputLane];
+                            weight[outputLane][inputLane] = weightTile[tileRow * WEIGHT_TILE_SIZE + ic - tileIC + inputLane];
                         }
                     }
 #else

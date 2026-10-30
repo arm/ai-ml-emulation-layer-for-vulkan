@@ -6,6 +6,9 @@
 # MLELGraph core algorithms and utilities
 ###############################################################################
 
+set(COOPERATIVE_CONV_LOCAL_SIZE 4)
+set(COOPERATIVE_CONV_TILE_SIZE 16)
+
 add_subdirectory(shaders)
 
 add_library(MLELGraph STATIC)
@@ -13,6 +16,9 @@ add_library(MLELGraph STATIC)
 add_library(${ML_SDK_EL_NAMESPACE}::MLELGraph ALIAS MLELGraph)
 
 target_compile_options(MLELGraph PRIVATE ${VMEL_COMPILE_OPTIONS})
+target_compile_definitions(MLELGraph PRIVATE
+    COOPERATIVE_CONV_LOCAL_SIZE=${COOPERATIVE_CONV_LOCAL_SIZE}
+    COOPERATIVE_CONV_TILE_SIZE=${COOPERATIVE_CONV_TILE_SIZE})
 mlel_enable_coverage(MLELGraph)
 
 target_sources(MLELGraph PRIVATE

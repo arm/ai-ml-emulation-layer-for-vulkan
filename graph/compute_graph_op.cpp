@@ -856,8 +856,9 @@ Conv2D::Conv2D(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoade
                                                        _weights->getFormat(), _accType),
                       debugName),
       pushConstant{createPushConstant(_pad, _stride, _dilation, _inputZeroPoint, _weightZeroPoint)},
-      maxGroupCount{_maxGroupCount}, warpX{cooperativeWeights ? 4u : 8u}, warpY{cooperativeWeights ? 4u : 8u},
-      warpZ{cooperativeWeights ? 4u : 1u} {}
+      maxGroupCount{_maxGroupCount}, warpX{cooperativeWeights ? COOPERATIVE_CONV_LOCAL_SIZE : 8u},
+      warpY{cooperativeWeights ? COOPERATIVE_CONV_LOCAL_SIZE : 8u},
+      warpZ{cooperativeWeights ? COOPERATIVE_CONV_LOCAL_SIZE : 1u} {}
 
 Conv2D::PushConstant Conv2D::createPushConstant(const std::vector<int32_t> &pad, const std::vector<int32_t> &stride,
                                                 const std::vector<int32_t> &dilation, const int8_t inputZeroPoint,
@@ -2297,11 +2298,12 @@ void GraphPipeline::makeConv2D(const std::shared_ptr<TensorDescriptor> &input,
     const bool cooperativeWeights =
         input->getFormat() == VK_FORMAT_R32_SFLOAT && output->getFormat() == VK_FORMAT_R32_SFLOAT &&
         weights->getFormat() == VK_FORMAT_R32_SFLOAT && accScalarType(accType) == ScalarType::Float32 &&
-        weightShape[1] == 1 && weightShape[2] == 1 && weightShape[0] >= 16 && weightShape[3] >= 16 &&
+        weightShape[1] == 1 && weightShape[2] == 1 && weightShape[0] >= COOPERATIVE_CONV_TILE_SIZE &&
+        weightShape[3] >= COOPERATIVE_CONV_TILE_SIZE &&
         // Extended padding defeats spatial reuse of the shared weights.
         std::max(pad[0], pad[1]) <= std::min(inputShape[1], (weightShape[1] - 1) * dilation[0]) &&
         std::max(pad[2], pad[3]) <= std::min(inputShape[2], (weightShape[2] - 1) * dilation[1]) &&
-        outputShape[1] >= 4 && outputShape[0] * outputShape[2] >= 4;
+        outputShape[1] >= COOPERATIVE_CONV_LOCAL_SIZE && outputShape[0] * outputShape[2] >= COOPERATIVE_CONV_LOCAL_SIZE;
     makePipeline<Conv2D>(input, output, weights, biases, pad, stride, dilation, inputZeroPoint, weightZeroPoint,
                          accType, maxComputeWorkGroupCount, cooperativeWeights, debugName);
 }
