@@ -36,8 +36,8 @@ inline bool supports32BitTensorOffsets(const std::vector<int64_t> &dimensions, c
     if (dimensions.empty() || dimensions.size() > maxTensorRank || dimensions.size() != strides.size()) {
         return false;
     }
-    // Leave room for vector tails and keep every intermediate product and sum in range.
-    constexpr int64_t limit = std::numeric_limits<int32_t>::max();
+    // The narrow shader handles at most four elements per access; reserve three for the tail.
+    constexpr int64_t limit = int64_t(std::numeric_limits<uint32_t>::max()) - 3;
     int64_t offset = 0;
     for (size_t axis = 0; axis < dimensions.size(); ++axis) {
         const auto dimension = dimensions[axis];

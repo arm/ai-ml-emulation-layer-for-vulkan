@@ -16,7 +16,7 @@ using namespace mlsdk::el::utils;
 namespace mlsdk::el::layer {
 
 namespace {
-bool supports32BitTensorAccess(const SPIRType &coordinates, const SPIRType &value) {
+bool is32BitTensorAccessCandidate(const SPIRType &coordinates, const SPIRType &value) {
     return coordinates.basetype == SPIRType::UInt && coordinates.width == 32 && coordinates.vecsize == 1 &&
            coordinates.columns == 1 && coordinates.array.size() == 1 && coordinates.array_size_literal[0] &&
            coordinates.array[0] > 0 && coordinates.array[0] <= maxTensorRank && value.vecsize == 1 &&
@@ -235,7 +235,7 @@ void CompilerTensorAsBuffer::emit_instruction(const Instruction &instruction) {
 
         std::string macroName =
             is_array(outType) ? "_emu_GL_ARM_tensors_read_array" : "_emu_GL_ARM_tensors_read_scalar";
-        if (supports32BitTensorAccess(expression_type(ops[3]), outType)) {
+        if (is32BitTensorAccessCandidate(expression_type(ops[3]), outType)) {
             macroName += "_u32";
         }
         statement(macroName, "(",                            // Macro name
@@ -271,7 +271,7 @@ void CompilerTensorAsBuffer::emit_instruction(const Instruction &instruction) {
 
         std::string macroName =
             is_array(outType) ? "_emu_GL_ARM_tensors_write_array" : "_emu_GL_ARM_tensors_write_scalar";
-        if (supports32BitTensorAccess(expression_type(ops[1]), outType)) {
+        if (is32BitTensorAccessCandidate(expression_type(ops[1]), outType)) {
             macroName += "_u32";
         }
         statement(macroName, "(",                          // Macro name

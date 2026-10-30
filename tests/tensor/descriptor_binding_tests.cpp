@@ -24,13 +24,19 @@ TEST(TensorDescriptors, NarrowOffsetsPreserveDescriptorLayout) {
 
 TEST(TensorDescriptors, NarrowOffsetsRequireBoundedProductsAndSums) {
     using mlsdk::el::layer::supports32BitTensorOffsets;
-    constexpr int64_t limit = std::numeric_limits<int32_t>::max();
+    constexpr int64_t limit = int64_t(std::numeric_limits<uint32_t>::max()) - 3;
     EXPECT_TRUE(supports32BitTensorOffsets({2, 3}, {32, 4}));
+    // Contiguous FP32 storage just above 2 GiB remains eligible.
+    EXPECT_TRUE(supports32BitTensorOffsets({1, 536870913}, {2147483652, 4}));
     EXPECT_TRUE(supports32BitTensorOffsets({6, 7}, {0, 0}));
     EXPECT_TRUE(supports32BitTensorOffsets({2, 2}, {limit - 1, 1}));
     EXPECT_FALSE(supports32BitTensorOffsets({2, 2}, {limit, 1}));
     EXPECT_TRUE(supports32BitTensorOffsets({3}, {limit / 2}));
     EXPECT_FALSE(supports32BitTensorOffsets({3}, {limit / 2 + 1}));
+    // Four byte-sized elements at the upper boundary cannot wrap the uint offset or coordinate.
+    EXPECT_TRUE(supports32BitTensorOffsets({limit}, {1}));
+    EXPECT_EQ(uint32_t(limit - 1) + 3u, std::numeric_limits<uint32_t>::max() - 1u);
+    EXPECT_TRUE(supports32BitTensorOffsets({1}, {limit}));
     EXPECT_FALSE(supports32BitTensorOffsets({1}, {limit + 1}));
     EXPECT_FALSE(supports32BitTensorOffsets({limit + 1}, {0}));
     EXPECT_FALSE(supports32BitTensorOffsets({limit}, {std::numeric_limits<int64_t>::max()}));

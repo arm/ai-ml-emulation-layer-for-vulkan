@@ -6,6 +6,8 @@
 
 #include "mlel/tensor.hpp"
 #include "mlel/utils.hpp"
+#include "spirv_glsl_tensor_buffer.hpp"
+#include "tensor_descriptor_layout.hpp"
 #include "test_utils.hpp"
 #include "vulkan_test_utils.hpp"
 
@@ -136,6 +138,9 @@ class SpecializedTensorPipeline : public utilities::PipelineBase {
         commands.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
         commands.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *pipelineLayout, 0, sets, nullptr);
         commands.dispatch(1, 1, 1);
+        const vk::MemoryBarrier hostRead{vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eHostRead};
+        commands.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eHost, {},
+                                 hostRead, {}, {});
         commands.end();
         submitWork(commands);
     }
@@ -178,6 +183,84 @@ void main() {
     const std::array<uint32_t, 3> written{100, 7, 8};
     EXPECT_EQ(std::memcmp(output->data(), expected.data(), output->size()), 0);
     EXPECT_EQ(std::memcmp(input->data(), written.data(), input->size()), 0);
+}
+
+TEST_F(TensorLoweringForVulkan, RuntimeWideOffsetsPreserveScalarAndArrayBounds) {
+#ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+    GTEST_SKIP() << "This test supplies a buffer-device-address descriptor; MoltenVK uses buffer aliases.";
+#endif
+    const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "0");
+    ensureDevice();
+    const auto &vkDevice = &(*device);
+    auto input = std::make_shared<utilities::Tensor>(device, utilities::Shape{vk::Format::eR32Uint, {3}});
+    auto output = std::make_shared<utilities::Tensor>(device, utilities::Shape{vk::Format::eR32Uint, {7}});
+    const auto shader = compileGlsl(R"(
+#version 460
+#extension GL_ARM_tensors : require
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) uniform tensorARM<uint, 1> inputData;
+layout(set = 0, binding = 1) uniform tensorARM<uint, 1> outputData;
+void main() {
+    uint scalar;
+    tensorReadARM(inputData, uint[](0), scalar);
+    tensorWriteARM(outputData, uint[](0), scalar);
+    uint values[4];
+    tensorReadARM(inputData, uint[](1), values);
+    tensorWriteARM(outputData, uint[](1), values);
+    tensorReadARM(inputData, uint[](3), scalar);
+    tensorWriteARM(outputData, uint[](5), scalar);
+    tensorWriteARM(inputData, uint[](0), 7u);
+    tensorWriteARM(inputData, uint[](1), uint[](8, 9, 10, 11));
+    tensorWriteARM(inputData, uint[](3), 99u);
+}
+)");
+    layer::CompilerTensorAsBuffer compiler(shader);
+    auto lowered = compiler.compile();
+    // Observe the GPU descriptor flag as well as the accesses controlled by it.
+    lowered.insert(lowered.rfind('}'), "outputData.address.data[6] = inputData.narrowOffsets;\n");
+    const utilities::TensorComputePipeline::DescriptorMap descriptors{{{0, {input}}, {1, {output}}}};
+    utilities::TensorComputePipeline pipeline(device, descriptors, compileGlsl(lowered));
+    auto [pool, sets] = pipeline.createDescriptorSets(descriptors);
+
+    const std::array<uint32_t, 4> initial{100, 101, 102, 0xdeadbeef};
+    vk::raii::Buffer data{vkDevice, vk::BufferCreateInfo{{},
+                                                         sizeof(initial),
+                                                         vk::BufferUsageFlagBits::eStorageBuffer |
+                                                             vk::BufferUsageFlagBits::eShaderDeviceAddress}};
+    const auto dataRequirements = data.getMemoryRequirements();
+    auto dataMemory = device->allocateDeviceMemory(
+        dataRequirements.size, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+        dataRequirements.memoryTypeBits);
+    data.bindMemory(**dataMemory, 0);
+    auto *mappedData = dataMemory->mapMemory(0, VK_WHOLE_SIZE);
+    std::memcpy(mappedData, initial.data(), sizeof(initial));
+
+    // Supply the lowered descriptor directly: a small allocation can exercise the wide branch.
+    layer::TensorDescriptorLayout descriptor{};
+    descriptor.address = vkDevice.getBufferAddress(vk::BufferDeviceAddressInfo{*data});
+    descriptor.narrowOffsets = 0;
+    descriptor.dimensions[0] = 3;
+    descriptor.strides[0] = sizeof(uint32_t);
+    vk::raii::Buffer metadata{vkDevice,
+                              vk::BufferCreateInfo{{}, sizeof(descriptor), vk::BufferUsageFlagBits::eUniformBuffer}};
+    const auto metadataRequirements = metadata.getMemoryRequirements();
+    auto metadataMemory = device->allocateDeviceMemory(
+        metadataRequirements.size, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+        metadataRequirements.memoryTypeBits);
+    metadata.bindMemory(**metadataMemory, 0);
+    auto *mappedMetadata = metadataMemory->mapMemory(0, VK_WHOLE_SIZE);
+    std::memcpy(mappedMetadata, &descriptor, sizeof(descriptor));
+    metadataMemory->unmapMemory();
+    const vk::DescriptorBufferInfo bufferInfo{*metadata, 0, sizeof(descriptor)};
+    const vk::WriteDescriptorSet write{*sets[0], 0, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &bufferInfo};
+    vkDevice.updateDescriptorSets(write, {});
+    std::memset(output->data(), 0xff, output->size());
+    pipeline.dispatchSubmit(sets, 1, 1, 1);
+    const std::array<uint32_t, 7> expected{100, 101, 102, 0, 0, 0, 0};
+    const std::array<uint32_t, 4> written{7, 8, 9, 0xdeadbeef};
+    EXPECT_EQ(std::memcmp(output->data(), expected.data(), sizeof(expected)), 0);
+    EXPECT_EQ(std::memcmp(mappedData, written.data(), sizeof(written)), 0);
+    dataMemory->unmapMemory();
 }
 
 TEST_F(TensorLoweringForVulkan, DirectCreatesScalarTensorModule) {
