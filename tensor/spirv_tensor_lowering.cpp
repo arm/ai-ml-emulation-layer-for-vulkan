@@ -48,7 +48,7 @@ Instruction &definition(IRContext &context, uint32_t id) {
     return *inst;
 }
 
-uint64_t literalInteger(IRContext &context, uint32_t id) {
+std::optional<uint64_t> integerConstant(IRContext &context, uint32_t id) {
     const auto &inst = definition(context, id);
     if (definition(context, inst.type_id()).opcode() != spv::Op::OpTypeInt) {
         throw std::invalid_argument("Expected an integer TensorARM operand");
@@ -56,9 +56,11 @@ uint64_t literalInteger(IRContext &context, uint32_t id) {
     if (inst.opcode() == spv::Op::OpConstantNull) {
         return 0;
     }
+    if (inst.opcode() == spv::Op::OpSpecConstant || inst.opcode() == spv::Op::OpSpecConstantOp) {
+        return std::nullopt;
+    }
     if (inst.opcode() != spv::Op::OpConstant) {
-        // TODO: Preserve specialised ranks and coordinate-array lengths.
-        throw std::runtime_error("TensorARM rank, coordinate count, and query dimension must be literal constants");
+        throw std::invalid_argument("Expected a constant TensorARM operand");
     }
     const auto &words = inst.GetInOperand(0).words;
     return uint64_t(words[0]) | (words.size() == 2 ? uint64_t(words[1]) << 32 : 0);
@@ -89,10 +91,11 @@ TensorModule collectTensors(IRContext &context) {
             continue;
         }
         if (inst.NumInOperands() != 2) {
-            throw std::runtime_error("TensorARM types require an element type and literal rank");
+            throw std::runtime_error("TensorARM types require an element type and rank");
         }
-        const auto rank = literalInteger(context, inst.GetSingleWordInOperand(1));
-        if (rank == 0 || rank > maxTensorRank) {
+        const auto rankId = inst.GetSingleWordInOperand(1);
+        const auto rank = integerConstant(context, rankId);
+        if (rank && (*rank == 0 || *rank > maxTensorRank)) {
             throw std::runtime_error("TensorARM rank must be between 1 and 6");
         }
         const auto element = inst.GetSingleWordInOperand(0);
@@ -101,7 +104,8 @@ TensorModule collectTensors(IRContext &context) {
             // TODO: Represent bool tensor storage with bytes.
             throw std::runtime_error("Unsupported TensorARM scalar storage type");
         }
-        tensors.types.emplace(inst.result_id(), TensorType{element, static_cast<uint32_t>(rank)});
+        const auto literalRank = rank ? std::optional<uint32_t>{static_cast<uint32_t>(*rank)} : std::nullopt;
+        tensors.types.emplace(inst.result_id(), TensorType{element, rankId, literalRank});
         // TODO: Transform tensor function parameters and descriptor arrays.
         requireUses(context, inst.result_id(), {spv::Op::OpTypePointer, spv::Op::OpLoad});
     }
@@ -196,11 +200,15 @@ void lowerAccesses(AccessState &state, const TensorModule &tensors) {
             if (inst->type_id() != uintType) {
                 throw std::runtime_error("TensorARM size queries must return uint32");
             }
-            const auto dimension = literalInteger(context, inst->GetSingleWordInOperand(1));
-            if (dimension >= tensor.rank) {
+            const auto dimension = integerConstant(context, inst->GetSingleWordInOperand(1));
+            if (!dimension) {
+                // TODO: Support specialised query dimensions.
+                throw std::runtime_error("TensorARM query dimension must be a literal constant");
+            }
+            if (*dimension >= tensor.literalRank.value_or(maxTensorRank)) {
                 throw std::runtime_error("TensorARM query dimension exceeds the tensor rank");
             }
-            result = emitSizeQuery(state, builder, descriptor, static_cast<uint32_t>(dimension));
+            result = emitSizeQuery(state, builder, descriptor, static_cast<uint32_t>(*dimension));
         } else {
             const bool write = inst->opcode() == spv::Op::OpTensorWriteARM;
             const uint32_t maskIndex = write ? 3 : 2;
@@ -211,10 +219,12 @@ void lowerAccesses(AccessState &state, const TensorModule &tensors) {
             const auto coordinates = inst->GetSingleWordInOperand(1);
             const auto coordinatesType = definition(context, coordinates).type_id();
             const auto &array = definition(context, coordinatesType);
-            if (array.opcode() != spv::Op::OpTypeArray ||
-                literalInteger(context, array.GetSingleWordInOperand(1)) != tensor.rank ||
-                array.GetSingleWordInOperand(0) != uintType) {
-                throw std::runtime_error("TensorARM coordinates must be a uint32 array matching the literal rank");
+            if (array.opcode() != spv::Op::OpTypeArray || array.GetSingleWordInOperand(0) != uintType) {
+                throw std::runtime_error("TensorARM coordinates must be a uint32 array");
+            }
+            const auto count = integerConstant(context, array.GetSingleWordInOperand(1));
+            if (count && tensor.literalRank && *count != *tensor.literalRank) {
+                throw std::runtime_error("TensorARM coordinate count must match the rank");
             }
             const auto valueType =
                 write ? definition(context, inst->GetSingleWordInOperand(2)).type_id() : inst->type_id();
