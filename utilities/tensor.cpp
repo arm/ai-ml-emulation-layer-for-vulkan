@@ -177,8 +177,9 @@ vk::raii::TensorARM Tensor::createTensor(bool useForCopy) const {
 }
 
 std::shared_ptr<vk::raii::DeviceMemory> Tensor::allocateTensorMemory() const {
-    // TODO Pass requirements.memoryRequirements.memoryTypeBits
-    return device->allocateDeviceMemory(memoryRequirements.size, vk::MemoryPropertyFlagBits::eHostVisible);
+    return device->allocateDeviceMemory(
+        memoryRequirements.size, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+        memoryRequirements.memoryTypeBits);
 }
 
 vk::MemoryRequirements Tensor::getTensorMemoryRequirements() const {

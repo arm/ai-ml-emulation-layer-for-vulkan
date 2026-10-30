@@ -4,6 +4,7 @@
  *
  */
 
+#include "mlel/utils.hpp"
 #include "shaders/precompiled_shaders.hpp"
 #include "spirv_tensor_lowering.hpp"
 #include "tensor_processor.hpp"
@@ -110,6 +111,28 @@ TEST(TensorSpirvLowering, PreservesNonTensorModuleExactly) {
     EXPECT_EQ(output, input); // Includes OpNop, names and specialization IDs/defaults.
     EXPECT_TRUE(diagnostic.empty());
     EXPECT_TRUE(spvtools::SpirvTools(SPV_ENV_VULKAN_1_3).Validate(output));
+}
+
+TEST(TensorSpirvLowering, GlslSelectsNarrowOffsetsOnlyForSmallAccesses) {
+    for (const auto width : {1, 4, 5}) {
+        SCOPED_TRACE(width);
+        const auto input =
+            utils::glslToSpirv("#version 460\n#extension GL_ARM_tensors : require\n"
+                               "layout(local_size_x = 1) in;\n"
+                               "layout(set = 0, binding = 0) uniform tensorARM<uint, 1> data;\n"
+                               "void main() { uint value[" +
+                               std::to_string(width) +
+                               "]; uint coords[] = uint[](gl_GlobalInvocationID.x);\n"
+                               "tensorReadARM(data, coords, value); tensorWriteARM(data, coords, value); }\n");
+        ASSERT_TRUE(spvtools::SpirvTools(SPV_ENV_VULKAN_1_3).Validate(input));
+        CompilerTensorAsBuffer compiler(input);
+        const auto glsl = compiler.compile();
+        const auto body = glsl.substr(glsl.find("void main()"));
+        EXPECT_EQ(body.find("_emu_GL_ARM_tensors_read_array_u32(") != std::string::npos, width <= 4);
+        EXPECT_EQ(body.find("_emu_GL_ARM_tensors_write_array_u32(") != std::string::npos, width <= 4);
+        const auto lowered = TensorProcessor(input, TensorLoweringMode::GlslToSpirv).getNewSpirv();
+        EXPECT_TRUE(spvtools::SpirvTools(SPV_ENV_VULKAN_1_3).Validate(lowered));
+    }
 }
 
 void expectLowered(std::vector<uint32_t> &spirv) {

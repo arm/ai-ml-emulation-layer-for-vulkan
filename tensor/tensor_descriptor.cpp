@@ -72,6 +72,7 @@ VkBuffer TensorDescriptor::getTensorDescriptorBuffer(const Device &dev, VkTensor
     };
 
     descriptor->address = dev.loader->vkGetBufferDeviceAddress(dev.device, &addressInfo);
+    descriptor->narrowOffsets = supports32BitTensorOffsets(info.dimensions, info.strides);
     std::copy(info.dimensions.begin(), info.dimensions.end(), &descriptor->dimensions[0]);
     std::copy(info.strides.begin(), info.strides.end(), &descriptor->strides[0]);
 

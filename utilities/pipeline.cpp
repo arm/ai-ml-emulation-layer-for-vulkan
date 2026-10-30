@@ -529,6 +529,9 @@ void TensorComputePipeline::dispatchSubmit(const vk::raii::DescriptorSets &descr
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *pipelineLayout, 0,
                                      {uint32_t(descriptorSetVec.size()), descriptorSetVec.data()}, nullptr);
     commandBuffer.dispatch(_x, _y, _z);
+    const vk::MemoryBarrier hostRead{vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eHostRead};
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eHost, {},
+                                  hostRead, {}, {});
     commandBuffer.end();
 
     submitWork(commandBuffer);
