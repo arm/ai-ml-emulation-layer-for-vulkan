@@ -24,6 +24,93 @@ using namespace utilities;
 
 namespace {
 
+#ifdef VK_ARM_tensors2
+TEST_F(MLEmulationLayerGraphForVulkan, Tensors2CreationRemainsUnimplemented) {
+    const auto &vkDevice = &(*device);
+    const auto *dispatch = vkDevice.getDispatcher();
+    // Header-only inputs verify rejection before any draft fields are read.
+    const VkBaseInStructure planar{VK_STRUCTURE_TYPE_PLANAR_TENSOR_DESCRIPTION_ARM, nullptr};
+    const VkBaseInStructure scaling{VK_STRUCTURE_TYPE_TENSOR_BLOCK_SCALING_CREATE_INFO_ARM, nullptr};
+    VkTensorDescriptionARM description{};
+    description.sType = VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM;
+    description.format = VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM;
+    VkTensorCreateInfoARM create{};
+    create.sType = VK_STRUCTURE_TYPE_TENSOR_CREATE_INFO_ARM;
+    const VkDeviceTensorMemoryRequirementsARM query{VK_STRUCTURE_TYPE_DEVICE_TENSOR_MEMORY_REQUIREMENTS_ARM, nullptr,
+                                                    &create};
+    // Reject each new type without inspecting its fields or requiring other descriptions.
+    for (const auto *chain : {&planar, &scaling, static_cast<const VkBaseInStructure *>(nullptr)}) {
+        create.pNext = chain;
+        create.pDescription = chain ? nullptr : &description;
+        VkTensorARM tensor = VK_NULL_HANDLE;
+        EXPECT_EQ(dispatch->vkCreateTensorARM(*vkDevice, &create, nullptr, &tensor), VK_ERROR_FEATURE_NOT_PRESENT);
+        VkMemoryDedicatedRequirements dedicated{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS, nullptr, VK_TRUE,
+                                                VK_TRUE};
+        VkMemoryRequirements2 requirements{VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2, &dedicated, {1, 1, 1}};
+        dispatch->vkGetDeviceTensorMemoryRequirementsARM(*vkDevice, &query, &requirements);
+        EXPECT_EQ(requirements.memoryRequirements.size, 0u);
+        EXPECT_FALSE(dedicated.prefersDedicatedAllocation);
+        EXPECT_FALSE(dedicated.requiresDedicatedAllocation);
+    }
+}
+
+TEST_F(MLEmulationLayerGraphForVulkan, Tensors2PlaneAccessRemainsUnimplemented) {
+    const auto &vkDevice = &(*device);
+    const auto *dispatch = vkDevice.getDispatcher();
+    const VkBaseInStructure plane{VK_STRUCTURE_TYPE_TENSOR_PLANE_INFO_ARM, nullptr};
+    const VkTensorMemoryRequirementsInfoARM query{VK_STRUCTURE_TYPE_TENSOR_MEMORY_REQUIREMENTS_INFO_ARM, &plane,
+                                                  VK_NULL_HANDLE};
+    VkMemoryDedicatedRequirements dedicated{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS, nullptr, VK_TRUE, VK_TRUE};
+    VkMemoryRequirements2 requirements{VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2, &dedicated, {1, 1, 1}};
+    dispatch->vkGetTensorMemoryRequirementsARM(*vkDevice, &query, &requirements);
+    EXPECT_EQ(requirements.memoryRequirements.size, 0u);
+    EXPECT_FALSE(dedicated.prefersDedicatedAllocation);
+    EXPECT_FALSE(dedicated.requiresDedicatedAllocation);
+    const VkBindTensorMemoryInfoARM binding{VK_STRUCTURE_TYPE_BIND_TENSOR_MEMORY_INFO_ARM, &plane, VK_NULL_HANDLE,
+                                            VK_NULL_HANDLE, 0};
+    EXPECT_EQ(dispatch->vkBindTensorMemoryARM(*vkDevice, 1, &binding), VK_ERROR_FEATURE_NOT_PRESENT);
+}
+
+TEST_F(MLEmulationLayerGraphForVulkan, Tensors2QueriesRemainUnimplemented) {
+    const auto &physical = &(*device->getPhysicalDevice());
+    const auto *dispatch = physical.getDispatcher();
+    VkPhysicalDeviceTensors2FeaturesARM tensors2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSORS_2_FEATURES_ARM, nullptr,
+                                                 VK_TRUE, VK_TRUE, VK_TRUE};
+    VkPhysicalDeviceFeatures2 features{};
+    features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    features.pNext = &tensors2;
+    dispatch->vkGetPhysicalDeviceFeatures2(*physical, &features);
+    EXPECT_FALSE(tensors2.tensorFlexibleStrides);
+    EXPECT_FALSE(tensors2.tensorBlockScaled);
+    EXPECT_FALSE(tensors2.tensorSparsity);
+    VkTensorFormatPropertiesARM tensorFormat{VK_STRUCTURE_TYPE_TENSOR_FORMAT_PROPERTIES_ARM, nullptr, 1, 1};
+    VkFormatProperties2 format{VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2, &tensorFormat, {}};
+    dispatch->vkGetPhysicalDeviceFormatProperties2(*physical, VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM,
+                                                   &format);
+    EXPECT_EQ(tensorFormat.optimalTilingTensorFeatures, 0u);
+    EXPECT_EQ(tensorFormat.linearTilingTensorFeatures, 0u);
+    const float priority = 1.0f;
+    const VkDeviceQueueCreateInfo queue{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,           nullptr, 0,
+                                        device->getPhysicalDevice()->getComputeFamilyIndex(), 1,       &priority};
+    VkDeviceCreateInfo create{};
+    create.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    create.pNext = &features;
+    create.queueCreateInfoCount = 1;
+    create.pQueueCreateInfos = &queue;
+    VkDevice createdDevice = VK_NULL_HANDLE;
+    ASSERT_EQ(dispatch->vkCreateDevice(*physical, &create, nullptr, &createdDevice), VK_SUCCESS);
+    const vk::raii::Device created(physical, createdDevice);
+    EXPECT_EQ(create.pNext, &features);
+    EXPECT_EQ(features.pNext, &tensors2);
+    for (auto *flag : {&tensors2.tensorFlexibleStrides, &tensors2.tensorBlockScaled, &tensors2.tensorSparsity}) {
+        *flag = VK_TRUE;
+        VkDevice rejectedDevice = VK_NULL_HANDLE;
+        EXPECT_EQ(dispatch->vkCreateDevice(*physical, &create, nullptr, &rejectedDevice), VK_ERROR_FEATURE_NOT_PRESENT);
+        *flag = VK_FALSE;
+    }
+}
+#endif
+
 #ifndef EXPERIMENTAL_MOLTEN_VK_SUPPORT
 vk::raii::ShaderModule createShaderModule(const vk::raii::Device &device, const std::vector<uint32_t> &code) {
     const vk::ShaderModuleCreateInfo info{
