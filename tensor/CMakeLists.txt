@@ -18,6 +18,7 @@ target_sources(MLELTensor PRIVATE
     spirv_tensor_access.cpp
     spirv_tensor_lowering.cpp
     tensor_arm.cpp
+    tensor_description.cpp
     tensor_descriptor.cpp
     tensor_log.cpp
     tensor_processor.cpp

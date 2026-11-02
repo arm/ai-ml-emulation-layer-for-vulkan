@@ -338,8 +338,8 @@ class TensorLayer : public VulkanLayerImpl {
 
         VkPhysicalDeviceExternalBufferInfo externalBufferInfo{
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_BUFFER_INFO, nullptr,
-            TensorARM::TensorInfo::convertToBufferCreateFlags(pExternalTensorInfo->flags),
-            TensorARM::TensorInfo::convertToBufferUsageFlags(pExternalTensorInfo->pDescription->usage), handleType};
+            TensorLayout::convertToBufferCreateFlags(pExternalTensorInfo->flags),
+            TensorLayout::convertToBufferUsageFlags(pExternalTensorInfo->pDescription->usage), handleType};
 
         VkExternalBufferProperties externalBufferProperties{VK_STRUCTURE_TYPE_EXTERNAL_BUFFER_PROPERTIES, nullptr, {}};
 
@@ -857,7 +857,7 @@ class TensorLayer : public VulkanLayerImpl {
         const auto &limits = pProperties->properties.limits;
 
         if (tensorProps.current) {
-            tensorProps.current->maxTensorDimensionCount = TensorARM::TENSOR_MAX_DIMENSIONS;
+            tensorProps.current->maxTensorDimensionCount = TensorLayout::MAX_DIMENSIONS;
             tensorProps.current->maxTensorElements = limits.maxStorageBufferRange;
             tensorProps.current->maxPerDimensionTensorElements = limits.maxStorageBufferRange;
             tensorProps.current->maxTensorStride = limits.maxStorageBufferRange;
