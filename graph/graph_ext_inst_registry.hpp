@@ -8,21 +8,37 @@
 
 #include "graph_ext_inst_decoder.hpp"
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
-#include <vector>
+#include <unordered_map>
 
 namespace spvtools::opt {
 
 class GraphExtInstContext;
 
-struct GraphExtInstSetEntry {
+using GraphExtInstDecoderFactory = std::unique_ptr<GraphExtInstDecoder> (*)(GraphExtInstContext &);
+
+struct GraphExtInstSetDescriptor {
     std::string importName;
-    std::unique_ptr<GraphExtInstDecoder> decoder;
+    GraphExtInstDecoderFactory createDecoder;
 };
 
-bool isRegisteredGraphExtInstImport(std::string_view importName);
-std::vector<GraphExtInstSetEntry> makeGraphExtInstRegistry(GraphExtInstContext &context);
+// Descriptors belong to the static registry and outlive module analysis and passes.
+using GraphExtInstImports = std::unordered_map<uint32_t, const GraphExtInstSetDescriptor *>;
+
+struct GraphModuleInfo {
+    GraphExtInstImports extInstImports;
+    bool tosa = false;
+    bool motionEngine = false;
+};
+
+const GraphExtInstSetDescriptor *findGraphExtInstSet(std::string_view importName);
+
+// Parse the graph module and retain its registered imports by result ID.
+// Core module validity is a caller precondition.
+GraphModuleInfo analyzeGraphModule(const uint32_t *code, size_t wordCount);
 
 } // namespace spvtools::opt

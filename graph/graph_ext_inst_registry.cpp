@@ -12,8 +12,11 @@
 
 #include "graph_motion_engine_1_0_ext_inst.hpp"
 #include "graph_tosa_1_0_ext_inst.hpp"
+#include "source/opt/build_module.h"
 
 #include <algorithm>
+#include <stdexcept>
+#include <vector>
 
 /*******************************************************************************
  * GraphPass extended instruction sets
@@ -21,13 +24,6 @@
 namespace spvtools::opt {
 
 namespace {
-
-using GraphExtInstDecoderFactory = std::unique_ptr<GraphExtInstDecoder> (*)(GraphExtInstContext &);
-
-struct GraphExtInstSetDescriptor {
-    std::string importName;
-    GraphExtInstDecoderFactory createDecoder;
-};
 
 template <typename Decoder> std::unique_ptr<GraphExtInstDecoder> makeDecoder(GraphExtInstContext &context) {
     return std::make_unique<Decoder>(context);
@@ -43,19 +39,43 @@ const std::vector<GraphExtInstSetDescriptor> &registeredGraphExtInstSets() {
 
 } // namespace
 
-bool isRegisteredGraphExtInstImport(const std::string_view importName) {
+const GraphExtInstSetDescriptor *findGraphExtInstSet(const std::string_view importName) {
     const auto &instructionSets = registeredGraphExtInstSets();
-    return std::find_if(instructionSets.begin(), instructionSets.end(), [&importName](const auto &entry) {
-               return entry.importName == importName;
-           }) != instructionSets.end();
+    const auto found = std::find_if(instructionSets.begin(), instructionSets.end(),
+                                    [&importName](const auto &entry) { return entry.importName == importName; });
+    return found == instructionSets.end() ? nullptr : &*found;
 }
 
-std::vector<GraphExtInstSetEntry> makeGraphExtInstRegistry(GraphExtInstContext &context) {
-    std::vector<GraphExtInstSetEntry> registry;
-    for (const auto &descriptor : registeredGraphExtInstSets()) {
-        registry.push_back({descriptor.importName, descriptor.createDecoder(context)});
+GraphModuleInfo analyzeGraphModule(const uint32_t *code, size_t wordCount) {
+    std::string diagnostic;
+    auto ir = BuildModule(
+        SPV_ENV_UNIVERSAL_1_6,
+        [&diagnostic](spv_message_level_t, const char *, const spv_position_t &position, const char *message) {
+            diagnostic = std::string(message) + " at word " + std::to_string(position.index);
+        },
+        code, wordCount);
+    if (!ir || !ir->module()) {
+        throw std::runtime_error("Cannot decode graph module: " + diagnostic);
     }
-    return registry;
+    auto &module = *ir->module();
+    if (module.graphs().empty()) {
+        throw std::runtime_error("Module contains no graph");
+    }
+    GraphModuleInfo info;
+    for (const auto &inst : module.ext_inst_imports()) {
+        const auto name = inst.GetInOperand(0).AsString();
+        const auto *descriptor = findGraphExtInstSet(name);
+        if (!descriptor) {
+            if (name.rfind("TOSA.", 0) == 0 || name.rfind("Arm.MotionEngine.", 0) == 0) {
+                throw std::runtime_error("Unsupported graph extended instruction set: " + name);
+            }
+            continue;
+        }
+        info.extInstImports.emplace(inst.result_id(), descriptor);
+        info.tosa |= name == tosaSpv100;
+        info.motionEngine |= name == motionEngine100;
+    }
+    return info;
 }
 
 } // namespace spvtools::opt
