@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <map>
 #include <optional>
+#include <regex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -298,6 +299,100 @@ TEST(TensorSpirvLowering, LowersNumericScalarLayoutVariants) {
 
 TEST(TensorSpirvLowering, PreservesIndependentReshapeRanks) {
     const auto &[words, size] = compute::precompiledSpirvModules.at("reshape_float");
+    std::vector<uint32_t> spirv{words, words + size};
+    ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+    for (uint32_t inputRank = 1; inputRank <= 6; ++inputRank) {
+        for (uint32_t outputRank = 1; outputRank <= 6; ++outputRank) {
+            SCOPED_TRACE(std::to_string(inputRank) + " -> " + std::to_string(outputRank));
+            ASSERT_NO_FATAL_FAILURE(expectSpecialized(spirv, {{0, {inputRank}}, {1, {outputRank}}}));
+        }
+    }
+}
+
+TEST(TensorSpirvLowering, UsesByteStorageForBooleanAccesses) {
+    for (const bool specialised : {false, true}) {
+        SCOPED_TRACE(specialised);
+        const auto input = assemble(R"(
+OpCapability Shader
+OpCapability TensorsARM
+OpExtension "SPV_ARM_tensors"
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main" %data
+OpExecutionMode %main LocalSize 1 1 1
+OpDecorate %data DescriptorSet 0
+OpDecorate %data Binding 0
+)" + std::string(specialised ? "OpDecorate %rank SpecId 9\n" : "") +
+                                    R"(
+%void = OpTypeVoid
+%function = OpTypeFunction %void
+%uint = OpTypeInt 32 0
+%bool = OpTypeBool
+%zero = OpConstant %uint 0
+)" + "%rank = " + (specialised ? "OpSpecConstant" : "OpConstant") +
+                                    R"( %uint 2
+%tensor = OpTypeTensorARM %bool %rank
+%pointer = OpTypePointer UniformConstant %tensor
+%data = OpVariable %pointer UniformConstant
+%array = OpTypeArray %uint %rank
+%coords = OpConstantNull %array
+%main = OpFunction %void None %function
+%entry = OpLabel
+%loaded = OpLoad %tensor %data
+%size = OpTensorQuerySizeARM %uint %loaded %zero
+%value = OpTensorReadARM %bool %loaded %coords
+%inverted = OpLogicalNot %bool %value
+OpTensorWriteARM %loaded %coords %inverted
+OpReturn
+OpFunctionEnd
+)");
+        auto spirv = input;
+        ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+        EXPECT_EQ(specializationInstructions(spirv), specializationInstructions(input));
+        std::string text;
+        ASSERT_TRUE(spvtools::SpirvTools(SPV_ENV_VULKAN_1_3).Disassemble(spirv, &text));
+        EXPECT_EQ(text.find("OpCapability Int8"), std::string::npos);
+        EXPECT_NE(text.find("OpCapability StorageBuffer8BitAccess"), std::string::npos);
+        std::smatch byteType;
+        ASSERT_TRUE(std::regex_search(text, byteType, std::regex(R"((%\w+) = OpTypeInt 8 1)")));
+        const auto byteId = byteType[1].str();
+        EXPECT_NE(text.find("OpTypePointer PhysicalStorageBuffer " + byteId), std::string::npos);
+        EXPECT_TRUE(std::regex_search(text, std::regex("OpLoad " + byteId + R"( %\w+ Aligned 1)")));
+        EXPECT_TRUE(std::regex_search(text, std::regex(R"(OpStore %\w+ %\w+ Aligned 1)")));
+        EXPECT_NE(text.find("OpINotEqual"), std::string::npos);
+        EXPECT_EQ(text.find("OpSelect " + byteId), std::string::npos);
+        EXPECT_NE(text.find("OpLogicalNot"), std::string::npos);
+    }
+}
+
+TEST(TensorSpirvLowering, LowersBooleanCastAndLayoutVariants) {
+    std::map<std::string_view, size_t> operators{{"cast", 0},    {"concat", 0},  {"slice", 0}, {"transpose", 0},
+                                                 {"reshape", 0}, {"reverse", 0}, {"tile", 0}};
+    bool castsFromBool = false;
+    bool castsToBool = false;
+    for (const auto &[name, module] : compute::precompiledSpirvModules) {
+        const auto it = operators.find(name.substr(0, name.find('_')));
+        if (it == operators.end() || name.find("_bool") == std::string::npos) {
+            continue;
+        }
+        SCOPED_TRACE(name);
+        const auto &[words, size] = module;
+        const std::vector<uint32_t> input(words, words + size);
+        auto spirv = input;
+        ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+        EXPECT_EQ(specializationInstructions(spirv), specializationInstructions(input));
+        if (it->first == "cast") {
+            castsFromBool |= name.rfind("cast_bool_", 0) == 0;
+            castsToBool |= name.rfind("cast_bool_", 0) != 0;
+        }
+        ++it->second;
+    }
+    for (const auto &[name, variants] : operators) {
+        EXPECT_GT(variants, 0u) << name;
+    }
+    EXPECT_TRUE(castsFromBool);
+    EXPECT_TRUE(castsToBool);
+
+    const auto &[words, size] = compute::precompiledSpirvModules.at("reshape_bool");
     std::vector<uint32_t> spirv{words, words + size};
     ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
     for (uint32_t inputRank = 1; inputRank <= 6; ++inputRank) {

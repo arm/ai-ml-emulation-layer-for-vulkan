@@ -487,5 +487,106 @@ void main() {
     }
 }
 
+TEST_F(TensorLoweringForVulkan, DirectBooleanStorageBoundsAndSpecializedRanks) {
+    const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
+    ensureDevice();
+    const auto shader = compileGlsl(R"(
+#version 460
+#extension GL_ARM_tensors : require
+layout(local_size_x = 1) in;
+layout(constant_id = 0) const uint INPUT_RANK = 2;
+layout(constant_id = 1) const uint OUTPUT_RANK = 1;
+layout(set = 0, binding = 0) uniform tensorARM<bool, INPUT_RANK> source;
+layout(set = 0, binding = 1) uniform tensorARM<bool, OUTPUT_RANK> destination;
+layout(set = 0, binding = 2) uniform tensorARM<uint, 1> results;
+void main() {
+    uint inputCoords[INPUT_RANK];
+    uint outputCoords[OUTPUT_RANK];
+    for (uint i = 0; i < INPUT_RANK; ++i) inputCoords[i] = 1;
+    for (uint i = 0; i < OUTPUT_RANK; ++i) outputCoords[i] = 1;
+    for (uint x = 0; x < 4; ++x) {
+        inputCoords[INPUT_RANK - 1] = x;
+        bool value;
+        tensorReadARM(source, inputCoords, value);
+        outputCoords[OUTPUT_RANK - 1] = x;
+        tensorWriteARM(destination, outputCoords, value);
+        outputCoords[OUTPUT_RANK - 1] = x + 4;
+        tensorWriteARM(destination, outputCoords, !value);
+    }
+    tensorWriteARM(results, uint[](0), tensorSizeARM(source, 0));
+    tensorWriteARM(results, uint[](1), tensorSizeARM(destination, 0));
+
+    // Invalid tensor coordinates can still address padding inside the allocation.
+    for (uint i = 0; i < INPUT_RANK; ++i) inputCoords[i] = 0;
+    for (uint i = 0; i < OUTPUT_RANK; ++i) outputCoords[i] = 0;
+    inputCoords[INPUT_RANK - 1] = 4;
+    outputCoords[OUTPUT_RANK - 1] = 8;
+    bool value;
+    tensorReadARM(source, inputCoords, value);
+    tensorWriteARM(results, uint[](2), uint(value));
+    tensorWriteARM(destination, outputCoords, false);
+    inputCoords[INPUT_RANK - 1] = 0xffffffffu;
+    outputCoords[OUTPUT_RANK - 1] = 0xffffffffu;
+    tensorReadARM(source, inputCoords, value);
+    tensorWriteARM(results, uint[](3), uint(value));
+    tensorWriteARM(destination, outputCoords, true);
+}
+)");
+    auto makeShape = [](uint32_t rank, int64_t width, int64_t elementStride) {
+        std::vector<int64_t> dimensions(rank);
+        std::vector<int64_t> strides(rank);
+        for (size_t i = rank; i > 0; --i) {
+            dimensions[i - 1] = i == rank ? width : 2;
+            strides[i - 1] = elementStride;
+            elementStride *= dimensions[i - 1] + 1;
+        }
+        return utilities::Shape{vk::Format::eR8BoolARM, dimensions, strides};
+    };
+    auto results = std::make_shared<utilities::Tensor>(device, utilities::Shape{vk::Format::eR32Uint, {4}});
+    const utilities::TensorComputePipeline::DescriptorMap initial{
+        {{0, {std::make_shared<utilities::Tensor>(device, makeShape(2, 4, 3))}},
+         {1, {std::make_shared<utilities::Tensor>(device, makeShape(1, 8, 2))}},
+         {2, {results}}}};
+    SpecializedTensorPipeline pipeline(device, initial, shader);
+    const std::array<vk::SpecializationMapEntry, 2> entries{
+        {{0, 0, sizeof(uint32_t)}, {1, sizeof(uint32_t), sizeof(uint32_t)}}};
+    for (const auto &[inputRank, outputRank] :
+         std::vector<std::pair<uint32_t, uint32_t>>{{2, 1}, {1, 6}, {6, 3}, {4, 5}, {5, 2}, {3, 4}}) {
+        SCOPED_TRACE(std::to_string(inputRank) + " -> " + std::to_string(outputRank));
+        const auto inputShape = makeShape(inputRank, 4, 3);
+        const auto outputShape = makeShape(outputRank, 8, 2);
+        auto input = std::make_shared<utilities::Tensor>(device, inputShape);
+        auto output = std::make_shared<utilities::Tensor>(device, outputShape);
+        // The shader selects coordinate 1 on every axis except the innermost.
+        auto rowOffset = [](const utilities::Shape &shape) {
+            size_t offset = 0;
+            const auto &strides = shape.getStrides();
+            for (size_t i = 0; i + 1 < strides.size(); ++i) {
+                offset += static_cast<size_t>(strides[i]);
+            }
+            return offset;
+        };
+        std::vector<uint8_t> inputData(input->size(), 0xa5);
+        std::vector<uint8_t> expectedOutput(output->size(), 0xa5);
+        const std::array<uint8_t, 4> values{0, 1, 0x80, 0xff};
+        for (size_t x = 0; x < values.size(); ++x) {
+            inputData[rowOffset(inputShape) + (x * 3)] = values[x];
+            expectedOutput[rowOffset(outputShape) + (x * 2)] = values[x] != 0 ? 1 : 0;
+            expectedOutput[rowOffset(outputShape) + ((x + 4) * 2)] = values[x] == 0 ? 1 : 0;
+        }
+        std::memcpy(input->data(), inputData.data(), input->size());
+        std::memset(output->data(), 0xa5, output->size());
+        std::memset(results->data(), 0xa5, results->size());
+        const std::array<uint32_t, 2> ranks{inputRank, outputRank};
+        const vk::SpecializationInfo specialization{uint32_t(entries.size()), entries.data(), sizeof(ranks),
+                                                    ranks.data()};
+        pipeline.dispatch({{{0, {input}}, {1, {output}}, {2, {results}}}},
+                          inputRank == 2 && outputRank == 1 ? nullptr : &specialization);
+        const std::array<uint32_t, 4> expectedResults{inputRank == 1 ? 4u : 2u, outputRank == 1 ? 8u : 2u, 0, 0};
+        EXPECT_EQ(std::memcmp(results->data(), expectedResults.data(), results->size()), 0);
+        EXPECT_EQ(std::memcmp(output->data(), expectedOutput.data(), output->size()), 0);
+    }
+}
+
 } // namespace
 } // namespace mlsdk::el::tests

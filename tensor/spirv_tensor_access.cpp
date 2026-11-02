@@ -243,40 +243,53 @@ BoundsAndOffset emitBoundsAndByteOffset(AccessState &state, AccessFunction &help
 
 struct ElementPointer {
     uint32_t id;
+    uint32_t storageType;
     uint32_t alignment;
 };
+
+uint32_t getStorageType(AccessState &state, const TensorType &tensor) {
+    auto *types = state.context.get_type_mgr();
+    auto storageType = tensor.elementType;
+    if (types->GetType(storageType)->AsBool()) {
+        // Tensor booleans occupy one byte. Keep bool in shader values and helper
+        // signatures, converting only at the backing-memory load or store.
+        storageType = types->GetTypeInstruction(types->GetIntType(8, true));
+    }
+    return storageType;
+}
 
 ElementPointer emitElementPointer(AccessState &state, InstructionBuilder &builder, const TensorType &tensor,
                                   uint32_t descriptor, uint32_t byteOffset) {
     const auto base = builder.AddCompositeExtract(state.uint64Type, descriptor, {0})->result_id();
     const auto address = builder.AddBinaryOp(state.uint64Type, spv::Op::OpIAdd, base, byteOffset)->result_id();
-    const auto pointerType =
-        state.context.get_type_mgr()->FindPointerToType(tensor.elementType, spv::StorageClass::PhysicalStorageBuffer);
+    auto *types = state.context.get_type_mgr();
+    const auto storageType = getStorageType(state, tensor);
+    const auto pointerType = types->FindPointerToType(storageType, spv::StorageClass::PhysicalStorageBuffer);
     const auto pointer = builder.AddUnaryOp(pointerType, spv::Op::OpConvertUToPtr, address)->result_id();
-    const auto *element = state.context.get_def_use_mgr()->GetDef(tensor.elementType);
+    const auto *element = state.context.get_def_use_mgr()->GetDef(storageType);
     const uint32_t alignment = element->GetSingleWordInOperand(0) / 8;
     if (alignment == 1) {
         state.context.AddCapability(spv::Capability::StorageBuffer8BitAccess);
     } else if (alignment == 2) {
         state.context.AddCapability(spv::Capability::StorageBuffer16BitAccess);
     }
-    return {pointer, alignment};
+    return {pointer, storageType, alignment};
 }
 
 ElementPointer emitReadElementPointer(AccessState &state, InstructionBuilder &builder, const TensorType &tensor,
                                       uint32_t descriptor, uint32_t elementOffset) {
     auto *types = state.context.get_type_mgr();
-    const auto *element = state.context.get_def_use_mgr()->GetDef(tensor.elementType);
+    const auto storageType = getStorageType(state, tensor);
+    const auto *element = state.context.get_def_use_mgr()->GetDef(storageType);
     const uint32_t alignment = element->GetSingleWordInOperand(0) / 8;
-    spvtools::opt::analysis::RuntimeArray data(types->GetType(tensor.elementType));
+    spvtools::opt::analysis::RuntimeArray data(types->GetType(storageType));
     data.AddDecoration({static_cast<uint32_t>(spv::Decoration::ArrayStride), alignment});
     spvtools::opt::analysis::Struct buffer({types->GetRegisteredType(&data)});
     buffer.AddDecoration({static_cast<uint32_t>(spv::Decoration::Block)});
     buffer.AddMemberDecoration(0, {static_cast<uint32_t>(spv::Decoration::Offset), 0});
     const auto bufferPointerType =
         types->FindPointerToType(types->GetTypeInstruction(&buffer), spv::StorageClass::PhysicalStorageBuffer);
-    const auto elementPointerType =
-        types->FindPointerToType(tensor.elementType, spv::StorageClass::PhysicalStorageBuffer);
+    const auto elementPointerType = types->FindPointerToType(storageType, spv::StorageClass::PhysicalStorageBuffer);
     const auto base = builder.AddCompositeExtract(state.uint64Type, descriptor, {0})->result_id();
     const auto bufferPointer = builder.AddUnaryOp(bufferPointerType, spv::Op::OpConvertUToPtr, base)->result_id();
     const auto signedIndex =
@@ -289,7 +302,7 @@ ElementPointer emitReadElementPointer(AccessState &state, InstructionBuilder &bu
     } else if (alignment == 2) {
         state.context.AddCapability(spv::Capability::StorageBuffer16BitAccess);
     }
-    return {pointer, alignment};
+    return {pointer, storageType, alignment};
 }
 
 struct FunctionParameter {
@@ -392,7 +405,7 @@ uint32_t getOrCreateReadHelper(AccessState &state, const TensorType &tensor, uin
     // an out-of-bounds read into an unconditional load.
     auto *const signedType = context.get_type_mgr()->GetIntType(64, true);
     const auto signedTypeId = context.get_type_mgr()->GetTypeInstruction(signedType);
-    const auto *element = context.get_def_use_mgr()->GetDef(tensor.elementType);
+    const auto *element = context.get_def_use_mgr()->GetDef(getStorageType(state, tensor));
     const auto elementSize = element->GetSingleWordInOperand(0) / 8;
     const auto *sizeConstant = context.get_constant_mgr()->GetConstant(signedType, {elementSize, 0});
     const auto size = context.get_constant_mgr()->GetDefiningInstruction(sizeConstant)->result_id();
@@ -402,7 +415,16 @@ uint32_t getOrCreateReadHelper(AccessState &state, const TensorType &tensor, uin
 
     builder.SetInsertPoint(helper.access.get());
     const auto pointer = emitReadElementPointer(state, builder, tensor, descriptor, elementOffset);
-    const auto value = builder.AddLoad(tensor.elementType, pointer.id, pointer.alignment)->result_id();
+    auto value = builder.AddLoad(pointer.storageType, pointer.id, pointer.alignment)->result_id();
+    if (context.get_type_mgr()->GetType(tensor.elementType)->AsBool()) {
+        // Widen before comparing so byte storage does not require Int8 arithmetic.
+        // Every nonzero byte represents true.
+        const auto integerType = context.get_type_mgr()->GetSIntTypeId();
+        value = builder.AddUnaryOp(integerType, spv::Op::OpSConvert, value)->result_id();
+        value =
+            builder.AddBinaryOp(tensor.elementType, spv::Op::OpINotEqual, value, nullConstant(context, integerType))
+                ->result_id();
+    }
     builder.AddBranch(helper.merge->id());
 
     builder.SetInsertPoint(helper.merge.get());
@@ -422,10 +444,10 @@ uint32_t getOrCreateWriteHelper(AccessState &state, const TensorType &tensor, ui
     auto &context = state.context;
     const auto descriptor = context.TakeNextId();
     const auto coordinates = context.TakeNextId();
-    const auto value = context.TakeNextId();
+    const auto element = context.TakeNextId();
     auto helper = createAccessFunction(
         context, context.get_type_mgr()->GetVoidTypeId(),
-        {{state.descriptorType, descriptor}, {coordinatesType, coordinates}, {tensor.elementType, value}});
+        {{state.descriptorType, descriptor}, {coordinatesType, coordinates}, {tensor.elementType, element}});
     InstructionBuilder builder(&context, helper.entry.get());
     // Accumulate the full offset; the final bounds check controls whether the store executes.
     const auto emitOffset = [&](uint32_t offset, uint32_t, uint32_t contribution, uint32_t resultId) {
@@ -437,10 +459,21 @@ uint32_t getOrCreateWriteHelper(AccessState &state, const TensorType &tensor, ui
 
     builder.SetInsertPoint(helper.access.get());
     const auto pointer = emitElementPointer(state, builder, tensor, descriptor, bounds.byteOffset);
+    auto storedValue = element;
+    if (context.get_type_mgr()->GetType(tensor.elementType)->AsBool()) {
+        const auto integerType = context.get_type_mgr()->GetSIntTypeId();
+        auto *constants = context.get_constant_mgr();
+        const auto one =
+            constants->GetDefiningInstruction(constants->GetConstant(context.get_type_mgr()->GetType(integerType), {1}))
+                ->result_id();
+        // Select canonical 0/1 in 32 bits, then narrow only for the byte store.
+        storedValue = builder.AddSelect(integerType, element, one, nullConstant(context, integerType))->result_id();
+        storedValue = builder.AddUnaryOp(pointer.storageType, spv::Op::OpSConvert, storedValue)->result_id();
+    }
     builder.AddInstruction(
         makeInstruction(context, spv::Op::OpStore, 0, 0,
                         {idOperand(pointer.id),
-                         idOperand(value),
+                         idOperand(storedValue),
                          {SPV_OPERAND_TYPE_MEMORY_ACCESS, {static_cast<uint32_t>(spv::MemoryAccessMask::Aligned)}},
                          {SPV_OPERAND_TYPE_LITERAL_INTEGER, {pointer.alignment}}}));
     builder.AddBranch(helper.merge->id());
