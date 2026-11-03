@@ -414,6 +414,52 @@ TEST(TensorSpirvLowering, LowersBooleanCastAndLayoutVariants) {
     }
 }
 
+TEST(TensorSpirvLowering, LowersSideTensorAndReductionVariants) {
+    std::map<std::string_view, size_t> families{{"rescale_", 0},
+                                                {"pad_", 0},
+                                                {"argmax_", 0},
+                                                {"table_int8_t_", 0},
+                                                {"reduce_REDUCE_ALL_", 0},
+                                                {"reduce_REDUCE_ANY_", 0},
+                                                {"reduce_REDUCE_MAX_", 0},
+                                                {"reduce_REDUCE_MIN_", 0},
+                                                {"reduce_REDUCE_PRODUCT_", 0},
+                                                {"reduce_REDUCE_SUM_", 0}};
+    for (const auto &[name, module] : compute::precompiledSpirvModules) {
+        const auto family = std::find_if(families.begin(), families.end(), [shaderName = name](const auto &entry) {
+            return shaderName.rfind(entry.first, 0) == 0;
+        });
+        if (family == families.end()) {
+            continue;
+        }
+        SCOPED_TRACE(name);
+        const auto &[words, size] = module;
+        const std::vector<uint32_t> input(words, words + size);
+        auto spirv = input;
+        ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+        EXPECT_EQ(specializationInstructions(spirv), specializationInstructions(input));
+        for (const uint32_t rank : {2u, 3u, 6u}) {
+            SCOPED_TRACE(rank);
+            std::unordered_map<uint32_t, std::vector<uint32_t>> values{{0, {rank}}};
+            if (family->first == "argmax_") {
+                values.emplace(1, std::vector<uint32_t>{rank - 1});
+            } else if (family->first == "rescale_") {
+                // The multiplier type selects 16-bit or 32-bit scaling. Preserve
+                // per-channel indexing and the 32-bit double-rounding branch.
+                const uint32_t scale32 = name.substr(name.rfind('_') + 1) == "int" ? 1u : 0u;
+                values.emplace(1, std::vector<uint32_t>{scale32});
+                values.emplace(2, std::vector<uint32_t>{scale32});
+                values.emplace(3, std::vector<uint32_t>{1});
+            }
+            ASSERT_NO_FATAL_FAILURE(expectSpecialized(spirv, values));
+        }
+        ++family->second;
+    }
+    for (const auto &[name, variants] : families) {
+        EXPECT_GT(variants, 0u) << name;
+    }
+}
+
 TEST(TensorSpirvLowering, RejectsMalformedRankOperands) {
     const auto valid = tensorShader();
     size_t tensorOffset = 0;
