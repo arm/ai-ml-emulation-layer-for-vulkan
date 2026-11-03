@@ -17,7 +17,6 @@
 #include <cstddef>
 #include <map>
 #include <optional>
-#include <regex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -352,14 +351,26 @@ OpFunctionEnd
         ASSERT_TRUE(spvtools::SpirvTools(SPV_ENV_VULKAN_1_3).Disassemble(spirv, &text));
         EXPECT_EQ(text.find("OpCapability Int8"), std::string::npos);
         EXPECT_NE(text.find("OpCapability StorageBuffer8BitAccess"), std::string::npos);
-        std::smatch byteType;
-        ASSERT_TRUE(std::regex_search(text, byteType, std::regex(R"((%\w+) = OpTypeInt 8 1)")));
-        const auto byteId = byteType[1].str();
-        EXPECT_NE(text.find("OpTypePointer PhysicalStorageBuffer " + byteId), std::string::npos);
-        EXPECT_TRUE(std::regex_search(text, std::regex("OpLoad " + byteId + R"( %\w+ Aligned 1)")));
-        EXPECT_TRUE(std::regex_search(text, std::regex(R"(OpStore %\w+ %\w+ Aligned 1)")));
+        const auto byteType = text.find(" = OpTypeInt 8 1\n");
+        ASSERT_NE(byteType, std::string::npos);
+        const auto byteIdStart = text.rfind('%', byteType);
+        ASSERT_NE(byteIdStart, std::string::npos);
+        const auto byteId = text.substr(byteIdStart, byteType - byteIdStart);
+        EXPECT_NE(text.find("OpTypePointer PhysicalStorageBuffer " + byteId + "\n"), std::string::npos);
+        const auto hasByteAlignedAccess = [&](const std::string &access) {
+            for (auto offset = text.find(access); offset != std::string::npos;
+                 offset = text.find(access, offset + access.size())) {
+                // The alignment must belong to this instruction, on the same line.
+                if (text.find(" Aligned 1\n", offset) < text.find('\n', offset)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        EXPECT_TRUE(hasByteAlignedAccess("OpLoad " + byteId + " %"));
+        EXPECT_TRUE(hasByteAlignedAccess("OpStore %"));
         EXPECT_NE(text.find("OpINotEqual"), std::string::npos);
-        EXPECT_EQ(text.find("OpSelect " + byteId), std::string::npos);
+        EXPECT_EQ(text.find("OpSelect " + byteId + " "), std::string::npos);
         EXPECT_NE(text.find("OpLogicalNot"), std::string::npos);
     }
 }
