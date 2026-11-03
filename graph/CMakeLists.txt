@@ -30,7 +30,7 @@ target_sources(MLELGraph PRIVATE
     graph_pass_ext_inst.cpp
     graph_ext_inst_registry.cpp
     graph_motion_engine_1_0_ext_inst.cpp
-    graph_tosa_1_0_ext_inst.cpp
+    graph_tosa_ext_inst.cpp
     tensor.cpp)
 
 target_link_libraries(MLELGraph PUBLIC

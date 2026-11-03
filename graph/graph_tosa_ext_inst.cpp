@@ -8,7 +8,7 @@
  * Includes
  *******************************************************************************/
 
-#include "graph_tosa_1_0_ext_inst.hpp"
+#include "graph_tosa_ext_inst.hpp"
 #include "graph_ext_inst_context.hpp"
 #include "graph_log.hpp"
 
@@ -34,7 +34,7 @@ enum RoundingMode {
 
 } // namespace
 
-void GraphTosa10ExtInst::handleOp(const Instruction *opExtInst) const {
+void GraphTosaExtInst::handleOp(const Instruction *opExtInst) const {
     const auto &tosa = TOSAInstructions(opExtInst->GetInOperand(1).words[0]);
 
     // Verify that this is a TOSA external instruction
@@ -312,7 +312,7 @@ void GraphTosa10ExtInst::handleOp(const Instruction *opExtInst) const {
     }
 }
 
-void GraphTosa10ExtInst::handleArgmax(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleArgmax(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> ARGMAX axis nanMode input
     assert(opExtInst->NumInOperands() == 5);
 
@@ -327,7 +327,7 @@ void GraphTosa10ExtInst::handleArgmax(const Instruction *opExtInst, const std::s
     context.pipeline().makeArgmax(context.getTensor(inputId), context.getTensor(*opExtInst), axis, nanMode, debugName);
 }
 
-void GraphTosa10ExtInst::handleArithmeticRightShift(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleArithmeticRightShift(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> ARITHMETIC_RIGHT_SHIFT round input1 input2
     assert(opExtInst->NumInOperands() == 5);
 
@@ -343,7 +343,7 @@ void GraphTosa10ExtInst::handleArithmeticRightShift(const Instruction *opExtInst
                                                 context.getTensor(*opExtInst), round, debugName);
 }
 
-void GraphTosa10ExtInst::handleAvgPool2D(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleAvgPool2D(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> AVG_POOL2D kernel stride pad accType input inputZeroPoint
     // outputZeroPoint
     assert(opExtInst->NumInOperands() == 9);
@@ -366,7 +366,7 @@ void GraphTosa10ExtInst::handleAvgPool2D(const Instruction *opExtInst, const std
                                      accType, inputZeroPoint[0], outputZeroPoint[0], debugName);
 }
 
-void GraphTosa10ExtInst::handleCast(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleCast(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> CAST input
     assert(opExtInst->NumInOperands() == 3);
 
@@ -379,7 +379,7 @@ void GraphTosa10ExtInst::handleCast(const Instruction *opExtInst, const std::str
     context.pipeline().makeCast(context.getTensor(inputId), context.getTensor(*opExtInst), debugName);
 }
 
-void GraphTosa10ExtInst::handleClamp(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleClamp(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> CLAMP minVal maxVal nanMode input
     assert(opExtInst->NumInOperands() == 6);
 
@@ -397,7 +397,7 @@ void GraphTosa10ExtInst::handleClamp(const Instruction *opExtInst, const std::st
                                  debugName);
 }
 
-void GraphTosa10ExtInst::handleConcat(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleConcat(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> CONCAT axis [inputs]
     assert(opExtInst->NumInOperands() > 2);
 
@@ -417,7 +417,7 @@ void GraphTosa10ExtInst::handleConcat(const Instruction *opExtInst, const std::s
     context.pipeline().makeConcat(inputs, context.getTensor(*opExtInst), axis, debugName);
 }
 
-void GraphTosa10ExtInst::handleConv2D(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleConv2D(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> CONV2D pad stride dilation accType localBound input weight bias
     // inputZeroPoint weightZeroPoint
     assert(opExtInst->NumInOperands() == 12);
@@ -445,7 +445,7 @@ void GraphTosa10ExtInst::handleConv2D(const Instruction *opExtInst, const std::s
                                   inputZeroPoint[0], weightZeroPoint[0], accType, debugName);
 }
 
-void GraphTosa10ExtInst::handleConv3D(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleConv3D(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> CONV3D pad stride dilation accType localBound input weight bias
     // inputZeroPoint weightZeroPoint
     assert(opExtInst->NumInOperands() == 12);
@@ -473,7 +473,7 @@ void GraphTosa10ExtInst::handleConv3D(const Instruction *opExtInst, const std::s
                                   inputZeroPoint[0], weightZeroPoint[0], accType, debugName);
 }
 
-void GraphTosa10ExtInst::handleDepthwiseConv2D(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleDepthwiseConv2D(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> DEPTHWISE_CONV2D pad stride dilation accType localBound input weight
     // bias inputZeroPoint weightZeroPoint
     assert(opExtInst->NumInOperands() == 12);
@@ -501,7 +501,7 @@ void GraphTosa10ExtInst::handleDepthwiseConv2D(const Instruction *opExtInst, con
                                            dilation, inputZeroPoint[0], weightZeroPoint[0], accType, debugName);
 }
 
-void GraphTosa10ExtInst::handleElementwiseBinary(
+void GraphTosaExtInst::handleElementwiseBinary(
     const Instruction *opExtInst, const std::string &debugName,
     const std::function<void(GraphPipeline *, const std::shared_ptr<TensorDescriptor> &,
                              const std::shared_ptr<TensorDescriptor> &, const std::shared_ptr<TensorDescriptor> &,
@@ -520,7 +520,7 @@ void GraphTosa10ExtInst::handleElementwiseBinary(
                 context.getTensor(*opExtInst), debugName);
 }
 
-void GraphTosa10ExtInst::handleElementwiseUnary(
+void GraphTosaExtInst::handleElementwiseUnary(
     const Instruction *opExtInst, const std::string &debugName,
     const std::function<void(GraphPipeline *, const std::shared_ptr<TensorDescriptor> &,
                              const std::shared_ptr<TensorDescriptor> &, const std::string &)> &function) const {
@@ -536,7 +536,7 @@ void GraphTosa10ExtInst::handleElementwiseUnary(
     std::invoke(function, &context.pipeline(), context.getTensor(inputId1), context.getTensor(*opExtInst), debugName);
 }
 
-void GraphTosa10ExtInst::handleFft2D(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleFft2D(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> FFT2D inverse localBound input_real input_imag
     assert(opExtInst->NumInOperands() == 6);
 
@@ -555,7 +555,7 @@ void GraphTosa10ExtInst::handleFft2D(const Instruction *opExtInst, const std::st
                                  debugName);
 }
 
-void GraphTosa10ExtInst::handleGather(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleGather(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> GATHER values indices
     assert(opExtInst->NumInOperands() == 4);
 
@@ -570,7 +570,7 @@ void GraphTosa10ExtInst::handleGather(const Instruction *opExtInst, const std::s
                                   context.getTensor(*opExtInst), debugName);
 }
 
-void GraphTosa10ExtInst::handleMatmul(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleMatmul(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> MATMUL input1 input2 input1ZeroPoint input2ZeroPoint
     assert(opExtInst->NumInOperands() == 6);
 
@@ -588,7 +588,7 @@ void GraphTosa10ExtInst::handleMatmul(const Instruction *opExtInst, const std::s
                                   context.getTensor(*opExtInst), input1ZeroPoint[0], input2ZeroPoint[0], debugName);
 }
 
-void GraphTosa10ExtInst::handleMaximum(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleMaximum(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> MAXIMUM nanMode input1 input2
     assert(opExtInst->NumInOperands() == 5);
 
@@ -604,7 +604,7 @@ void GraphTosa10ExtInst::handleMaximum(const Instruction *opExtInst, const std::
                                    context.getTensor(*opExtInst), nanMode, debugName);
 }
 
-void GraphTosa10ExtInst::handleMaxPool2D(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleMaxPool2D(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> MAX_POOL2D kernel stride pad nanMode input
     assert(opExtInst->NumInOperands() == 7);
 
@@ -623,7 +623,7 @@ void GraphTosa10ExtInst::handleMaxPool2D(const Instruction *opExtInst, const std
                                      nanMode, debugName);
 }
 
-void GraphTosa10ExtInst::handleMinimum(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleMinimum(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> MINIMUM nanMode input1 input2
     assert(opExtInst->NumInOperands() == 5);
 
@@ -639,7 +639,7 @@ void GraphTosa10ExtInst::handleMinimum(const Instruction *opExtInst, const std::
                                    context.getTensor(*opExtInst), nanMode, debugName);
 }
 
-void GraphTosa10ExtInst::handleMul(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleMul(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> MUL input1 input2 shift
     assert(opExtInst->NumInOperands() == 5);
 
@@ -655,7 +655,7 @@ void GraphTosa10ExtInst::handleMul(const Instruction *opExtInst, const std::stri
                                shift[0], debugName);
 }
 
-void GraphTosa10ExtInst::handleNegate(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleNegate(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> NEGATE input inputZeroPoint outputZeroPoint
     assert(opExtInst->NumInOperands() == 5);
 
@@ -672,7 +672,7 @@ void GraphTosa10ExtInst::handleNegate(const Instruction *opExtInst, const std::s
                                   outputZeroPoint[0], debugName);
 }
 
-void GraphTosa10ExtInst::handlePad(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handlePad(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> PAD input padding padConst
     assert(opExtInst->NumInOperands() == 5);
 
@@ -700,7 +700,7 @@ void GraphTosa10ExtInst::handlePad(const Instruction *opExtInst, const std::stri
     context.pipeline().makePad(context.getTensor(inputId), output, padding, padConst, padConstInt, debugName);
 }
 
-void GraphTosa10ExtInst::handleRescale(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleRescale(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> RESCALE scale32 roundingMode perChannel inputUnsigned
     // outputUnsigned input multiplier shift inputZeroPoint outputZeroPoint inputUnsigned outputUnsigned input
     assert(opExtInst->NumInOperands() == 12);
@@ -731,11 +731,10 @@ void GraphTosa10ExtInst::handleRescale(const Instruction *opExtInst, const std::
                                    inputUnsigned, outputUnsigned, debugName);
 }
 
-void GraphTosa10ExtInst::handleReduce(
-    const Instruction *opExtInst, const std::string &debugName,
-    const std::function<void(GraphPipeline *, const std::shared_ptr<TensorDescriptor> &,
-                             const std::shared_ptr<TensorDescriptor> &, const uint32_t, const std::string &)> &function)
-    const {
+void GraphTosaExtInst::handleReduce(const Instruction *opExtInst, const std::string &debugName,
+                                    const std::function<void(GraphPipeline *, const std::shared_ptr<TensorDescriptor> &,
+                                                             const std::shared_ptr<TensorDescriptor> &, const uint32_t,
+                                                             const std::string &)> &function) const {
     // OpExtInst <result id> <OpExtInstImport id> REDUCE_* axis input
     assert(opExtInst->NumInOperands() == 4);
 
@@ -750,7 +749,7 @@ void GraphTosa10ExtInst::handleReduce(
                 debugName);
 }
 
-void GraphTosa10ExtInst::handleReduceMax(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleReduceMax(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> REDUCE_MAX axis nanMode input
     assert(opExtInst->NumInOperands() == 5);
 
@@ -766,7 +765,7 @@ void GraphTosa10ExtInst::handleReduceMax(const Instruction *opExtInst, const std
                                      debugName);
 }
 
-void GraphTosa10ExtInst::handleReduceMin(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleReduceMin(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> REDUCE_MIN axis nanMode input
     assert(opExtInst->NumInOperands() == 5);
 
@@ -782,7 +781,7 @@ void GraphTosa10ExtInst::handleReduceMin(const Instruction *opExtInst, const std
                                      debugName);
 }
 
-void GraphTosa10ExtInst::handleReshape(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleReshape(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> RESHAPE input shape
     assert(opExtInst->NumInOperands() == 4);
 
@@ -796,7 +795,7 @@ void GraphTosa10ExtInst::handleReshape(const Instruction *opExtInst, const std::
     context.pipeline().makeReshape(context.getTensor(inputId), context.getTensor(*opExtInst), debugName);
 }
 
-void GraphTosa10ExtInst::handleResize(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleResize(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> RESIZE mode input scale offset border
     assert(opExtInst->NumInOperands() == 7);
 
@@ -815,7 +814,7 @@ void GraphTosa10ExtInst::handleResize(const Instruction *opExtInst, const std::s
                                   mode, debugName);
 }
 
-void GraphTosa10ExtInst::handleReverse(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleReverse(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> REVERSE axis input
     assert(opExtInst->NumInOperands() == 4);
 
@@ -829,7 +828,7 @@ void GraphTosa10ExtInst::handleReverse(const Instruction *opExtInst, const std::
     context.pipeline().makeReverse(context.getTensor(inputId), context.getTensor(*opExtInst), axis, debugName);
 }
 
-void GraphTosa10ExtInst::handleRfft2D(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleRfft2D(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> RFFT2D localBound input
     assert(opExtInst->NumInOperands() == 4);
 
@@ -844,7 +843,7 @@ void GraphTosa10ExtInst::handleRfft2D(const Instruction *opExtInst, const std::s
                                   context.getTensor(*opExtInst, 1), debugName);
 }
 
-void GraphTosa10ExtInst::handleScatter(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleScatter(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> SCATTER valuesIn indices input
     assert(opExtInst->NumInOperands() == 5);
 
@@ -860,7 +859,7 @@ void GraphTosa10ExtInst::handleScatter(const Instruction *opExtInst, const std::
                                    context.getTensor(indicesId), context.getTensor(*opExtInst), debugName);
 }
 
-void GraphTosa10ExtInst::handleSelect(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleSelect(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> SELECT input1 input2 input3
     assert(opExtInst->NumInOperands() == 5);
 
@@ -876,7 +875,7 @@ void GraphTosa10ExtInst::handleSelect(const Instruction *opExtInst, const std::s
                                   context.getTensor(*opExtInst), debugName);
 }
 
-void GraphTosa10ExtInst::handleSlice(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleSlice(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> SLICE start size input
     assert(opExtInst->NumInOperands() == 5);
 
@@ -891,7 +890,7 @@ void GraphTosa10ExtInst::handleSlice(const Instruction *opExtInst, const std::st
     context.pipeline().makeSlice(context.getTensor(inputId), context.getTensor(*opExtInst), start, debugName);
 }
 
-void GraphTosa10ExtInst::handleTable(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleTable(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> TABLE %input table
     assert(opExtInst->NumInOperands() == 4);
 
@@ -905,7 +904,7 @@ void GraphTosa10ExtInst::handleTable(const Instruction *opExtInst, const std::st
     context.pipeline().makeTable(context.getTensor(inputId), context.getTensor(*opExtInst), table, debugName);
 }
 
-void GraphTosa10ExtInst::handleTile(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleTile(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> TILE input multiplies
     assert(opExtInst->NumInOperands() == 4);
 
@@ -919,7 +918,7 @@ void GraphTosa10ExtInst::handleTile(const Instruction *opExtInst, const std::str
     context.pipeline().makeTile(context.getTensor(inputId), context.getTensor(*opExtInst), debugName);
 }
 
-void GraphTosa10ExtInst::handleTranspose(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleTranspose(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> TRANSPOSE perms input
     assert(opExtInst->NumInOperands() == 4);
 
@@ -933,7 +932,7 @@ void GraphTosa10ExtInst::handleTranspose(const Instruction *opExtInst, const std
     context.pipeline().makeTranspose(context.getTensor(inputId), context.getTensor(*opExtInst), perms, debugName);
 }
 
-void GraphTosa10ExtInst::handleTransposeConv2D(const Instruction *opExtInst, const std::string &debugName) const {
+void GraphTosaExtInst::handleTransposeConv2D(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> TRANSPOSE_CONV2D outPad stride accType localBound input weight
     // bias inputZeroPoint weightZeroPoint
     assert(opExtInst->NumInOperands() == 11);
