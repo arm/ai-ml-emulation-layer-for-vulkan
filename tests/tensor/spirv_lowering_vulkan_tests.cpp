@@ -6,6 +6,7 @@
 
 #include "mlel/tensor.hpp"
 #include "mlel/utils.hpp"
+#include "tensor_test_utils.hpp"
 #include "test_utils.hpp"
 #include "vulkan_test_utils.hpp"
 
@@ -19,16 +20,16 @@
 namespace mlsdk::el::tests {
 namespace {
 
+using utilities::Shape;
+using utilities::Tensor;
+
 std::vector<uint32_t> tensorShader() {
-    return compileGlsl(R"(
-#version 460
-#extension GL_ARM_tensors : require
-layout(local_size_x = 1) in;
-layout(set = 0, binding = 0) uniform tensorARM<uint, 1> data;
-void main() {
+    TensorShaderSource source;
+    source.tensors = {{"data", "uint", "1", 0, 0}};
+    source.body = R"(
     tensorWriteARM(data, uint[](0), tensorSizeARM(data, 0));
-}
-)");
+)";
+    return compileTensorShader(source);
 }
 
 // Deliberately use only the Tensor layer, to establish that direct application
@@ -121,9 +122,10 @@ class SpecializedTensorPipeline : public utilities::PipelineBase {
   public:
     using PipelineBase::PipelineBase;
 
-    void dispatch(const DescriptorMap &descriptors, const vk::SpecializationInfo *specialization) {
+    void dispatch(const DescriptorMap &descriptors, const TensorSpecialization *specialization = nullptr) {
+        const auto info = specialization ? specialization->info() : vk::SpecializationInfo{};
         const vk::PipelineShaderStageCreateInfo stage{
-            {}, vk::ShaderStageFlagBits::eCompute, *shaderModule, "main", specialization};
+            {}, vk::ShaderStageFlagBits::eCompute, *shaderModule, "main", specialization ? &info : nullptr};
         const vk::raii::Pipeline pipeline{&(*device), nullptr,
                                           vk::ComputePipelineCreateInfo{{}, stage, *pipelineLayout}};
         auto bindings = createDescriptorSets(descriptors);
@@ -179,13 +181,12 @@ TEST_F(TensorLoweringForVulkan, DirectRejectsUnsupportedInlineTensorPipeline) {
     if (!inlineSupported) {
         GTEST_SKIP() << "Inline shader modules require maintenance5";
     }
-    const auto shader = compileGlsl(R"(
-#version 460
-#extension GL_ARM_tensors : require
-layout(local_size_x = 1) in;
-layout(set = 0, binding = 0) uniform tensorARM<uint, 1> data;
-void main() { uint values[2]; tensorReadARM(data, uint[](0), values); }
-)");
+    TensorShaderSource source;
+    source.tensors = {{"data", "uint", "1", 0, 0}};
+    source.body = R"(
+    uint values[2]; tensorReadARM(data, uint[](0), values);
+)";
+    const auto shader = compileTensorShader(source);
     EXPECT_EQ(createPipeline(shader), VK_ERROR_UNKNOWN);
 }
 
@@ -212,14 +213,10 @@ TEST_F(TensorLoweringForVulkan, DirectRejectsMalformedInlineModule) {
 TEST_F(TensorLoweringForVulkan, DirectScalarBoundsAndRuntimeMetadata) {
     const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
     ensureDevice();
-    const auto shader = compileGlsl(R"(
-#version 460
-#extension GL_ARM_tensors : require
-layout(local_size_x = 1) in;
-layout(set = 0, binding = 0) uniform tensorARM<uint, 2> source;
-layout(set = 0, binding = 1) uniform tensorARM<uint, 2> destination;
-layout(set = 0, binding = 2) uniform tensorARM<uint, 1> results;
-void main() {
+    TensorShaderSource source;
+    source.tensors = {
+        {"source", "uint", "2", 0, 0}, {"destination", "uint", "2", 0, 1}, {"results", "uint", "1", 0, 2}};
+    source.body = R"(
     uint height = tensorSizeARM(source, 0);
     uint width = tensorSizeARM(source, 1);
     tensorWriteARM(results, uint[](0), height);
@@ -247,41 +244,35 @@ void main() {
             tensorWriteARM(destination, coords, value);
         }
     }
-}
-)");
+)";
+    const auto shader = compileTensorShader(source);
     for (const auto &[height, width, rowStride, elementStride] :
          std::vector<std::array<int64_t, 4>>{{2, 3, 32, 4}, {3, 2, 40, 8}, {2, 4, 16, 4}}) {
         SCOPED_TRACE(testing::PrintToString(std::array{height, width, rowStride, elementStride}));
-        const utilities::Shape shape{vk::Format::eR32Uint, {height, width}, {rowStride, elementStride}};
-        auto input = std::make_shared<utilities::Tensor>(device, shape);
-        auto output = std::make_shared<utilities::Tensor>(device, shape);
-        auto results = std::make_shared<utilities::Tensor>(device, utilities::Shape{vk::Format::eR32Uint, {6}});
-        std::vector<uint32_t> inputData(input->size() / sizeof(uint32_t), 0xdeadbeef);
-        std::vector<uint32_t> expectedOutput(output->size() / sizeof(uint32_t), 0xa5a5a5a5);
+        const Shape shape{vk::Format::eR32Uint, {height, width}, {rowStride, elementStride}};
+        std::vector<uint32_t> values;
         for (int64_t y = 0; y < height; ++y) {
             for (int64_t x = 0; x < width; ++x) {
-                const auto index = static_cast<size_t>((y * rowStride) + (x * elementStride)) / sizeof(uint32_t);
-                inputData[index] = static_cast<uint32_t>((100 * (y + 1)) + x);
-                expectedOutput[index] = inputData[index];
+                values.push_back(static_cast<uint32_t>((100 * (y + 1)) + x));
             }
         }
-        std::memcpy(input->data(), inputData.data(), input->size());
-        std::memset(output->data(), 0xa5, output->size());
-        std::memset(results->data(), 0xa5, results->size());
+        auto input = makeTestTensor(device, shape, values);
+        auto output = makeTestTensor(device, shape);
+        const Shape resultsShape{vk::Format::eR32Uint, {6}};
+        auto results = makeTestTensor(device, resultsShape);
         const utilities::TensorComputePipeline::DescriptorMap descriptors{
             {{0, {input}}, {1, {output}}, {2, {results}}}};
         utilities::TensorComputePipeline pipeline(device, descriptors, shader);
         pipeline.dispatchSubmit(1, 1, 1);
-        const std::array<uint32_t, 6> expectedResults{
-            static_cast<uint32_t>(height), static_cast<uint32_t>(width), 0, 0, 0, 0};
-        EXPECT_EQ(std::memcmp(results->data(), expectedResults.data(), results->size()), 0);
-        EXPECT_EQ(std::memcmp(output->data(), expectedOutput.data(), output->size()), 0);
+        expectTensorValues<uint32_t>(*results, resultsShape,
+                                     {static_cast<uint32_t>(height), static_cast<uint32_t>(width), 0, 0, 0, 0});
+        expectTensorValues(*output, shape, values, 0xa5);
     }
 }
 
 class TensorRuntimeBoundsForVulkan : public TensorLoweringForVulkan, public testing::WithParamInterface<const char *> {
   protected:
-    void checkReads(const utilities::Shape &shape, const std::vector<std::pair<std::vector<uint32_t>, uint32_t>> &cases,
+    void checkReads(const Shape &shape, const std::vector<std::pair<std::vector<uint32_t>, uint32_t>> &cases,
                     bool specialised = false) {
         const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", GetParam());
         ensureDevice();
@@ -309,21 +300,23 @@ class TensorRuntimeBoundsForVulkan : public TensorLoweringForVulkan, public test
             }
             coordinateValues = "uint[](" + coordinateValues + ")";
         }
-        const auto shader = compileGlsl(
-            "#version 460\n#extension GL_ARM_tensors : require\n"
-            "layout(local_size_x = 1) in;\n" +
-            std::string(specialised ? "layout(constant_id = 0) const uint RANK = 1;\n" : "") +
-            "layout(set = 0, binding = 0) uniform tensorARM<uint, " + (specialised ? "RANK" : std::to_string(rank)) +
-            "> source;\n"
-            "layout(set = 0, binding = 1) uniform tensorARM<uint, 1> coordinates;\n"
-            "layout(set = 0, binding = 2) uniform tensorARM<uint, 1> result;\n"
-            "void main() {\n" +
-            readCoordinates + "uint value; tensorReadARM(source, " + coordinateValues +
-            ", value);\ntensorWriteARM(result, uint[](0), value);\n}\n");
-        auto input = std::make_shared<utilities::Tensor>(device, shape);
-        auto coordinates = std::make_shared<utilities::Tensor>(
-            device, utilities::Shape{vk::Format::eR32Uint, {static_cast<int64_t>(rank)}});
-        auto result = std::make_shared<utilities::Tensor>(device, utilities::Shape{vk::Format::eR32Uint, {1}});
+        TensorShaderSource source;
+        source.tensors = {{"source", "uint", specialised ? "RANK" : std::to_string(rank), 0, 0},
+                          {"coordinates", "uint", "1", 0, 1},
+                          {"result", "uint", "1", 0, 2}};
+        if (specialised) {
+            source.declarations = "layout(constant_id = 0) const uint RANK = 1;\n";
+        }
+        source.body = readCoordinates + R"(
+    uint value;
+    tensorReadARM(source, COORDINATE_VALUES, value);
+    tensorWriteARM(result, uint[](0), value);
+)";
+        utils::replaceAll(source.body, "COORDINATE_VALUES", coordinateValues);
+        const auto shader = compileTensorShader(source);
+        auto input = std::make_shared<Tensor>(device, shape);
+        auto coordinates = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Uint, {static_cast<int64_t>(rank)}});
+        auto result = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Uint, {1}});
         std::vector<uint32_t> inputData(input->size() / sizeof(uint32_t), 0xdeadbeef);
         for (size_t i = 0; i < shape.elementCount(); ++i) {
             inputData[shape.getElementOffset(i) / sizeof(uint32_t)] = 100 + static_cast<uint32_t>(i);
@@ -340,9 +333,7 @@ class TensorRuntimeBoundsForVulkan : public TensorLoweringForVulkan, public test
         } else {
             fixedPipeline = std::make_unique<utilities::TensorComputePipeline>(device, descriptors, shader);
         }
-        const auto rankValue = static_cast<uint32_t>(rank);
-        const vk::SpecializationMapEntry entry{0, 0, sizeof(rankValue)};
-        const vk::SpecializationInfo specialization{1, &entry, sizeof(rankValue), &rankValue};
+        const TensorSpecialization specialization{{0, static_cast<uint32_t>(rank)}};
         for (const auto &[coords, expected] : cases) {
             SCOPED_TRACE(testing::PrintToString(coords));
             ASSERT_EQ(coords.size(), rank);
@@ -362,28 +353,28 @@ class TensorRuntimeBoundsForVulkan : public TensorLoweringForVulkan, public test
 };
 
 TEST_P(TensorRuntimeBoundsForVulkan, RankOne) {
-    checkReads(utilities::Shape{vk::Format::eR32Uint, {3}},
+    checkReads(Shape{vk::Format::eR32Uint, {3}},
                {{{0}, 100}, {{2}, 102}, {{3}, 0}, {{std::numeric_limits<uint32_t>::max()}, 0}});
 }
 
 TEST_P(TensorRuntimeBoundsForVulkan, RankTwoWithPaddedRows) {
     const auto invalid = std::numeric_limits<uint32_t>::max();
-    checkReads(utilities::Shape{vk::Format::eR32Uint, {2, 3}, {32, 4}}, {{{0, 0}, 100},
-                                                                         {{1, 2}, 105},
-                                                                         {{0, 3}, 0},
-                                                                         {{1, 3}, 0},
-                                                                         {{2, 0}, 0},
-                                                                         {{invalid, 0}, 0},
-                                                                         {{0, invalid}, 0},
-                                                                         {{1, invalid}, 0},
-                                                                         {{invalid, invalid}, 0}});
+    checkReads(Shape{vk::Format::eR32Uint, {2, 3}, {32, 4}}, {{{0, 0}, 100},
+                                                              {{1, 2}, 105},
+                                                              {{0, 3}, 0},
+                                                              {{1, 3}, 0},
+                                                              {{2, 0}, 0},
+                                                              {{invalid, 0}, 0},
+                                                              {{0, invalid}, 0},
+                                                              {{1, invalid}, 0},
+                                                              {{invalid, invalid}, 0}});
 }
 
 TEST_P(TensorRuntimeBoundsForVulkan, SpecializedRanks) {
     const auto invalid = std::numeric_limits<uint32_t>::max();
     for (uint32_t rank = 1; rank <= 6; ++rank) {
         SCOPED_TRACE(rank);
-        const utilities::Shape shape{vk::Format::eR32Uint, std::vector<int64_t>(rank, 2)};
+        const Shape shape{vk::Format::eR32Uint, std::vector<int64_t>(rank, 2)};
         const std::vector<uint32_t> last(rank, 1);
         std::vector<std::pair<std::vector<uint32_t>, uint32_t>> cases{{std::vector<uint32_t>(rank, 0), 100},
                                                                       {last, 99 + (1u << rank)}};
@@ -407,19 +398,18 @@ INSTANTIATE_TEST_SUITE_P(LoweringModes, TensorRuntimeBoundsForVulkan, testing::V
 TEST_F(TensorLoweringForVulkan, DirectSpecializedRanksAndInt64Storage) {
     const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
     ensureDevice();
-    const auto shader = compileGlsl(R"(
-#version 460
-#extension GL_ARM_tensors : require
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
-layout(local_size_x = 1) in;
+    TensorShaderSource source;
+    source.tensors = {{"source", "uint64_t", "INPUT_RANK", 0, 0},
+                      {"destination", "uint64_t", "OUTPUT_RANK", 0, 1},
+                      {"results", "uint", "1", 0, 2}};
+    source.declarations = R"(
 layout(constant_id = 0) const uint INPUT_BASE = 1;
 layout(constant_id = 1) const uint OUTPUT_BASE = 1;
 const uint INPUT_RANK = INPUT_BASE + 1;
 const uint OUTPUT_RANK = OUTPUT_BASE + 1;
-layout(set = 0, binding = 0) uniform tensorARM<uint64_t, INPUT_RANK> source;
-layout(set = 0, binding = 1) uniform tensorARM<uint64_t, OUTPUT_RANK> destination;
-layout(set = 0, binding = 2) uniform tensorARM<uint, 1> results;
-void main() {
+)";
+    source.extensions = "#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require\n";
+    source.body = R"(
     uint inputCoords[INPUT_RANK];
     uint outputCoords[OUTPUT_RANK];
     for (uint i = 0; i < INPUT_RANK; ++i) inputCoords[i] = 1;
@@ -433,8 +423,8 @@ void main() {
     tensorWriteARM(results, uint[](1), tensorSizeARM(source, 0));
     outputCoords[OUTPUT_RANK - 1] = 2;
     tensorWriteARM(destination, outputCoords, uint64_t(0));
-}
-)");
+)";
+    const auto shader = compileTensorShader(source);
     auto makeTensor = [&](uint32_t rank) {
         std::vector<int64_t> dimensions(rank, 2);
         std::vector<int64_t> strides(rank);
@@ -443,13 +433,11 @@ void main() {
             strides[i - 1] = stride;
             stride *= 3;
         }
-        return std::make_shared<utilities::Tensor>(device, utilities::Shape{vk::Format::eR64Uint, dimensions, strides});
+        return std::make_shared<Tensor>(device, Shape{vk::Format::eR64Uint, dimensions, strides});
     };
-    auto results = std::make_shared<utilities::Tensor>(device, utilities::Shape{vk::Format::eR32Uint, {2}});
+    auto results = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Uint, {2}});
     const utilities::TensorComputePipeline::DescriptorMap initial{
         {{0, {makeTensor(2)}}, {1, {makeTensor(2)}}, {2, {results}}}};
-    const std::array<vk::SpecializationMapEntry, 2> entries{
-        {{0, 0, sizeof(uint32_t)}, {1, sizeof(uint32_t), sizeof(uint32_t)}}};
     // Recreating the module also exercises reuse of its cached lowered SPIR-V.
     for (uint32_t repeat = 0; repeat < 2; ++repeat) {
         SpecializedTensorPipeline pipeline(device, initial, shader);
@@ -475,9 +463,7 @@ void main() {
             std::memcpy(input->data(), inputData.data(), input->size());
             std::memset(output->data(), 0xa5, output->size());
             std::memset(results->data(), 0xa5, results->size());
-            const std::array<uint32_t, 2> values{inputRank - 1, outputRank - 1};
-            const vk::SpecializationInfo specialization{uint32_t(entries.size()), entries.data(), sizeof(values),
-                                                        values.data()};
+            const TensorSpecialization specialization{{0, inputRank - 1}, {1, outputRank - 1}};
             pipeline.dispatch({{{0, {input}}, {1, {output}}, {2, {results}}}},
                               inputRank == 2 && outputRank == 2 ? nullptr : &specialization);
             const std::array<uint32_t, 2> expectedResults{0, 2};
@@ -490,16 +476,15 @@ void main() {
 TEST_F(TensorLoweringForVulkan, DirectBooleanStorageBoundsAndSpecializedRanks) {
     const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
     ensureDevice();
-    const auto shader = compileGlsl(R"(
-#version 460
-#extension GL_ARM_tensors : require
-layout(local_size_x = 1) in;
+    TensorShaderSource source;
+    source.tensors = {{"source", "bool", "INPUT_RANK", 0, 0},
+                      {"destination", "bool", "OUTPUT_RANK", 0, 1},
+                      {"results", "uint", "1", 0, 2}};
+    source.declarations = R"(
 layout(constant_id = 0) const uint INPUT_RANK = 2;
 layout(constant_id = 1) const uint OUTPUT_RANK = 1;
-layout(set = 0, binding = 0) uniform tensorARM<bool, INPUT_RANK> source;
-layout(set = 0, binding = 1) uniform tensorARM<bool, OUTPUT_RANK> destination;
-layout(set = 0, binding = 2) uniform tensorARM<uint, 1> results;
-void main() {
+)";
+    source.body = R"(
     uint inputCoords[INPUT_RANK];
     uint outputCoords[OUTPUT_RANK];
     for (uint i = 0; i < INPUT_RANK; ++i) inputCoords[i] = 1;
@@ -530,8 +515,8 @@ void main() {
     tensorReadARM(source, inputCoords, value);
     tensorWriteARM(results, uint[](3), uint(value));
     tensorWriteARM(destination, outputCoords, true);
-}
-)");
+)";
+    const auto shader = compileTensorShader(source);
     auto makeShape = [](uint32_t rank, int64_t width, int64_t elementStride) {
         std::vector<int64_t> dimensions(rank);
         std::vector<int64_t> strides(rank);
@@ -540,25 +525,23 @@ void main() {
             strides[i - 1] = elementStride;
             elementStride *= dimensions[i - 1] + 1;
         }
-        return utilities::Shape{vk::Format::eR8BoolARM, dimensions, strides};
+        return Shape{vk::Format::eR8BoolARM, dimensions, strides};
     };
-    auto results = std::make_shared<utilities::Tensor>(device, utilities::Shape{vk::Format::eR32Uint, {4}});
+    auto results = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Uint, {4}});
     const utilities::TensorComputePipeline::DescriptorMap initial{
-        {{0, {std::make_shared<utilities::Tensor>(device, makeShape(2, 4, 3))}},
-         {1, {std::make_shared<utilities::Tensor>(device, makeShape(1, 8, 2))}},
+        {{0, {std::make_shared<Tensor>(device, makeShape(2, 4, 3))}},
+         {1, {std::make_shared<Tensor>(device, makeShape(1, 8, 2))}},
          {2, {results}}}};
     SpecializedTensorPipeline pipeline(device, initial, shader);
-    const std::array<vk::SpecializationMapEntry, 2> entries{
-        {{0, 0, sizeof(uint32_t)}, {1, sizeof(uint32_t), sizeof(uint32_t)}}};
     for (const auto &[inputRank, outputRank] :
          std::vector<std::pair<uint32_t, uint32_t>>{{2, 1}, {1, 6}, {6, 3}, {4, 5}, {5, 2}, {3, 4}}) {
         SCOPED_TRACE(std::to_string(inputRank) + " -> " + std::to_string(outputRank));
         const auto inputShape = makeShape(inputRank, 4, 3);
         const auto outputShape = makeShape(outputRank, 8, 2);
-        auto input = std::make_shared<utilities::Tensor>(device, inputShape);
-        auto output = std::make_shared<utilities::Tensor>(device, outputShape);
+        auto input = std::make_shared<Tensor>(device, inputShape);
+        auto output = std::make_shared<Tensor>(device, outputShape);
         // The shader selects coordinate 1 on every axis except the innermost.
-        auto rowOffset = [](const utilities::Shape &shape) {
+        auto rowOffset = [](const Shape &shape) {
             size_t offset = 0;
             const auto &strides = shape.getStrides();
             for (size_t i = 0; i + 1 < strides.size(); ++i) {
@@ -577,9 +560,7 @@ void main() {
         std::memcpy(input->data(), inputData.data(), input->size());
         std::memset(output->data(), 0xa5, output->size());
         std::memset(results->data(), 0xa5, results->size());
-        const std::array<uint32_t, 2> ranks{inputRank, outputRank};
-        const vk::SpecializationInfo specialization{uint32_t(entries.size()), entries.data(), sizeof(ranks),
-                                                    ranks.data()};
+        const TensorSpecialization specialization{{0, inputRank}, {1, outputRank}};
         pipeline.dispatch({{{0, {input}}, {1, {output}}, {2, {results}}}},
                           inputRank == 2 && outputRank == 1 ? nullptr : &specialization);
         const std::array<uint32_t, 4> expectedResults{inputRank == 1 ? 4u : 2u, outputRank == 1 ? 8u : 2u, 0, 0};
