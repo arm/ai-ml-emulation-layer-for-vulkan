@@ -37,8 +37,8 @@ struct GraphModuleInfo {
 
 const GraphExtInstSetDescriptor *findGraphExtInstSet(std::string_view importName);
 
-// Parse the graph module and retain its registered imports by result ID.
-// Core module validity is a caller precondition.
+// Resolve imports and reject scaled declarations before optimizer type analysis.
+// Module validity is a caller precondition.
 GraphModuleInfo analyzeGraphModule(const uint32_t *code, size_t wordCount);
 
 } // namespace spvtools::opt

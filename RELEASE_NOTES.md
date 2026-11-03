@@ -4,6 +4,18 @@
 
 ## Unreleased
 
+### Experimental Operator Support
+
+- Added opt-in support for the `TOSA.1x.1` SPIR-V™ import through the existing
+  TOSA decoder, including modules that also use the TOSA 1.0 import. This does
+  not advertise full TOSA 1.x conformance and requires matching Headers and
+  Tools snapshots.
+- Reject optional operands on `CAST`, `GATHER` and `SCATTER`, and scaled tensor
+  declarations with Vulkan® pipeline-creation errors. Scaled declarations are
+  rejected before optimizer type analysis, even when unused. Module, operand
+  and resource-binding validation remains the caller's responsibility; Tools
+  validation remains disabled.
+
 ### Build, Packaging & Dependencies
 
 - Locked development tooling with `uv.lock` in place of the tooling

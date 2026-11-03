@@ -26,7 +26,8 @@ using namespace utilities;
 namespace {
 
 void expectConv2DStorageFormats(std::shared_ptr<Device> &device, vk::Format inputFormat, vk::Format weightFormat,
-                                vk::Format outputFormat, bool negateWeights = false) {
+                                vk::Format outputFormat, bool negateWeights = false,
+                                const std::string &shader = "conv2d.spvasm", bool mixedImports = false) {
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{inputFormat, std::vector<int64_t>{1, 8, 8, 3}});
     std::iota(inputTensor->data(), inputTensor->data() + inputTensor->size(), uint8_t{});
@@ -45,7 +46,7 @@ void expectConv2DStorageFormats(std::shared_ptr<Device> &device, vk::Format inpu
     }
 
     auto outputTensor = std::make_shared<Tensor>(device, Shape{outputFormat, std::vector<int64_t>{1, 4, 4, 3}});
-    const GraphPipeline::DescriptorMap descriptorMap = {
+    GraphPipeline::DescriptorMap descriptorMap = {
         {
             // set 0
             {
@@ -69,7 +70,12 @@ void expectConv2DStorageFormats(std::shared_ptr<Device> &device, vk::Format inpu
 
     GraphConstants graphConstants;
 
-    const auto spirv = assembleSpirv(fileToString("conv2d.spvasm"));
+    std::shared_ptr<Tensor> secondOutput;
+    if (mixedImports) {
+        secondOutput = std::make_shared<Tensor>(device, Shape{outputFormat, std::vector<int64_t>{1, 4, 4, 3}});
+        descriptorMap[0][4] = {secondOutput};
+    }
+    const auto spirv = assembleSpirv(fileToString(shader));
     auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, graphConstants, spirv);
 
     graphPipeline->dispatchSubmit();
@@ -124,11 +130,26 @@ void expectConv2DStorageFormats(std::shared_ptr<Device> &device, vk::Format inpu
     }
     // Compare the encoded result so negative TOSA values also match R32_UINT storage.
     ASSERT_EQ(std::memcmp(outputTensor->data(), expected.data(), sizeof(expected)), 0) << "Output mismatch";
+    if (mixedImports) {
+        EXPECT_EQ(std::memcmp(secondOutput->data(), expected.data(), sizeof(expected)), 0);
+    }
 }
 
 TEST_F(MLEmulationLayerGraphForVulkan, Conv2D) {
     expectConv2DStorageFormats(device, vk::Format::eR8Sint, vk::Format::eR8Sint, vk::Format::eR32Sint);
 }
+
+#if VMEL_ENABLE_TOSA_1X
+TEST_F(MLEmulationLayerGraphForVulkan, Conv2DTosa1x) {
+    expectConv2DStorageFormats(device, vk::Format::eR8Sint, vk::Format::eR8Sint, vk::Format::eR32Sint, false,
+                               "conv2d_1x.spvasm");
+}
+
+TEST_F(MLEmulationLayerGraphForVulkan, Conv2DMixedImports) {
+    expectConv2DStorageFormats(device, vk::Format::eR8Sint, vk::Format::eR8Sint, vk::Format::eR32Sint, false,
+                               "conv2d_mixed_imports.spvasm", true);
+}
+#endif
 
 using Conv2DStorageFormats = GraphTestWithParam<std::tuple<vk::Format, vk::Format, vk::Format, bool>>;
 

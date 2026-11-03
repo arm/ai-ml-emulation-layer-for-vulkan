@@ -108,9 +108,16 @@ TEST(GraphExtInstRegistry, ExactImportLookup) {
         ASSERT_NE(descriptor, nullptr);
         EXPECT_EQ(descriptor->importName, name);
     }
-    for (const auto *name : {"TOSA.999999.1", "TOSA.001000.2", "Arm.MotionEngine.101"}) {
+    for (const auto *name : {"TOSA.999999.1", "TOSA.001000.2", "TOSA.1x.2", "TOSA.001001.1", "Arm.MotionEngine.101"}) {
         EXPECT_EQ(spvtools::opt::findGraphExtInstSet(name), nullptr) << name;
     }
+    const auto *descriptor = spvtools::opt::findGraphExtInstSet("TOSA.1x.1");
+#if VMEL_ENABLE_TOSA_1X
+    ASSERT_NE(descriptor, nullptr);
+    EXPECT_EQ(descriptor->importName, "TOSA.1x.1");
+#else
+    EXPECT_EQ(descriptor, nullptr);
+#endif
 }
 
 TEST(GraphExtInstRegistry, MapsMultipleAndRepeatedImportsById) {
@@ -129,5 +136,48 @@ OpMemoryModel)");
     EXPECT_TRUE(info.tosa);
     EXPECT_TRUE(info.motionEngine);
 }
+
+#if VMEL_ENABLE_TOSA_1X
+TEST_F(MLEmulationLayerGraphForVulkan, Tosa1xOptionalOperands) {
+    auto text = fileToString("conv2d_1x.spvasm");
+    // Pass the bias through CAST, GATHER and SCATTER with unchanged values.
+    replace(text, "OpGraphEntryPointARM", R"(%array3 = OpTypeArray %uint %uint_3
+%values_shape = OpConstantComposite %array3 %uint_1 %uint_3 %uint_1
+%values_type = OpTypeTensorARM %uint %uint_3 %values_shape
+%array2 = OpTypeArray %uint %uint_2
+%indices_shape = OpConstantComposite %array2 %uint_1 %uint_3
+%indices_type = OpTypeTensorARM %uint %uint_2 %indices_shape
+%indices = OpConstantComposite %indices_type %uint_0 %uint_1 %uint_2
+%values_reshape = OpConstantComposite %18 %uint_1 %uint_3 %uint_1
+%bias_shape_type = OpTypeTensorARM %uint %uint_1 %42
+%bias_shape = OpConstantComposite %bias_shape_type %uint_3
+OpGraphEntryPointARM)");
+    replace(text, "%44 = OpExtInst", R"(%cast = OpExtInst %18 %45 CAST %31
+%values = OpExtInst %values_type %45 RESHAPE %cast %values_reshape
+%gather = OpExtInst %values_type %45 GATHER %values %indices
+%scatter = OpExtInst %values_type %45 SCATTER %values %indices %gather
+%bias = OpExtInst %18 %45 RESHAPE %scatter %bias_shape
+%44 = OpExtInst)");
+    replace(text, "%28 %30 %31 %43 %43", "%28 %30 %bias %43 %43");
+    expectPipelineResult(device, assembleUnchecked(text), VK_SUCCESS);
+
+    // Even an explicit zero optional-operand mask is currently unsupported.
+    for (const std::string operation : {"CAST %31", "GATHER %values %indices", "SCATTER %values %indices %gather"}) {
+        SCOPED_TRACE(operation);
+        auto optional = text;
+        replace(optional, operation, operation + " %uint_0");
+        expectPipelineResult(device, assembleUnchecked(optional), VK_ERROR_UNKNOWN,
+                             "optional operands are not supported");
+    }
+}
+
+TEST_F(MLEmulationLayerGraphForVulkan, TosaRejectsUnusedScaledTypeBeforeOptimizer) {
+    auto text = fileToString("conv2d_1x.spvasm");
+    replace(text, "OpGraphEntryPointARM", "%scaled = OpTypeTensorScaledBlockARM %2 %13 %7\n OpGraphEntryPointARM");
+    expectPipelineResult(device, assembleUnchecked(text), VK_ERROR_UNKNOWN, "rejected before optimizer type analysis");
+    replace(text, "TOSA.1x.1", "TOSA.001000.1");
+    expectPipelineResult(device, assembleUnchecked(text), VK_ERROR_UNKNOWN, "rejected before optimizer type analysis");
+}
+#endif
 
 } // namespace mlsdk::el::tests
