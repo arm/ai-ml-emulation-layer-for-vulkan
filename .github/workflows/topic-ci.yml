@@ -16,7 +16,6 @@ permissions:
 jobs:
   topic:
     if: github.event.pull_request.draft == false
-    # Use the test branch until the central workflow is merged, then change this to @main.
-    uses: arm/ai-ml-sdk-for-vulkan/.github/workflows/collect-and-build-topic.yml@ci/topic-builds
+    uses: arm/ai-ml-sdk-for-vulkan/.github/workflows/collect-and-build-topic.yml@main
     with:
       topic_branch: ${{ github.head_ref }}
