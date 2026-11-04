@@ -26,9 +26,9 @@ namespace spvtools::opt {
 inline constexpr std::string_view tosaSpv100 = "TOSA.001000.1";
 using mlsdk::el::compute::graph_op::GraphPipeline;
 
-class GraphTosa10ExtInst final : public GraphExtInstDecoder {
+class GraphTosaExtInst final : public GraphExtInstDecoder {
   public:
-    explicit GraphTosa10ExtInst(GraphExtInstContext &context) : context{context} {}
+    explicit GraphTosaExtInst(GraphExtInstContext &context) : context{context} {}
     void handleOp(const Instruction *opExtInst) const override;
 
   private:

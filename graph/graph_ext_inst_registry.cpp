@@ -11,7 +11,7 @@
 #include "graph_ext_inst_registry.hpp"
 
 #include "graph_motion_engine_1_0_ext_inst.hpp"
-#include "graph_tosa_1_0_ext_inst.hpp"
+#include "graph_tosa_ext_inst.hpp"
 #include "source/opt/build_module.h"
 
 #include <algorithm>
@@ -31,7 +31,7 @@ template <typename Decoder> std::unique_ptr<GraphExtInstDecoder> makeDecoder(Gra
 
 const std::vector<GraphExtInstSetDescriptor> &registeredGraphExtInstSets() {
     static const std::vector<GraphExtInstSetDescriptor> instructionSets{
-        {std::string(tosaSpv100), &makeDecoder<GraphTosa10ExtInst>},
+        {std::string(tosaSpv100), &makeDecoder<GraphTosaExtInst>},
         {std::string(motionEngine100), &makeDecoder<GraphMotionEngine10ExtInst>},
     };
     return instructionSets;
