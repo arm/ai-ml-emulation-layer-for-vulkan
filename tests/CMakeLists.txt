@@ -98,6 +98,7 @@ set(MLEL_VULKAN_TEST_SOURCES
     vulkan/initialization_tests.cpp
     graph/block_match_tests.cpp
     graph/convolution_tests.cpp
+    graph/tosa_import_tests.cpp
     graph/datatype_tests.cpp
     graph/operator_tests.cpp
     graph/pipeline_tests.cpp

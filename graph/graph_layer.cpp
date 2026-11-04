@@ -50,24 +50,6 @@ namespace mlsdk::el::layer {
 namespace {
 constexpr std::string_view graphPipelineCreatedLog = "Graph pipeline created";
 
-bool isDigit(char value) { return value >= '0' && value <= '9'; }
-
-bool hasVersionPrefix(std::string_view name, std::string_view prefix, size_t digitCount) {
-    const auto versionEnd = prefix.size() + digitCount;
-    if (name.size() < versionEnd || name.compare(0, prefix.size(), prefix) != 0) {
-        return false;
-    }
-
-    for (size_t i = 0; i < digitCount; ++i) {
-        if (!isDigit(name[prefix.size() + i])) {
-            return false;
-        }
-    }
-
-    return name.size() == versionEnd ||
-           (name.size() > versionEnd + 1 && name[versionEnd] == '.' && isDigit(name[versionEnd + 1]));
-}
-
 std::unordered_map<uint32_t, std::vector<uint32_t>>
 makeSpecConstantDefaultValues(const VkSpecializationInfo &specializationInfo) {
     std::unordered_map<uint32_t, std::vector<uint32_t>> values;
@@ -366,35 +348,6 @@ std::optional<bool> isGraphSpirv(const uint32_t *spirvCode, const size_t spirvSi
         return std::nullopt;
     }
     return !ir->module()->graphs().empty();
-}
-
-struct GraphInstructionSetImports {
-    std::vector<std::string> tosa;
-    std::vector<std::string> motionEngine;
-};
-
-bool validateGraphExtInstImports(const uint32_t *spirvCode, const size_t spirvSize,
-                                 GraphInstructionSetImports &imports) {
-    const auto ir = spvtools::BuildModule(SPV_ENV_UNIVERSAL_1_6, sprivMessageConsumer, spirvCode, spirvSize);
-
-    for (const auto &inst : ir->module()->ext_inst_imports()) {
-        const auto importName = inst.GetInOperand(0).AsString();
-        const bool isTosa = hasVersionPrefix(importName, "TOSA.", 6);
-        const bool isMotionEngine = hasVersionPrefix(importName, "Arm.MotionEngine.", 3);
-        const bool isKnownFamily = isTosa || isMotionEngine;
-        if (isKnownFamily && !spvtools::opt::isRegisteredGraphExtInstImport(importName)) {
-            graphLog(Severity::Error) << "Unsupported graph extended instruction set: " << importName << std::endl;
-            return false;
-        }
-        if (isTosa) {
-            imports.tosa.push_back(importName);
-        }
-        if (isMotionEngine) {
-            imports.motionEngine.push_back(importName);
-        }
-    }
-
-    return true;
 }
 
 constexpr std::array<const VkExtensionProperties, 3> extensions{
@@ -830,6 +783,24 @@ class GraphLayer : public VulkanLayerImpl {
                                                              const VkDataGraphPipelineCreateInfoARM *createInfos,
                                                              const VkAllocationCallbacks *callbacks,
                                                              VkPipeline *pipelines) {
+        std::fill_n(pipelines, createInfoCount, VK_NULL_HANDLE);
+        try {
+            return createDataGraphPipelines(device, pipelineCache, createInfoCount, createInfos, callbacks, pipelines);
+        } catch (const std::bad_alloc &) {
+            graphLog(Severity::Error) << "Graph pipeline creation ran out of host memory" << std::endl;
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        } catch (const std::exception &error) {
+            graphLog(Severity::Error) << "Graph pipeline creation failed: " << error.what() << std::endl;
+            return VK_ERROR_UNKNOWN;
+        } catch (...) {
+            graphLog(Severity::Error) << "Graph pipeline creation failed with an unknown exception" << std::endl;
+            return VK_ERROR_UNKNOWN;
+        }
+    }
+
+    static VkResult createDataGraphPipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
+                                             const VkDataGraphPipelineCreateInfoARM *createInfos,
+                                             const VkAllocationCallbacks *callbacks, VkPipeline *pipelines) {
         auto deviceHandle = VulkanLayerImpl::getHandle(device);
         auto pipelineCacheHandle = getHandle(pipelineCache);
 
@@ -876,7 +847,7 @@ class GraphLayer : public VulkanLayerImpl {
             // Create pipeline handle
             auto pipeline = std::allocate_shared<DataGraphPipelineARM>(Allocator<GraphPipeline>{callbacks},
                                                                        deviceHandle, pipelineCacheHandle, type);
-            pipelines[i] = reinterpret_cast<VkPipeline>(pipeline.get());
+            auto *const pipelineHandle = reinterpret_cast<VkPipeline>(pipeline.get());
             graphLog(Severity::Info) << graphPipelineCreatedLog << std::endl;
 
             if (pipeline->isGraph()) {
@@ -924,14 +895,6 @@ class GraphLayer : public VulkanLayerImpl {
 
                     spirvCode = shaderModuleCreateInfo->pCode;
                     spirvSize = shaderModuleCreateInfo->codeSize / sizeof(uint32_t);
-                    auto isGraph = isGraphSpirv(spirvCode, spirvSize);
-                    if (!isGraph.has_value()) {
-                        return VK_ERROR_UNKNOWN;
-                    }
-                    if (!isGraph.value()) {
-                        graphLog(Severity::Error) << "spirv code does not contain graph." << std::endl;
-                        return VK_ERROR_UNKNOWN;
-                    }
                 } else {
                     auto shaderModule = getHandle(deviceHandle, dataGraphPipelineShaderModuleCreateInfo->module);
                     if (!shaderModule) {
@@ -942,27 +905,25 @@ class GraphLayer : public VulkanLayerImpl {
                     spirvSize = shaderModule->code.size();
                 }
 
-                GraphInstructionSetImports instructionSetImports;
-                if (!validateGraphExtInstImports(spirvCode, spirvSize, instructionSetImports)) {
-                    return VK_ERROR_UNKNOWN;
-                }
+                const auto instructionSetImports = spvtools::opt::analyzeGraphModule(spirvCode, spirvSize);
 
                 // Create optimizer
                 spvtools::Optimizer optimizer{SPV_ENV_UNIVERSAL_1_6};
+                optimizer.SetMessageConsumer(sprivMessageConsumer);
 
                 // Register passes
                 registerSpecConstantDefaultPasses(optimizer,
                                                   dataGraphPipelineShaderModuleCreateInfo->pSpecializationInfo);
-                pipeline->isTosaGraph = !instructionSetImports.tosa.empty();
-                if (!instructionSetImports.tosa.empty()) {
+                pipeline->isTosaGraph = instructionSetImports.tosa;
+                if (instructionSetImports.tosa) {
                     pipeline->profilingPipelineKind = ProfilingPipelineKind::TOSA;
-                } else if (!instructionSetImports.motionEngine.empty()) {
+                } else if (instructionSetImports.motionEngine) {
                     pipeline->profilingPipelineKind = ProfilingPipelineKind::MOTION_ENGINE;
                 } else {
                     pipeline->profilingPipelineKind = ProfilingPipelineKind::GRAPH_OP;
                 }
 
-                optimizer.RegisterPass(spvtools::createGraphPass(*graphPipeline));
+                optimizer.RegisterPass(spvtools::createGraphPass(*graphPipeline, instructionSetImports.extInstImports));
 
                 // Run passes
                 spvtools::OptimizerOptions options;
@@ -1214,7 +1175,8 @@ class GraphLayer : public VulkanLayerImpl {
 
             {
                 scopedMutex l(globalMutex);
-                deviceHandle->dataGraphPipelineMap[pipelines[i]] = pipeline;
+                deviceHandle->dataGraphPipelineMap[pipelineHandle] = pipeline;
+                pipelines[i] = pipelineHandle;
             }
 
             if (creationFeedbackInfo != nullptr) {

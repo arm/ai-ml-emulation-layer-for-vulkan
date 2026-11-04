@@ -12,9 +12,6 @@
 #include "graph_ext_inst_registry.hpp"
 #include "graph_log.hpp"
 
-#include <algorithm>
-#include <unordered_map>
-
 /*******************************************************************************
  * GraphPass extended instruction sets
  *******************************************************************************/
@@ -24,11 +21,20 @@ namespace spvtools::opt {
 
 Pass::Status GraphPassExtInst::Process() {
     GraphExtInstContext loweringContext{*context(), graphPipeline};
-    handleGraphs(loweringContext);
+    std::unordered_map<const GraphExtInstSetDescriptor *, std::unique_ptr<GraphExtInstDecoder>> decoderCache;
+    Decoders decoders;
+    for (const auto &[id, descriptor] : imports) {
+        auto &decoder = decoderCache[descriptor];
+        if (!decoder) {
+            decoder = descriptor->createDecoder(loweringContext);
+        }
+        decoders.emplace(id, decoder.get());
+    }
+    handleGraphs(loweringContext, decoders);
     return Status::SuccessWithChange;
 }
 
-void GraphPassExtInst::handleGraphs(GraphExtInstContext &loweringContext) {
+void GraphPassExtInst::handleGraphs(GraphExtInstContext &loweringContext, const Decoders &decoders) {
     const auto &module = *get_module();
 
     for (const auto &graphEntry : module.graph_entry_points()) {
@@ -39,14 +45,11 @@ void GraphPassExtInst::handleGraphs(GraphExtInstContext &loweringContext) {
 
         loweringContext.handleGraphConstants();
         loweringContext.handleInputsAndOutputs(graphEntry);
-        handleGraph(graph, loweringContext);
+        handleGraph(graph, decoders);
     }
 }
 
-void GraphPassExtInst::handleGraph(const Graph *graph, GraphExtInstContext &loweringContext) {
-    const auto instructionSets = makeGraphExtInstRegistry(loweringContext);
-    std::unordered_map<uint32_t, const GraphExtInstDecoder *> decodersByImportId;
-
+void GraphPassExtInst::handleGraph(const Graph *graph, const Decoders &decoders) {
     // Iterate over instructions in the graph
     for (const auto &opExtInst : graph->instructions()) {
 
@@ -62,22 +65,19 @@ void GraphPassExtInst::handleGraph(const Graph *graph, GraphExtInstContext &lowe
         }
 
         const auto importId = opExtInst->GetInOperand(0).AsId();
-        auto decoder = decodersByImportId.find(importId);
-        if (decoder == decodersByImportId.end()) {
-            const auto *importInstruction = get_def_use_mgr()->GetDef(importId);
-            if (importInstruction == nullptr || importInstruction->opcode() != spv::Op::OpExtInstImport) {
-                throw std::runtime_error("Invalid extended instruction-set import id " + std::to_string(importId));
-            }
-            const auto &importName = importInstruction->GetInOperand(0).AsString();
-            const auto instructionSet =
-                std::find_if(instructionSets.begin(), instructionSets.end(),
-                             [&importName](const auto &entry) { return entry.importName == importName; });
-            if (instructionSet == instructionSets.end()) {
-                throw std::runtime_error(std::string("Unsupported extension ") + importName);
-            }
-            decoder = decodersByImportId.emplace(importId, instructionSet->decoder.get()).first;
+        const auto decoder = decoders.find(importId);
+        if (decoder == decoders.end()) {
+            throw std::runtime_error("Unregistered extended instruction-set import id " + std::to_string(importId));
         }
-        decoder->second->handleOp(opExtInst.get());
+        try {
+            decoder->second->handleOp(opExtInst.get());
+        } catch (const std::bad_alloc &) {
+            throw;
+        } catch (const std::exception &error) {
+            throw std::runtime_error(imports.at(importId)->importName + " import %" + std::to_string(importId) +
+                                     " opcode " + std::to_string(opExtInst->GetSingleWordInOperand(1)) + " result %" +
+                                     std::to_string(opExtInst->result_id()) + ": " + error.what());
+        }
     }
 }
 

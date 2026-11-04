@@ -23,6 +23,8 @@
 
 ### Bug Fixes
 
+- Report graph decoder exceptions as logged Vulkan® pipeline-creation errors
+  and leave failed pipeline handles null.
 - Fixed dynamic and non-uniform tensor descriptor indexing feature reporting and
   device creation to check and enable the required uniform-buffer indexing support.
 - Fixed TOSA `SIN` and `COS` handling for positive and negative infinity by
