@@ -1,0 +1,31 @@
+@startuml
+<style>
+root {
+  FontName SansSerif
+  Shadowing 0
+}
+element {
+  Shadowing 0
+}
+sequenceDiagram {
+  participant {
+    Padding 10
+  }
+  arrow {
+    HorizontalAlignment center
+  }
+}
+</style>
+participant Application as app
+participant "Graph layer" as graph
+participant "Graph pass / decoders" as pass
+app -> graph : vkCreateDataGraphPipelinesARM()\nmodule + resources + constants
+graph -> graph : Select graph SPIR-V™ path\nCopy metadata; initialize constants
+graph -> pass : Run SPIRV-Tools optimizer:\nspecialization and graph passes
+pass -> pass : Resolve tensors and imports
+loop graph instructions
+pass -> graph : Build compute state
+end
+graph -> graph : Create constant descriptor sets
+graph --> app : VkPipeline
+@enduml

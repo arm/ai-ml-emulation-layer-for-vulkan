@@ -136,8 +136,8 @@ python3 $SDK_PATH/sw/emulation-layer/scripts/build.py -j $(nproc) --target-platf
 
 To enable and run tests, use the `--test` option. To lint the tests, use the
 `--lint` option. To build the documentation, use the `--doc` option. To build
-the documentation, you must have `sphinx` and `doxygen` installed on your
-machine.
+the documentation, you must have `sphinx`, `doxygen`, PlantUML, a compatible
+Java runtime, and Graphviz installed on your machine.
 
 To build only the documentation without configuring or compiling the native
 project, run these commands from the emulation-layer repository root:

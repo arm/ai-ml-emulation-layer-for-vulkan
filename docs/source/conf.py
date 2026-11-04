@@ -34,6 +34,8 @@ extensions = [
     "sphinxcontrib.plantuml",
 ]
 
+plantuml_output_format = "svg_img"
+
 # Disable superfluous warnings
 suppress_warnings = [
     "sphinx.ext.autosectionlabel.*",

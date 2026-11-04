@@ -1,0 +1,22 @@
+@startuml
+<style>
+root {
+  FontName SansSerif
+  Shadowing 0
+}
+element {
+  Shadowing 0
+}
+rectangle {
+  BackgroundColor #EFF6FF
+}
+</style>
+top to bottom direction
+rectangle "Tensor view" as view
+rectangle "Metadata uniform buffer\n(address, dimensions, strides)" as metadata
+rectangle "Translated compute shader" as shader
+rectangle "Tensor data buffer\nElements in bound VkDeviceMemory" as data
+view --> metadata : descriptor
+metadata --> shader : locate elements
+shader --> data : loads and stores
+@enduml
