@@ -227,6 +227,16 @@ class TensorLayer : public VulkanLayerImpl {
 
     static VkResult VKAPI_CALL vkCreateTensorARM(VkDevice device, const VkTensorCreateInfoARM *createInfo,
                                                  const VkAllocationCallbacks *allocator, VkTensorARM *tensor) {
+#ifdef VK_ARM_tensors2
+        if (findType<VkBaseInStructure>(createInfo->pNext, VK_STRUCTURE_TYPE_PLANAR_TENSOR_DESCRIPTION_ARM) ||
+            findType<VkBaseInStructure>(createInfo->pNext, VK_STRUCTURE_TYPE_TENSOR_BLOCK_SCALING_CREATE_INFO_ARM) ||
+            (createInfo->pDescription &&
+             createInfo->pDescription->format == VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM)) {
+            tensorLog(Severity::Error) << "Tensors2 creation is not implemented" << std::endl;
+            *tensor = VK_NULL_HANDLE;
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        }
+#endif
         auto *tensorARM = allocateObject<TensorARM>(allocator);
         VkResult result = tensorARM->create(*VulkanLayerImpl::getHandle(device), *createInfo, allocator);
         if (result != VK_SUCCESS) {
@@ -275,12 +285,33 @@ class TensorLayer : public VulkanLayerImpl {
     static void VKAPI_CALL vkGetTensorMemoryRequirementsARM(VkDevice device,
                                                             const VkTensorMemoryRequirementsInfoARM *info,
                                                             VkMemoryRequirements2 *requirements) {
+#ifdef VK_ARM_tensors2
+        if (findType<VkBaseInStructure>(info->pNext, VK_STRUCTURE_TYPE_TENSOR_PLANE_INFO_ARM)) {
+            requirements->memoryRequirements = {};
+            if (auto *dedicated = findTypeMutable<VkMemoryDedicatedRequirements>(
+                    requirements->pNext, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS)) {
+                dedicated->prefersDedicatedAllocation = VK_FALSE;
+                dedicated->requiresDedicatedAllocation = VK_FALSE;
+            }
+            tensorLog(Severity::Error) << "Tensor plane memory queries are not implemented" << std::endl;
+            return;
+        }
+#endif
         const auto *tensor = reinterpret_cast<const TensorARM *>(info->tensor);
         tensor->getMemoryRequirements(*VulkanLayerImpl::getHandle(device), &requirements->memoryRequirements);
     }
 
     static VkResult VKAPI_CALL vkBindTensorMemoryARM(VkDevice device, uint32_t bindInfoCount,
                                                      const VkBindTensorMemoryInfoARM *bindInfos) {
+#ifdef VK_ARM_tensors2
+        // Check the whole batch before binding any ordinary tensor in it.
+        for (uint32_t i = 0; i < bindInfoCount; ++i) {
+            if (findType<VkBaseInStructure>(bindInfos[i].pNext, VK_STRUCTURE_TYPE_TENSOR_PLANE_INFO_ARM)) {
+                tensorLog(Severity::Error) << "Tensor plane memory binding is not implemented" << std::endl;
+                return VK_ERROR_FEATURE_NOT_PRESENT;
+            }
+        }
+#endif
         auto handle = VulkanLayerImpl::getHandle(device);
         VkResult result = VK_SUCCESS;
         for (uint32_t i = 0; i < bindInfoCount; i++) {
@@ -304,6 +335,22 @@ class TensorLayer : public VulkanLayerImpl {
     static void VKAPI_CALL vkGetDeviceTensorMemoryRequirementsARM(VkDevice device,
                                                                   const VkDeviceTensorMemoryRequirementsARM *info,
                                                                   VkMemoryRequirements2 *requirements) {
+#ifdef VK_ARM_tensors2
+        const auto *createInfo = info->pCreateInfo;
+        if (findType<VkBaseInStructure>(createInfo->pNext, VK_STRUCTURE_TYPE_PLANAR_TENSOR_DESCRIPTION_ARM) ||
+            findType<VkBaseInStructure>(createInfo->pNext, VK_STRUCTURE_TYPE_TENSOR_BLOCK_SCALING_CREATE_INFO_ARM) ||
+            (createInfo->pDescription &&
+             createInfo->pDescription->format == VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM)) {
+            tensorLog(Severity::Error) << "Tensors2 memory queries are not implemented" << std::endl;
+            requirements->memoryRequirements = {};
+            if (auto *dedicated = findTypeMutable<VkMemoryDedicatedRequirements>(
+                    requirements->pNext, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS)) {
+                dedicated->prefersDedicatedAllocation = VK_FALSE;
+                dedicated->requiresDedicatedAllocation = VK_FALSE;
+            }
+            return;
+        }
+#endif
         TensorARM::getDeviceTensorMemoryRequirements(*VulkanLayerImpl::getHandle(device), *info->pCreateInfo,
                                                      requirements);
     }
@@ -800,8 +847,19 @@ class TensorLayer : public VulkanLayerImpl {
         auto handle = VulkanLayerImpl::getHandle(physicalDevice);
         auto *pTensorFormatProp = findTypeMutable<VkTensorFormatPropertiesARM>(
             pFormatProperties->pNext, VK_STRUCTURE_TYPE_TENSOR_FORMAT_PROPERTIES_ARM);
+#ifdef VK_ARM_tensors2
+        // Assumption: downstream drivers accept draft E8M0 format queries, as they do for existing FP8 formats.
+#endif
         handle->loader->vkGetPhysicalDeviceFormatProperties2(physicalDevice, format, pFormatProperties);
         if (pTensorFormatProp) {
+#ifdef VK_ARM_tensors2
+            if (format == VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM) {
+                // The graph layer does not yet lower E8M0 shader use, so advertise no tensor capabilities.
+                pTensorFormatProp->optimalTilingTensorFeatures = 0;
+                pTensorFormatProp->linearTilingTensorFeatures = 0;
+                return;
+            }
+#endif
             pTensorFormatProp->optimalTilingTensorFeatures = VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT |
                                                              VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT |
                                                              VK_FORMAT_FEATURE_2_TENSOR_DATA_GRAPH_BIT_ARM;
@@ -818,6 +876,15 @@ class TensorLayer : public VulkanLayerImpl {
         auto *pTensorFeatures = findTypeMutable<VkPhysicalDeviceTensorFeaturesARM>(
             pFeatures->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_FEATURES_ARM);
         handle->loader->vkGetPhysicalDeviceFeatures2(physicalDevice, pFeatures);
+#ifdef VK_ARM_tensors2
+        if (auto *features = findTypeMutable<VkPhysicalDeviceTensors2FeaturesARM>(
+                pFeatures->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSORS_2_FEATURES_ARM)) {
+            tensorLog(Severity::Error) << "Tensors2 feature queries are not implemented" << std::endl;
+            features->tensorFlexibleStrides = VK_FALSE;
+            features->tensorBlockScaled = VK_FALSE;
+            features->tensorSparsity = VK_FALSE;
+        }
+#endif
         if (pTensorFeatures) {
             // query buffer feature
             VkPhysicalDeviceVulkan12Features queryVulkan12Feature{};
@@ -883,9 +950,22 @@ class TensorLayer : public VulkanLayerImpl {
 
     static VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *createInfo,
                                               const VkAllocationCallbacks *allocator, VkDevice *device) {
+#ifdef VK_ARM_tensors2
+        if (const auto *features = findType<VkPhysicalDeviceTensors2FeaturesARM>(
+                createInfo->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSORS_2_FEATURES_ARM);
+            features && (features->tensorFlexibleStrides || features->tensorBlockScaled || features->tensorSparsity)) {
+            tensorLog(Severity::Error) << "Tensors2 device features are not implemented" << std::endl;
+            *device = VK_NULL_HANDLE;
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        }
+#endif
         auto originCreateInfoChain = dumpVkStructureList(createInfo);
 
         VkDeviceCreateInfo newCreateInfo{*createInfo};
+#ifdef VK_ARM_tensors2
+        findAndRemoveType<VkPhysicalDeviceTensors2FeaturesARM>(
+            &newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSORS_2_FEATURES_ARM);
+#endif
         const auto tensorFeatures = findAndRemoveType<VkPhysicalDeviceTensorFeaturesARM>(
             &newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_FEATURES_ARM);
         // Tensor descriptor arrays are represented by uniform-buffer descriptor arrays.
