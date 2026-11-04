@@ -155,11 +155,18 @@ class RGBToY : public ComputePipeline {
     SpecConstants specConstants_;
     VkSampler nearestSampler_;
 
+    struct Bindings {
+        static constexpr uint32_t srcImage = 0;
+        static constexpr uint32_t dstDownsampledImage = 1;
+        static constexpr uint32_t dstDownsampledBuffer = 2;
+        static constexpr uint32_t dstFullBuffer = 3;
+    };
+
     inline static const DescriptorConfigs descriptorConfigs_{
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // Src
-        {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // DstDs
-        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // DstDs
-        {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // DstFull
+        {Bindings::srcImage, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
+        {Bindings::dstDownsampledImage, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},
+        {Bindings::dstDownsampledBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},
+        {Bindings::dstFullBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},
     };
 };
 
@@ -196,9 +203,14 @@ class Downsample : public ComputePipeline {
     SpecConstants specConstants_;
     VkSampler nearestSampler_;
 
+    struct Bindings {
+        static constexpr uint32_t srcImage = 0;
+        static constexpr uint32_t dstImage = 1;
+    };
+
     inline static const DescriptorConfigs descriptorConfigs_{
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // Src
-        {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // Dst
+        {Bindings::srcImage, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
+        {Bindings::dstImage, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},
     };
 };
 
@@ -242,11 +254,18 @@ class MVProcessAndWarp : public ComputePipeline {
     SpecConstants specConstants_;
     VkSampler nearestSampler_;
 
+    struct Bindings {
+        static constexpr uint32_t srcSearch = 0;
+        static constexpr uint32_t srcFlow = 1;
+        static constexpr uint32_t dstWarped = 2;
+        static constexpr uint32_t dstFlow = 3;
+    };
+
     inline static const DescriptorConfigs descriptorConfigs_{
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // Src
-        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // SrcFlow
-        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // Dst
-        {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // DstFlow
+        {Bindings::srcSearch, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
+        {Bindings::srcFlow, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
+        {Bindings::dstWarped, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},
+        {Bindings::dstFlow, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},
     };
 };
 
@@ -286,10 +305,16 @@ class DenseWarp : public ComputePipeline {
     SpecConstants specConstants_;
     VkSampler nearestSampler_;
 
+    struct Bindings {
+        static constexpr uint32_t srcSearch = 0;
+        static constexpr uint32_t srcFlow = 1;
+        static constexpr uint32_t dstWarped = 2;
+    };
+
     inline static const DescriptorConfigs descriptorConfigs_{
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // Src
-        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // SrcFlow
-        {2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // Dst
+        {Bindings::srcSearch, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
+        {Bindings::srcFlow, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
+        {Bindings::dstWarped, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},
     };
 };
 
@@ -326,9 +351,14 @@ class MedianFilter : public ComputePipeline {
     SpecConstants specConstants_;
     VkSampler nearestSampler_;
 
+    struct Bindings {
+        static constexpr uint32_t srcFlow = 0;
+        static constexpr uint32_t dstFlow = 1;
+    };
+
     inline static const DescriptorConfigs descriptorConfigs_{
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // Src
-        {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // Dst
+        {Bindings::srcFlow, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
+        {Bindings::dstFlow, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},
     };
 };
 
@@ -367,10 +397,16 @@ class BilateralFilter : public ComputePipeline {
     SpecConstants specConstants_;
     VkSampler nearestSampler_;
 
+    struct Bindings {
+        static constexpr uint32_t srcTemplate = 0;
+        static constexpr uint32_t srcFlow = 1;
+        static constexpr uint32_t dstFlow = 2;
+    };
+
     inline static const DescriptorConfigs descriptorConfigs_{
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // Src
-        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // SrcFlow
-        {2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // DstFlow
+        {Bindings::srcTemplate, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
+        {Bindings::srcFlow, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
+        {Bindings::dstFlow, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},
     };
 };
 
@@ -415,12 +451,20 @@ class SubpixelME : public ComputePipeline {
     VkSampler nearestZeroPadSampler_;
     VkSampler nearestRepeatPadSampler_;
 
+    struct Bindings {
+        static constexpr uint32_t srcSearch = 0;
+        static constexpr uint32_t srcTemplate = 1;
+        static constexpr uint32_t srcFlow = 2;
+        static constexpr uint32_t srcPrevLevelFlow = 3;
+        static constexpr uint32_t dstFlow = 4;
+    };
+
     inline static const DescriptorConfigs descriptorConfigs_{
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // SrcSearch
-        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // SrcTemplate
-        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // SrcFlow
-        {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // PrevFlow
-        {4, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // DstFlow
+        {Bindings::srcSearch, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
+        {Bindings::srcTemplate, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
+        {Bindings::srcFlow, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},
+        {Bindings::srcPrevLevelFlow, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},
+        {Bindings::dstFlow, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},
     };
 };
 
@@ -466,13 +510,22 @@ class MVReplace : public ComputePipeline {
     SpecConstants specConstants_;
     VkSampler nearestSampler_;
 
+    struct Bindings {
+        static constexpr uint32_t srcInputMV = 0;
+        static constexpr uint32_t srcBlockMatchFlow = 1;
+        static constexpr uint32_t srcInputMVCost = 2;
+        static constexpr uint32_t srcBlockMatchCost = 3;
+        static constexpr uint32_t dstFlow = 4;
+        static constexpr uint32_t dstCost = 5;
+    };
+
     inline static const DescriptorConfigs descriptorConfigs_{
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // MvInput
-        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // FlowBlockMatch
-        {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // CostAtInputMv
-        {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // MinCostBlockMatchMem
-        {4, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // DstFlow
-        {5, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // DstCost
+        {Bindings::srcInputMV, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
+        {Bindings::srcBlockMatchFlow, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
+        {Bindings::srcInputMVCost, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
+        {Bindings::srcBlockMatchCost, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
+        {Bindings::dstFlow, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},
+        {Bindings::dstCost, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},
     };
 };
 
@@ -526,11 +579,18 @@ class BlockMatch : public ComputePipeline {
     SpecConstants specConstants_;
     VkSampler nearestSampler_;
 
+    struct Bindings {
+        static constexpr uint32_t srcTemplate = 0;
+        static constexpr uint32_t srcSearch = 1;
+        static constexpr uint32_t dstFlow = 2;
+        static constexpr uint32_t dstCost = 3;
+    };
+
     inline static const DescriptorConfigs descriptorConfigs_{
-        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // SrcTemplate
-        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER}, // SrcSearch
-        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},         // DstFlow
-        {3, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},          // DstCost
+        {Bindings::srcTemplate, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
+        {Bindings::srcSearch, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
+        {Bindings::dstFlow, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER},
+        {Bindings::dstCost, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE},
     };
 };
 
