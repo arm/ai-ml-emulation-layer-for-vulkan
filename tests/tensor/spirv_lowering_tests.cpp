@@ -414,6 +414,40 @@ TEST(TensorSpirvLowering, LowersBooleanCastAndLayoutVariants) {
     }
 }
 
+TEST(TensorSpirvLowering, LowersBroadcastAndElementwiseVariants) {
+    std::map<std::string_view, size_t> families{{"elementwise_unary_", 0},
+                                                {"elementwise_binary_", 0},
+                                                {"mul_", 0},
+                                                {"arithmetic_right_shift_", 0},
+                                                {"select_", 0}};
+    for (const auto &[name, module] : compute::precompiledSpirvModules) {
+        const auto family = std::find_if(families.begin(), families.end(), [shaderName = name](const auto &entry) {
+            return shaderName.rfind(entry.first, 0) == 0;
+        });
+        if (family == families.end()) {
+            continue;
+        }
+        SCOPED_TRACE(name);
+        const auto &[words, size] = module;
+        const std::vector<uint32_t> input(words, words + size);
+        auto spirv = input;
+        ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+        EXPECT_EQ(specializationInstructions(spirv), specializationInstructions(input));
+        for (const uint32_t rank : {1u, 3u, 6u}) {
+            SCOPED_TRACE(rank);
+            std::unordered_map<uint32_t, std::vector<uint32_t>> values{{0, {rank}}};
+            if (family->first != "elementwise_unary_" && family->first != "select_") {
+                values.emplace(1, std::vector<uint32_t>{rank});
+            }
+            ASSERT_NO_FATAL_FAILURE(expectSpecialized(spirv, values));
+        }
+        ++family->second;
+    }
+    for (const auto &[name, variants] : families) {
+        EXPECT_GT(variants, 0u) << name;
+    }
+}
+
 TEST(TensorSpirvLowering, LowersSideTensorAndReductionVariants) {
     std::map<std::string_view, size_t> families{{"rescale_", 0},
                                                 {"pad_", 0},
