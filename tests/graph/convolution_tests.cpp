@@ -125,7 +125,7 @@ void expectConv2DStorageFormats(std::shared_ptr<Device> &device, vk::Format inpu
     std::memcpy(expected.data(), &ref, sizeof(ref));
     if (negateWeights) {
         for (size_t i = 0; i < expected.size(); ++i) {
-            expected[i] = -expected[i] + 2 * static_cast<int32_t>(i % 3);
+            expected[i] = -expected[i] + (2 * static_cast<int32_t>(i % 3));
         }
     }
     // Compare the encoded result so negative TOSA values also match R32_UINT storage.
@@ -343,7 +343,7 @@ TEST_F(MLEmulationLayerGraphForVulkan, Conv3DLargeStridePadRegression) {
 
     const auto setWeight = [&](int64_t oc, int64_t kd, int64_t kh, int64_t kx, int64_t ic, int8_t value) {
         const auto flatIndex = static_cast<size_t>(
-            (((((oc * kKernelDepth) + kd) * kKernelHeight + kh) * kKernelWidth + kx) * kInputChannels) + ic);
+            (((((((oc * kKernelDepth) + kd) * kKernelHeight) + kh) * kKernelWidth) + kx) * kInputChannels) + ic);
         weightValues[flatIndex] = value;
     };
 
@@ -351,7 +351,7 @@ TEST_F(MLEmulationLayerGraphForVulkan, Conv3DLargeStridePadRegression) {
         for (size_t kd = 0; kd < static_cast<size_t>(kKernelDepth); ++kd) {
             for (size_t kh = 0; kh < static_cast<size_t>(kKernelHeight); ++kh) {
                 const size_t blockBase =
-                    ((oc * static_cast<size_t>(kKernelDepth) + kd) * static_cast<size_t>(kKernelHeight) + kh) * 8;
+                    ((((oc * static_cast<size_t>(kKernelDepth)) + kd) * static_cast<size_t>(kKernelHeight)) + kh) * 8;
                 for (size_t ic = 0; ic < static_cast<size_t>(kInputChannels); ++ic) {
                     setWeight(static_cast<int64_t>(oc), static_cast<int64_t>(kd), static_cast<int64_t>(kh), 8190,
                               static_cast<int64_t>(ic), relevantWeights[blockBase + ic]);

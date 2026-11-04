@@ -57,8 +57,6 @@ std::string profilingPipelineKindToString(ProfilingPipelineKind pipelineKind) {
     return "unknown";
 }
 
-} // namespace
-
 struct SampleInfo {
     uint32_t pipelineIndex{};
     uint32_t beforeQuery{};
@@ -66,6 +64,8 @@ struct SampleInfo {
     std::string pipelineKind;
     std::string operatorName;
 };
+
+} // namespace
 
 struct GraphProfiler::QueryPoolRecord {
     VkQueryPool queryPool{};

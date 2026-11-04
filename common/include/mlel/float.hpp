@@ -181,7 +181,7 @@ template <std::size_t EXPONENT, std::size_t MANTISSA> class FloatingPoint {
         double max = 1 << EXPONENT_BIAS;
 
         // Multiply with largest possible mantissa
-        max *= 1 + double(MANTISSA_DIVISOR - 1) / MANTISSA_DIVISOR;
+        max *= 1 + (double(MANTISSA_DIVISOR - 1) / MANTISSA_DIVISOR);
 
         return max;
     }

@@ -1,0 +1,37 @@
+#
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+#
+# Use focused test checks with the shared warning policy and check options.
+InheritParentConfig: true
+Checks: >
+    -*,
+    bugprone-assert-side-effect,
+    bugprone-assignment-in-if-condition,
+    bugprone-bool-pointer-implicit-conversion,
+    bugprone-dangling-handle,
+    bugprone-incorrect-roundings,
+    bugprone-integer-division,
+    bugprone-macro-parentheses,
+    bugprone-macro-repeated-side-effects,
+    bugprone-multiple-statement-macro,
+    bugprone-shared-ptr-array-mismatch,
+    bugprone-sizeof-container,
+    bugprone-sizeof-expression,
+    bugprone-stringview-nullptr,
+    bugprone-suspicious-memory-comparison,
+    bugprone-suspicious-memset-usage,
+    bugprone-suspicious-missing-comma,
+    bugprone-suspicious-semicolon,
+    bugprone-swapped-arguments,
+    bugprone-undefined-memory-manipulation,
+    bugprone-unique-ptr-array-mismatch,
+    bugprone-unused-raii,
+    bugprone-unused-return-value,
+    bugprone-use-after-move,
+    google-readability-avoid-underscore-in-googletest-name,
+    modernize-use-nullptr,
+    modernize-use-override,
+    readability-braces-around-statements,
+    readability-identifier-naming,
+    readability-misleading-indentation,
