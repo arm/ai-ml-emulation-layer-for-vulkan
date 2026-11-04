@@ -18,7 +18,7 @@ struct TensorLayout {
     static constexpr size_t MAX_DIMENSIONS = maxTensorRank;
 
     TensorLayout() = default;
-    explicit TensorLayout(const VkTensorCreateInfoARM &createInfo);
+    TensorLayout(const VkTensorDescriptionARM &description, VkTensorCreateFlagsARM flags);
 
     std::vector<int64_t> dimensions;
     std::vector<int64_t> strides;

@@ -56,9 +56,8 @@ VkBufferUsageFlags TensorLayout::convertToBufferUsageFlags(VkTensorUsageFlagsARM
     return bufferUsage;
 }
 
-TensorLayout::TensorLayout(const VkTensorCreateInfoARM &createInfo) {
-    const VkTensorDescriptionARM &desc = *createInfo.pDescription;
-    format = desc.format;
+TensorLayout::TensorLayout(const VkTensorDescriptionARM &desc, VkTensorCreateFlagsARM tensorFlags)
+    : format(desc.format) {
     if (desc.dimensionCount <= 0 || desc.dimensionCount > TensorLayout::MAX_DIMENSIONS) {
         throw std::runtime_error(std::string("Tensor dimension count not supported: ") +
                                  std::to_string(desc.dimensionCount));
@@ -66,7 +65,7 @@ TensorLayout::TensorLayout(const VkTensorCreateInfoARM &createInfo) {
     usesImageAliasing = (desc.usage & VK_TENSOR_USAGE_IMAGE_ALIASING_BIT_ARM) != 0;
 
     usage = convertToBufferUsageFlags(desc.usage);
-    flags = convertToBufferCreateFlags(createInfo.flags);
+    flags = convertToBufferCreateFlags(tensorFlags);
 
     uint32_t dimensionCount = desc.dimensionCount;
     dimensions = std::vector<int64_t>{desc.pDimensions, desc.pDimensions + dimensionCount};
