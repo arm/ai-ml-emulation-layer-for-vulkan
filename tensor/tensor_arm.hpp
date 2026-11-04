@@ -17,6 +17,20 @@
 namespace mlsdk::el::layer {
 class TensorCopyPipeline;
 
+// Backing storage for one physical tensor layout.
+struct TensorPlane {
+    TensorLayout layout;
+    VkBuffer buffer = VK_NULL_HANDLE;
+};
+
+// A tensor's backing storage. Ordinary tensors have one entry.
+struct TensorStorage {
+    TensorStorage() : planes(1) {}
+    explicit TensorStorage(const VkTensorCreateInfoARM &createInfo);
+
+    std::vector<TensorPlane> planes;
+};
+
 class TensorARM {
   public:
     TensorARM() = default;
@@ -24,7 +38,7 @@ class TensorARM {
     TensorARM(const TensorARM &) = delete;
     TensorARM &operator=(const TensorARM &) = delete;
 
-    VkBuffer getTensorBuffer() const { return m_tensorBuffer; };
+    VkBuffer getTensorBuffer() const { return m_storage.planes.front().buffer; };
     const TensorLayout &getTensorInfo() const { return m_info; };
 
     VkResult create(const Device &dev, const VkTensorCreateInfoARM &createInfo, const VkAllocationCallbacks *allocator);
@@ -32,14 +46,14 @@ class TensorARM {
     void getMemoryRequirements(const Device &dev, VkMemoryRequirements *requirements) const;
     static void getDeviceTensorMemoryRequirements(const Device &dev, const VkTensorCreateInfoARM &createInfo,
                                                   VkMemoryRequirements2 *requirements);
-    VkResult bindTensorMemory(const Device &dev, VkDeviceMemory memory, VkDeviceSize offset);
+    VkResult bindTensorMemory(const Device &dev, VkDeviceMemory memory, VkDeviceSize offset) const;
     void updateAliasedTensorInfo(const Device &dev, VkImage image);
     void copyToTensor(CommandBuffer &cmd, const TensorARM &dstTensor);
-    VkResult getOpaqueCaptureDescriptorDataEXT(const Device &dev, void *pData);
+    VkResult getOpaqueCaptureDescriptorDataEXT(const Device &dev, void *pData) const;
 
   private:
-    VkBuffer m_tensorBuffer = {};
     TensorLayout m_info;
+    TensorStorage m_storage;
     std::shared_ptr<TensorCopyPipeline> m_copy_pipeline;
 };
 

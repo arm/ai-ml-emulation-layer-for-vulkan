@@ -32,7 +32,12 @@ TEST(TensorARM, LinearImageAliasingUsesImageRowPitch) {
         0, 64, 16, 64, 64,
     };
 
-    ASSERT_TRUE(mlsdk::el::layer::TensorLayout(description, 0).usesImageAliasing);
+    const VkTensorCreateInfoARM createInfo{
+        VK_STRUCTURE_TYPE_TENSOR_CREATE_INFO_ARM, nullptr, 0, &description, VK_SHARING_MODE_EXCLUSIVE, 0, nullptr};
+    const mlsdk::el::layer::TensorStorage storage(createInfo);
+    ASSERT_EQ(storage.planes.size(), 1u);
+    ASSERT_TRUE(storage.planes.front().layout.usesImageAliasing);
+    EXPECT_EQ(storage.planes.front().layout.dimensions, dimensions);
 
     mlsdk::el::layer::tensor_description_detail::updateAliasedStrides(dimensions.size(), strides, imageLayout);
 

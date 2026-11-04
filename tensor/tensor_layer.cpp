@@ -329,7 +329,7 @@ class TensorLayer : public VulkanLayerImpl {
     static VkResult vkGetTensorOpaqueCaptureDescriptorDataARM(VkDevice device,
                                                               const VkTensorCaptureDescriptorDataInfoARM *pInfo,
                                                               void *pData) {
-        auto *tensor = reinterpret_cast<TensorARM *>(pInfo->tensor);
+        const auto *tensor = reinterpret_cast<const TensorARM *>(pInfo->tensor);
         return tensor->getOpaqueCaptureDescriptorDataEXT(*VulkanLayerImpl::getHandle(device), pData);
     }
 
