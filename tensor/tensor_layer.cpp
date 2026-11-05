@@ -11,6 +11,7 @@
 #include "mlel/vulkan_layer.hpp"
 
 #include "descriptor_binding.hpp"
+#include "memory_aliasing.hpp"
 #include "tensor_arm.hpp"
 #include "tensor_log.hpp"
 #include "tensor_processor.hpp"
@@ -61,51 +62,6 @@ std::size_t spirvHash(const uint32_t *spirvCode, std::size_t spirvSize) {
 /*******************************************************************************
  * Layer
  *******************************************************************************/
-
-// This class manages aliasing of images and tensors to device memory and offsets.
-class MemoryAliasing {
-    using Resource = std::variant<VkImage, VkTensorARM>;
-    struct DeviceMemoryAndOffset {
-        VkDeviceMemory deviceMemory;
-        VkDeviceSize offset;
-        bool operator==(const DeviceMemoryAndOffset &other) const noexcept {
-            return deviceMemory == other.deviceMemory && offset == other.offset;
-        }
-    };
-
-    std::map<Resource, DeviceMemoryAndOffset> resourceMap;
-
-  public:
-    template <typename T>
-    void addAliasingResource(const VkDeviceMemory &memory, const VkDeviceSize &offset, T resource) {
-        resourceMap[resource] = {memory, offset};
-    }
-
-    template <typename T>
-    std::vector<T> getAliasingResources(const VkDeviceMemory &memory, const VkDeviceSize &offset) const {
-        std::vector<T> resources;
-        for (const auto &[resource, memAndOffset] : resourceMap) {
-            if (std::holds_alternative<T>(resource) && memAndOffset == DeviceMemoryAndOffset{memory, offset}) {
-                resources.push_back(std::get<T>(resource));
-            }
-        }
-        return resources;
-    }
-
-    template <typename T> void removeAliasingResource(T resource) { resourceMap.erase(Resource(resource)); }
-
-    void removeAliasingMemory(const VkDeviceMemory &mem) {
-        std::vector<Resource> resourcesToRemove;
-        for (const auto &[resource, memory] : resourceMap) {
-            if (memory.deviceMemory == mem) {
-                resourcesToRemove.push_back(resource);
-            }
-        }
-        for (auto resource : resourcesToRemove) {
-            resourceMap.erase(resource);
-        }
-    }
-};
 
 constexpr std::array<const VkExtensionProperties, 1> extensions = {
     VkExtensionProperties{VK_ARM_TENSORS_EXTENSION_NAME, VK_ARM_TENSORS_SPEC_VERSION},
