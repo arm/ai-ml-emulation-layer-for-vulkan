@@ -15,7 +15,7 @@ using namespace mlsdk::el::utils;
 namespace mlsdk::el::layer {
 VkResult TensorARM::create(const Device &dev, const VkTensorCreateInfoARM &createInfo,
                            const VkAllocationCallbacks *allocator) {
-    m_info = TensorLayout(createInfo);
+    m_info = TensorLayout(*createInfo.pDescription, createInfo.flags);
     const auto *pCaptureDescriptorInfo = findType<VkOpaqueCaptureDescriptorDataCreateInfoEXT>(
         createInfo.pNext, VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT);
     const VkBufferCreateInfo bufferInfo = {
@@ -42,7 +42,7 @@ void TensorARM::getMemoryRequirements(const Device &dev, VkMemoryRequirements *r
 
 void TensorARM::getDeviceTensorMemoryRequirements(const Device &dev, const VkTensorCreateInfoARM &createInfo,
                                                   VkMemoryRequirements2 *requirements) {
-    TensorLayout info(createInfo);
+    TensorLayout info(*createInfo.pDescription, createInfo.flags);
     const VkBufferCreateInfo bufferInfo = {
         VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         nullptr,
