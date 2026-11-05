@@ -53,6 +53,14 @@ std::shared_ptr<Device> createDevice() {
     return std::make_shared<Device>(physicalDevice, extensions, &features2);
 }
 
+VKAPI_ATTR vk::Bool32 VKAPI_CALL collectOpticalFlowValidationError(vk::DebugUtilsMessageSeverityFlagBitsEXT,
+                                                                   vk::DebugUtilsMessageTypeFlagsEXT,
+                                                                   const vk::DebugUtilsMessengerCallbackDataEXT *data,
+                                                                   void *userData) {
+    static_cast<std::vector<std::string> *>(userData)->emplace_back(data->pMessage);
+    return VK_TRUE;
+}
+
 class MLEmulationLayerOpticalFlowSharedDevice : public testing::Test {
   protected:
     static void SetUpTestSuite() { device = createDevice(); }
@@ -351,8 +359,8 @@ class OpticalFlow {
             imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
             imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
             imageBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-            imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-            imageBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
+            imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_DATA_GRAPH_BIT_ARM;
+            imageBarrier.dstAccessMask = VK_ACCESS_2_DATA_GRAPH_READ_BIT_ARM | VK_ACCESS_2_DATA_GRAPH_WRITE_BIT_ARM;
             imageBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
             imageBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
             imageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -813,6 +821,74 @@ TEST_F(MLEmulationLayerOpticalFlowSharedDevice, SessionsRecordedBeforeOverlappin
         const auto flow = readFlowImage(device, *output->image, flowWidth, flowHeight);
         ASSERT_TRUE(std::any_of(flow.begin(), flow.end(), [](uint8_t value) { return value != 0xFF; }));
     }
+}
+
+TEST(MLEmulationLayerOpticalFlowForVulkan, SameSessionRecordedTwiceWithoutSubmission) {
+    vk::raii::Context context;
+    const auto layers = context.enumerateInstanceLayerProperties();
+    if (std::none_of(layers.begin(), layers.end(), [](const auto &layer) {
+            return std::strcmp(layer.layerName, "VK_LAYER_KHRONOS_validation") == 0;
+        })) {
+        GTEST_SKIP() << "Validation layer is required to detect command buffer invalidation";
+    }
+
+    const ScopedEnvironment validation{"VMEL_VALIDATION", "1"};
+    const auto device = createDevice();
+    std::vector<std::string> errors;
+    const vk::DebugUtilsMessengerCreateInfoEXT messengerInfo{{},
+                                                             vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
+                                                             vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation,
+                                                             collectOpticalFlowValidationError,
+                                                             &errors};
+    const auto &instance = &(*device->getPhysicalDevice()->getInstance());
+    const vk::raii::DebugUtilsMessengerEXT messenger{instance, messengerInfo};
+
+    constexpr uint32_t width = 64;
+    constexpr uint32_t height = 64;
+    const auto makeInput = [&]() {
+        return createImageResource(device, vk::Format::eR8Unorm, width, height,
+                                   vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage);
+    };
+    const auto makeOutput = [&]() {
+        return createImageResource(device, vk::Format::eR16G16Sfloat, width / 4, height / 4,
+                                   vk::ImageUsageFlagBits::eStorage);
+    };
+    auto input0 = makeInput();
+    auto reference0 = makeInput();
+    auto output0 = makeOutput();
+    auto input1 = makeInput();
+    auto reference1 = makeInput();
+    auto output1 = makeOutput();
+
+    OpticalFlow opticalFlow{device, width, height, OpticalFlow::Config{}};
+    // Populate separate application descriptor sets before recording either dispatch.
+    opticalFlow.bindImages(*input0.view, *reference0.view, *output0.view, std::nullopt, std::nullopt, 0);
+    opticalFlow.bindImages(*input1.view, *reference1.view, *output1.view, std::nullopt, std::nullopt, 1);
+    ASSERT_TRUE(errors.empty()) << testing::PrintToString(errors);
+
+    const vk::CommandPoolCreateInfo commandPoolInfo{{}, device->getPhysicalDevice()->getComputeFamilyIndex()};
+    vk::raii::CommandPool commandPool{&(*device), commandPoolInfo};
+    const vk::CommandBufferAllocateInfo allocateInfo{*commandPool, vk::CommandBufferLevel::ePrimary, 3};
+    vk::raii::CommandBuffers commandBuffers{&(*device), allocateInfo};
+
+    // No commands are submitted: image initialization, layout transitions, and GPU synchronization are unnecessary.
+    // Keep the first command buffer recording so vkEndCommandBuffer can expose invalidation without a queue submit.
+    commandBuffers[0].begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    opticalFlow.recordDispatch(*commandBuffers[0], {}, opticalFlow.session(), 0);
+    ASSERT_TRUE(errors.empty()) << testing::PrintToString(errors);
+
+    commandBuffers[1].begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    opticalFlow.recordDispatch(*commandBuffers[1], {}, opticalFlow.session(), 1);
+    commandBuffers[1].end();
+
+    const auto result = (&(*device)).getDispatcher()->vkEndCommandBuffer(*commandBuffers[0]);
+    EXPECT_EQ(result, VK_SUCCESS) << "Recording a second dispatch must preserve the first command buffer";
+
+    commandBuffers[2].begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    opticalFlow.recordDispatch(*commandBuffers[2], {}, opticalFlow.session(), 0);
+    opticalFlow.recordDispatch(*commandBuffers[2], {}, opticalFlow.session(), 1);
+    commandBuffers[2].end();
+    EXPECT_TRUE(errors.empty()) << testing::PrintToString(errors);
 }
 
 TEST_F(MLEmulationLayerOpticalFlowSharedDevice, RGBToYGrid1x1) {

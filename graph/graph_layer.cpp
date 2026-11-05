@@ -357,9 +357,8 @@ constexpr std::array<const VkExtensionProperties, 3> extensions{
     VkExtensionProperties{VK_ARM_DATA_GRAPH_OPTICAL_FLOW_EXTENSION_NAME, VK_ARM_DATA_GRAPH_OPTICAL_FLOW_SPEC_VERSION},
 };
 
-constexpr std::array<const VkExtensionProperties, 2> requiredExtensions = {
+constexpr std::array<const VkExtensionProperties, 1> requiredExtensions = {
     VkExtensionProperties{VK_ARM_TENSORS_EXTENSION_NAME, VK_ARM_TENSORS_SPEC_VERSION},
-    VkExtensionProperties{VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME, VK_KHR_SYNCHRONIZATION_2_SPEC_VERSION},
 };
 
 constexpr VkLayerProperties layerProperties = {
@@ -1238,9 +1237,24 @@ class GraphLayer : public VulkanLayerImpl {
 
     static VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *createInfo,
                                               const VkAllocationCallbacks *allocator, VkDevice *device) {
+        std::vector<const char *> deviceExtensions{createInfo->ppEnabledExtensionNames,
+                                                   createInfo->ppEnabledExtensionNames +
+                                                       createInfo->enabledExtensionCount};
+        const auto hasExtension = [&](const char *name) {
+            return std::any_of(deviceExtensions.begin(), deviceExtensions.end(),
+                               [name](const char *extension) { return std::strcmp(extension, name) == 0; });
+        };
+        // Push descriptors are an implementation dependency of optical flow only.
+        if (hasExtension(VK_ARM_DATA_GRAPH_OPTICAL_FLOW_EXTENSION_NAME) &&
+            !hasExtension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME)) {
+            deviceExtensions.push_back(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
+        }
+
         auto originCreateInfoChain = dumpVkStructureList(createInfo);
 
         VkDeviceCreateInfo newCreateInfo{*createInfo};
+        newCreateInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+        newCreateInfo.ppEnabledExtensionNames = deviceExtensions.data();
         findAndRemoveType<VkPhysicalDeviceDataGraphFeaturesARM>(
             &newCreateInfo, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM);
         findAndRemoveType<VkPhysicalDeviceDataGraphOpticalFlowFeaturesARM>(

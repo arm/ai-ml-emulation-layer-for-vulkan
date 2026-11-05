@@ -29,6 +29,7 @@ struct DescriptorConfig {
     uint32_t index;
     VkDescriptorType type;
 };
+
 using DescriptorConfigs = std::vector<DescriptorConfig>;
 
 struct SpecConstants {
@@ -64,26 +65,21 @@ class ComputePipeline {
     virtual ~ComputePipeline();
 
     void makePipeline();
-    void setInputStorage(VkCommandBuffer cmdBuf, uint32_t binding, const std::shared_ptr<Image> &image,
-                         VkSampler sampler = VK_NULL_HANDLE);
-    void setOutputStorage(VkCommandBuffer cmdBuf, uint32_t binding, const std::shared_ptr<Image> &image);
-
     virtual void bindAndDispatch(VkCommandBuffer cmdBuf) = 0;
     const std::string &getDebugName() const;
 
   protected:
+    class DescriptorBatch;
+
+    void setInputStorage(VkCommandBuffer cmdBuf, DescriptorBatch &batch, uint32_t binding,
+                         const std::shared_ptr<Image> &image, VkSampler sampler = VK_NULL_HANDLE);
+    void setOutputStorage(VkCommandBuffer cmdBuf, DescriptorBatch &batch, uint32_t binding,
+                          const std::shared_ptr<Image> &image);
+    void recordDispatch(VkCommandBuffer cmdBuf, const DescriptorBatch &batch);
     VkSampler createSampler(VkFilter filter, VkSamplerAddressMode addressMode, bool unnormalizedCoordinates);
     template <typename T> void setPushConstants(VkCommandBuffer cmdBuf, const T &constants);
-    void bindPipeline(VkCommandBuffer cmdBuf);
-    void dispatchPipeline(VkCommandBuffer cmdBuf);
 
   private:
-    void setCombinedImageSampler(uint32_t binding, const std::shared_ptr<Image> &image, VkSampler sampler);
-    void setOutputImage(uint32_t binding, const std::shared_ptr<Image> &image);
-    void setImage(uint32_t binding, const std::shared_ptr<Image> &image, VkDescriptorType descriptorType,
-                  VkSampler sampler);
-    void setBuffer(uint32_t binding, const std::shared_ptr<Image> &image);
-
     std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> loader_;
     VkDevice device_;
     const std::shared_ptr<PipelineCache> &pipelineCache_;
@@ -96,8 +92,6 @@ class ComputePipeline {
 
     VkPipelineLayout pipelineLayout_{};
     VkDescriptorSetLayout descriptorSetLayout_{};
-    VkDescriptorPool descriptorPool_{};
-    VkDescriptorSet descriptorSet_{};
     const VkAllocationCallbacks *pAllocator_ = nullptr;
     std::vector<VkSampler> samplers_;
 
