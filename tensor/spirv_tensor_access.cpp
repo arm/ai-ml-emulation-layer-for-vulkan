@@ -27,12 +27,21 @@ uint32_t nullConstant(IRContext &context, uint32_t type) {
     return context.get_constant_mgr()->GetNullConstId(context.get_type_mgr()->GetType(type));
 }
 
+// Examples below are shader pseudocode; C++ uint32_t variables hold SPIR-V IDs.
 struct BoundsAndOffset {
     uint32_t inBounds;
     uint32_t byteOffset;
     uint32_t block;
 };
 
+/* Equivalent shader logic:
+
+    uint coordinate = coordinates[axis];
+    uint dimensionSize = uint(descriptor.dimensions[axis]);
+    bool inBounds = coordinate < dimensionSize;
+    uint64_t byteOffset = uint64_t(coordinate) * descriptor.strides[axis];
+
+*/
 BoundsAndOffset emitDimensionBoundsAndByteOffset(AccessState &state, InstructionBuilder &builder, uint32_t descriptor,
                                                  uint32_t coordinates, uint32_t axis) {
     auto &context = state.context;
@@ -71,9 +80,16 @@ struct AccessArrays {
     uint32_t metadataPointerType;
 };
 
-// OpCompositeExtract takes literal indices. Copy the by-value helper arguments
-// into function-local arrays so the generated loop can index them with its axis ID.
-// Call this at the start of the entry block: OpVariable must precede other instructions.
+/* Equivalent shader logic:
+
+    uint coords[RANK] = coordinates;
+    uint64_t dimensions[6] = descriptor.dimensions;
+    uint64_t strides[6] = descriptor.strides;
+
+*/
+// Local arrays allow dynamic indexing; OpCompositeExtract requires literal indices.
+// Reconstruct metadata arrays to remove buffer-layout decorations. Emit their
+// OpVariable declarations first in the entry block.
 AccessArrays prepareAccessArrays(AccessState &state, InstructionBuilder &builder, uint32_t descriptor,
                                  uint32_t coordinates, uint32_t coordinatesType) {
     auto &context = state.context;
@@ -111,10 +127,20 @@ struct DimensionValues {
     uint32_t inBounds;
 };
 
-// Emit one axis of the shared read/write calculation:
-//   next.inBounds = current.inBounds && coords[axis] < dimensions[axis];
-// The caller accumulates the byte offset, preserving the read/write access policy.
-// The caller reserves the next-value IDs before constructing the loop's OpPhi nodes.
+/* Equivalent shader logic (choose the read or write accumulation):
+
+    uint coordinate = coords[current.axis];
+    uint dimensionSize = uint(dimensions[current.axis]);
+    next.inBounds = current.inBounds && coordinate < dimensionSize;
+    uint64_t contribution = uint64_t(coordinate) * strides[current.axis];
+
+    // Read:
+    next.byteOffset = current.byteOffset + (next.inBounds ? contribution : 0);
+    // Write:
+    next.byteOffset = current.byteOffset + contribution;
+
+*/
+// Reserve next-value IDs before constructing the loop's OpPhi nodes.
 template <typename EmitOffset>
 void emitDimensionStep(AccessState &state, InstructionBuilder &builder, const AccessArrays &arrays,
                        const DimensionValues &current, const DimensionValues &next, const EmitOffset &emitOffset) {
@@ -139,8 +165,17 @@ void emitDimensionStep(AccessState &state, InstructionBuilder &builder, const Ac
     emitOffset(current.byteOffset, next.inBounds, contribution, next.byteOffset);
 }
 
-// Build for (axis = 0; axis < rank; ++axis) inside the read/write helper.
-// rank is a SPIR-V value ID; its specialisation value remains for the pipeline compiler.
+/* Equivalent shader logic:
+
+    bool inBounds = true;
+    uint64_t byteOffset = 0;
+    for (uint axis = 0; axis < rank; ++axis) {
+        // Code emitted by emitDimensionStep updates inBounds and byteOffset here.
+    }
+
+*/
+// OpPhi nodes carry axis, inBounds and byteOffset between iterations.
+// rank retains its specialisation value for the pipeline compiler.
 template <typename EmitOffset>
 BoundsAndOffset emitDimensionLoop(AccessState &state, AccessFunction &helper, InstructionBuilder &builder,
                                   const AccessArrays &arrays, uint32_t rank, uint32_t boolType,
@@ -194,6 +229,8 @@ BoundsAndOffset emitDimensionLoop(AccessState &state, AccessFunction &helper, In
     return {inBounds, offset, exit};
 }
 
+// Combine the local-array setup and loop above. The pipeline compiler determines
+// the specialised rank; the C++ generator does not use its default as a loop bound.
 template <typename EmitOffset>
 BoundsAndOffset emitSpecializedBoundsAndByteOffset(AccessState &state, AccessFunction &helper,
                                                    InstructionBuilder &builder, const TensorType &tensor,
@@ -217,20 +254,16 @@ BoundsAndOffset emitSpecializedBoundsAndByteOffset(AccessState &state, AccessFun
     return emitDimensionLoop(state, helper, builder, arrays, rank, boolType, emitOffset);
 }
 
-// EmitOffset supplies only the access-specific accumulation. The bounds checks
-// and the literal/specialised rank traversal are shared by reads and writes.
+// Emit each axis using literal-index extracts. This C++ loop produces straight-line
+// shader code; EmitOffset selects the read/write accumulation shown above.
 template <typename EmitOffset>
-BoundsAndOffset emitBoundsAndByteOffset(AccessState &state, AccessFunction &helper, InstructionBuilder &builder,
-                                        const TensorType &tensor, uint32_t descriptor, uint32_t coordinates,
-                                        uint32_t coordinatesType, const EmitOffset &emitOffset) {
-    if (!tensor.literalRank) {
-        return emitSpecializedBoundsAndByteOffset(state, helper, builder, tensor, descriptor, coordinates,
-                                                  coordinatesType, emitOffset);
-    }
+BoundsAndOffset emitLiteralBoundsAndByteOffset(AccessState &state, AccessFunction &helper, InstructionBuilder &builder,
+                                               uint32_t literalRank, uint32_t descriptor, uint32_t coordinates,
+                                               const EmitOffset &emitOffset) {
     auto &context = state.context;
     const auto boolType = context.get_type_mgr()->GetBoolTypeId();
     BoundsAndOffset bounds{0, nullConstant(context, state.uint64Type), helper.entry->id()};
-    for (uint32_t axis = 0; axis < *tensor.literalRank; ++axis) {
+    for (uint32_t axis = 0; axis < literalRank; ++axis) {
         const auto dimension = emitDimensionBoundsAndByteOffset(state, builder, descriptor, coordinates, axis);
         bounds.inBounds =
             axis == 0 ? dimension.inBounds
@@ -239,6 +272,19 @@ BoundsAndOffset emitBoundsAndByteOffset(AccessState &state, AccessFunction &help
         bounds.byteOffset = emitOffset(bounds.byteOffset, bounds.inBounds, dimension.byteOffset, 0);
     }
     return bounds;
+}
+
+// Select straight-line code for a literal rank or a shader loop for a specialised rank.
+template <typename EmitOffset>
+BoundsAndOffset emitBoundsAndByteOffset(AccessState &state, AccessFunction &helper, InstructionBuilder &builder,
+                                        const TensorType &tensor, uint32_t descriptor, uint32_t coordinates,
+                                        uint32_t coordinatesType, const EmitOffset &emitOffset) {
+    if (tensor.literalRank) {
+        return emitLiteralBoundsAndByteOffset(state, helper, builder, *tensor.literalRank, descriptor, coordinates,
+                                              emitOffset);
+    }
+    return emitSpecializedBoundsAndByteOffset(state, helper, builder, tensor, descriptor, coordinates, coordinatesType,
+                                              emitOffset);
 }
 
 struct ElementPointer {
@@ -258,6 +304,13 @@ uint32_t getStorageType(AccessState &state, const TensorType &tensor) {
     return storageType;
 }
 
+// StorageT is the tensor element's backing-memory type.
+/* Equivalent pointer calculation (no memory access):
+
+    uint64_t address = descriptor.address + byteOffset;
+    StorageT* pointer = StorageT*(address);
+
+*/
 ElementPointer emitElementPointer(AccessState &state, InstructionBuilder &builder, const TensorType &tensor,
                                   uint32_t descriptor, uint32_t byteOffset) {
     const auto base = builder.AddCompositeExtract(state.uint64Type, descriptor, {0})->result_id();
@@ -276,6 +329,15 @@ ElementPointer emitElementPointer(AccessState &state, InstructionBuilder &builde
     return {pointer, storageType, alignment};
 }
 
+/* Equivalent pointer calculation (no memory access):
+
+    Buffer<StorageT> buffer = bufferAt(descriptor.address);
+    uint index = uint(int(elementOffset));
+    StorageT* pointer = &buffer.elements[index];
+
+*/
+// Buffer elements have stride sizeof(StorageT). Keep this indexing form with the
+// signed 64-bit elementOffset; see the Mesa workaround in getOrCreateReadHelper.
 ElementPointer emitReadElementPointer(AccessState &state, InstructionBuilder &builder, const TensorType &tensor,
                                       uint32_t descriptor, uint32_t elementOffset) {
     auto *types = state.context.get_type_mgr();
@@ -380,6 +442,24 @@ AccessState::AccessState(IRContext &ir) : context(ir) {
     memoryModel->SetInOperand(0, {static_cast<uint32_t>(spv::AddressingModel::PhysicalStorageBuffer64)});
 }
 
+// T is the shader element type.
+/* Equivalent shader logic:
+
+    T read(Descriptor descriptor, uint coordinates[RANK]) {
+        bool inBounds;
+        uint64_t byteOffset;
+        // Code emitted by emitBoundsAndByteOffset sets these values here,
+        // using guarded accumulation for reads.
+        int64_t elementOffset = int64_t(byteOffset) / int64_t(sizeof(StorageT));
+        if (inBounds) {
+            StorageT value = load(bufferAt(descriptor.address), uint(int(elementOffset)));
+            return value; // For bool tensors: return int(value) != 0.
+        }
+        return T(0); // false for bool tensors.
+    }
+
+*/
+// load denotes a typed memory instruction inside the valid branch.
 uint32_t getOrCreateReadHelper(AccessState &state, const TensorType &tensor, uint32_t coordinatesType) {
     const auto key = std::make_tuple(spv::Op::OpTensorReadARM, tensor.elementType, coordinatesType, tensor.rankId);
     if (const auto it = state.helpers.find(key); it != state.helpers.end()) {
@@ -436,6 +516,22 @@ uint32_t getOrCreateReadHelper(AccessState &state, const TensorType &tensor, uin
     return functionId;
 }
 
+/* Equivalent shader logic:
+
+    void write(Descriptor descriptor, uint coordinates[RANK], T value) {
+        bool inBounds;
+        uint64_t byteOffset;
+        // Code emitted by emitBoundsAndByteOffset sets these values here,
+        // accumulating the full offset for writes.
+        if (inBounds) {
+            store(descriptor.address + byteOffset, value);
+            // For bool tensors, store int8_t(value ? 1 : 0) instead.
+        }
+    }
+
+*/
+// store denotes a typed memory instruction. Bool selection uses 32-bit integers
+// before narrowing.
 uint32_t getOrCreateWriteHelper(AccessState &state, const TensorType &tensor, uint32_t coordinatesType) {
     const auto key = std::make_tuple(spv::Op::OpTensorWriteARM, tensor.elementType, coordinatesType, tensor.rankId);
     if (const auto it = state.helpers.find(key); it != state.helpers.end()) {
@@ -485,6 +581,12 @@ uint32_t getOrCreateWriteHelper(AccessState &state, const TensorType &tensor, ui
     return functionId;
 }
 
+/* Equivalent shader logic:
+
+    uint size = uint(descriptor.dimensions[dimension]);
+
+*/
+// dimension is a literal index; the size is runtime descriptor metadata.
 uint32_t emitSizeQuery(AccessState &state, InstructionBuilder &builder, uint32_t descriptor, uint32_t dimension) {
     const auto size = builder.AddCompositeExtract(state.uint64Type, descriptor, {1, dimension})->result_id();
     return builder.AddUnaryOp(state.context.get_type_mgr()->GetUIntTypeId(), spv::Op::OpUConvert, size)->result_id();
