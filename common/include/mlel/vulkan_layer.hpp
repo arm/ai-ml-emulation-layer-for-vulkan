@@ -22,6 +22,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <utility>
 #include <vector>
 
 /*****************************************************************************
@@ -323,16 +324,11 @@ class CommandBuffer : public Loader {
     CommandBuffer(const CommandBuffer &) = delete;
     CommandBuffer &operator=(const CommandBuffer &) = delete;
 
-    virtual ~CommandBuffer() {
-        if (secondaryCommandBuffer != VK_NULL_HANDLE) {
-            loader->vkFreeCommandBuffers(device->device, commandPool, 1, &secondaryCommandBuffer);
-        }
-    }
+    virtual ~CommandBuffer() { releaseSecondaryCommandBuffers(); }
 
-    void beginSecondaryCommandBuffer() {
-        if (secondaryCommandBuffer == VK_NULL_HANDLE) {
-            secondaryCommandBuffer = createSecondaryCommandBuffer();
-        }
+    template <typename Record> void recordSecondaryCommandBuffer(Record &&record) {
+        const VkCommandBuffer secondary = createSecondaryCommandBuffer();
+        secondaryCommandBuffers.push_back(secondary);
         VkCommandBufferInheritanceInfo commandBufferInheritanceInfo{};
         commandBufferInheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
         commandBufferInheritanceInfo.pNext = nullptr;
@@ -343,28 +339,42 @@ class CommandBuffer : public Loader {
             &commandBufferInheritanceInfo                // pInheritanceInfo
         };
 
-        if (loader->vkBeginCommandBuffer(secondaryCommandBuffer, &beginInfo) != VK_SUCCESS) {
+        if (loader->vkBeginCommandBuffer(secondary, &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("Failed to begin recording secondary command buffer!");
         }
-    }
 
-    void endAndSubmitSecondaryCommandBuffer() {
-        if (loader->vkEndCommandBuffer(secondaryCommandBuffer) != VK_SUCCESS) {
+        std::forward<Record>(record)(secondary);
+
+        if (loader->vkEndCommandBuffer(secondary) != VK_SUCCESS) {
             throw std::runtime_error("Failed to end secondary command buffer!");
         }
-        loader->vkCmdExecuteCommands(commandBuffer, 1, &secondaryCommandBuffer);
+        loader->vkCmdExecuteCommands(commandBuffer, 1, &secondary);
+    }
+
+    virtual void resetRecording() {
+        releaseSecondaryCommandBuffers();
+        secondaryCommandBuffers.clear();
     }
 
     std::shared_ptr<Device> device;
     VkCommandBuffer commandBuffer;
     VkCommandPool commandPool;
     uint32_t queueFamilyIndex;
-    VkCommandBuffer secondaryCommandBuffer = VK_NULL_HANDLE;
 
     VkPipelineLayout pipelineLayout = {};
     std::map<uint32_t, VkDescriptorSet> descriptorSets;
 
   private:
+    std::vector<VkCommandBuffer> secondaryCommandBuffers;
+
+    void releaseSecondaryCommandBuffers() {
+        if (!secondaryCommandBuffers.empty()) {
+            loader->vkFreeCommandBuffers(device->device, commandPool,
+                                         static_cast<uint32_t>(secondaryCommandBuffers.size()),
+                                         secondaryCommandBuffers.data());
+        }
+    }
+
     VkCommandBuffer createSecondaryCommandBuffer() const {
         VkCommandBuffer cmd;
         const VkCommandBufferAllocateInfo allocInfo = {
@@ -435,7 +445,7 @@ class DescriptorSet {
  *****************************************************************************/
 
 template <const auto &layerProperties, const auto &extensions, const auto &requiredExtensions,
-          typename DeviceImpl = Device>
+          typename DeviceImpl = Device, typename CommandBufferImpl = CommandBuffer>
 class VulkanLayer {
   public:
     VulkanLayer() = delete;
@@ -479,6 +489,7 @@ class VulkanLayer {
             {"vkDestroyDevice", PFN_vkVoidFunction(vkDestroyDevice)},
             {"vkCreateCommandPool", PFN_vkVoidFunction(vkCreateCommandPool)},
             {"vkDestroyCommandPool", PFN_vkVoidFunction(vkDestroyCommandPool)},
+            {"vkResetCommandPool", PFN_vkVoidFunction(vkResetCommandPool)},
 
             // DescriptorSetLayout
             {"vkCreateDescriptorSetLayout", PFN_vkVoidFunction(vkCreateDescriptorSetLayout)},
@@ -490,7 +501,9 @@ class VulkanLayer {
 
             // Command buffers
             {"vkAllocateCommandBuffers", PFN_vkVoidFunction(vkAllocateCommandBuffers)},
-            {"vkFreeCommandBuffers", PFN_vkVoidFunction(vkFreeCommandBuffers)}};
+            {"vkFreeCommandBuffers", PFN_vkVoidFunction(vkFreeCommandBuffers)},
+            {"vkBeginCommandBuffer", PFN_vkVoidFunction(vkBeginCommandBuffer)},
+            {"vkResetCommandBuffer", PFN_vkVoidFunction(vkResetCommandBuffer)}};
 
         if (auto it = vtable.find(name); it != vtable.end()) {
             return it->second;
@@ -1028,6 +1041,21 @@ class VulkanLayer {
         handle->loader->vkDestroyCommandPool(device, commandPool, allocator);
     }
 
+    static VkResult VKAPI_CALL vkResetCommandPool(VkDevice device, VkCommandPool commandPool,
+                                                  VkCommandPoolResetFlags flags) {
+        auto handle = getHandle(device);
+        const auto result = handle->loader->vkResetCommandPool(device, commandPool, flags);
+        if (result == VK_SUCCESS) {
+            scopedMutex l(globalMutex);
+            for (auto &[commandBuffer, recorded] : commandBufferMap) {
+                if (recorded->device == handle && recorded->commandPool == commandPool) {
+                    recorded->resetRecording();
+                }
+            }
+        }
+        return result;
+    }
+
     /*******************************************************************************
      * DeviceQueue
      *******************************************************************************/
@@ -1105,7 +1133,7 @@ class VulkanLayer {
             }
 
             for (unsigned int i = 0; i < allocateInfo->commandBufferCount; i++) {
-                commandBufferMap[commandBuffers[i]] = std::make_shared<CommandBuffer>(
+                commandBufferMap[commandBuffers[i]] = std::make_shared<CommandBufferImpl>(
                     handle, commandBuffers[i], allocateInfo->commandPool, queueFamilyIndex);
             }
         }
@@ -1125,6 +1153,25 @@ class VulkanLayer {
                 commandBufferMap.erase(commandBuffers[i]);
             }
         }
+    }
+
+    static VkResult VKAPI_CALL vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
+                                                    const VkCommandBufferBeginInfo *beginInfo) {
+        auto handle = getHandle(commandBuffer);
+        const auto result = handle->loader->vkBeginCommandBuffer(commandBuffer, beginInfo);
+        if (result == VK_SUCCESS) {
+            handle->resetRecording();
+        }
+        return result;
+    }
+
+    static VkResult VKAPI_CALL vkResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags flags) {
+        auto handle = getHandle(commandBuffer);
+        const auto result = handle->loader->vkResetCommandBuffer(commandBuffer, flags);
+        if (result == VK_SUCCESS) {
+            handle->resetRecording();
+        }
+        return result;
     }
 
   protected:
@@ -1153,7 +1200,7 @@ class VulkanLayer {
         return queueMap[handle];
     }
 
-    static std::shared_ptr<CommandBuffer> getHandle(const VkCommandBuffer handle) {
+    static std::shared_ptr<CommandBufferImpl> getHandle(const VkCommandBuffer handle) {
         scopedMutex l(globalMutex);
         return commandBufferMap[handle];
     }
@@ -1193,7 +1240,7 @@ class VulkanLayer {
     static inline std::map<VkDescriptorSetLayout, std::shared_ptr<DescriptorSetLayout>> descriptorSetLayoutMap;
     static inline std::map<VkQueue, std::shared_ptr<DeviceImpl>> queueMap;
     static inline std::map<VkCommandPool, std::shared_ptr<CommandPool>> commandPoolMap;
-    static inline std::map<VkCommandBuffer, std::shared_ptr<CommandBuffer>> commandBufferMap;
+    static inline std::map<VkCommandBuffer, std::shared_ptr<CommandBufferImpl>> commandBufferMap;
 };
 
 } // namespace mlsdk::el::layer

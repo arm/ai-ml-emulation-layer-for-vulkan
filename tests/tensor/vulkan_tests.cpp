@@ -383,6 +383,47 @@ TEST_F(MLEmulationLayerGraphForVulkan, LinearTensorImageAliasingUsesImageRowPitc
     aliasedMemory.unmapMemory();
 }
 
+TEST_F(MLEmulationLayerGraphForVulkan, CopyNonPackedTensorTwice) {
+    const std::vector<int64_t> dimensions{2, 4};
+    const std::vector<uint8_t> data;
+    const auto useForCopy = true;
+    auto source = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, dimensions}, data, useForCopy);
+    auto first = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, dimensions, {8, 1}}, data, useForCopy);
+    auto second = std::make_shared<Tensor>(device, Shape{vk::Format::eR8Sint, dimensions, {8, 1}}, data, useForCopy);
+    const vk::CommandPoolCreateInfo poolInfo{vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+                                             device->getPhysicalDevice()->getComputeFamilyIndex()};
+    vk::raii::CommandPool pool(&(*device), poolInfo);
+    const vk::CommandBufferAllocateInfo allocation{*pool, vk::CommandBufferLevel::ePrimary, 1};
+    vk::raii::CommandBuffers commands(&(*device), allocation);
+    auto &command = commands.front();
+    const vk::TensorCopyARM region{static_cast<uint32_t>(dimensions.size())};
+    vk::raii::Queue queue(&(*device), device->getPhysicalDevice()->getComputeFamilyIndex(), 0);
+    const vk::SubmitInfo submit{0, nullptr, nullptr, 1, &(*command), 0, nullptr};
+    for (uint8_t recording = 0; recording < 4; ++recording) {
+        if (recording == 2) {
+            command.reset();
+        } else if (recording == 3) {
+            pool.reset();
+        }
+        std::iota(source->data(), source->data() + source->size(), static_cast<uint8_t>(1 + (recording * 8)));
+        std::fill(first->data(), first->data() + first->size(), 0);
+        std::fill(second->data(), second->data() + second->size(), 0);
+        command.begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+        for (const auto &destination : {first, second}) {
+            const vk::CopyTensorInfoARM copy{&(*source), &(*destination), 1, &region};
+            command.copyTensorARM(copy);
+        }
+        command.end();
+        queue.submit({submit});
+        queue.waitIdle();
+        for (const auto &destination : {first, second}) {
+            for (size_t i = 0; i < source->size(); ++i) {
+                EXPECT_EQ(destination->data()[((i / 4) * 8) + (i % 4)], source->data()[i]);
+            }
+        }
+    }
+}
+
 TEST_F(MLEmulationLayerGraphForVulkan, CopyLargeNonPackedTensor) {
     const std::vector<int64_t> dimensions{1, 1920, 1080, 3};
     const std::vector<int64_t> strides = {12441600, 6480, 6, 2};

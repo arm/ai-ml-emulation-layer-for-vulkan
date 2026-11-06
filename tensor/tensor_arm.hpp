@@ -16,6 +16,7 @@
 
 namespace mlsdk::el::layer {
 class TensorCopyPipeline;
+class TensorCommandBuffer;
 
 // Backing storage for one physical tensor layout.
 struct TensorPlane {
@@ -48,13 +49,12 @@ class TensorARM {
                                                   VkMemoryRequirements2 *requirements);
     VkResult bindTensorMemory(const Device &dev, VkDeviceMemory memory, VkDeviceSize offset) const;
     void updateAliasedTensorInfo(const Device &dev, VkImage image);
-    void copyToTensor(CommandBuffer &cmd, const TensorARM &dstTensor);
+    void copyToTensor(TensorCommandBuffer &cmd, const TensorARM &dstTensor);
     VkResult getOpaqueCaptureDescriptorDataEXT(const Device &dev, void *pData) const;
 
   private:
     TensorLayout m_info;
     TensorStorage m_storage;
-    std::shared_ptr<TensorCopyPipeline> m_copy_pipeline;
 };
 
 class TensorCopyPipeline {
@@ -95,6 +95,17 @@ class TensorCopyPipeline {
     static const std::string glsl;
     static inline std::mutex cacheMutex;
     static inline std::unordered_map<std::string, std::vector<uint32_t>> spirvCache;
+};
+
+class TensorCommandBuffer : public CommandBuffer {
+  public:
+    using CommandBuffer::CommandBuffer;
+
+    void resetRecording() override;
+    void retainCopyPipeline(std::unique_ptr<TensorCopyPipeline> pipeline);
+
+  private:
+    std::vector<std::unique_ptr<TensorCopyPipeline>> m_copyPipelines;
 };
 
 } // namespace mlsdk::el::layer

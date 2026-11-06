@@ -105,7 +105,7 @@ void TensorARM::updateAliasedTensorInfo(const Device &dev, VkImage image) {
     }
 }
 
-void TensorARM::copyToTensor(CommandBuffer &cmd, const TensorARM &dstTensor) {
+void TensorARM::copyToTensor(TensorCommandBuffer &cmd, const TensorARM &dstTensor) {
     const auto &srcDimensions = m_info.dimensions;
     const auto &srcStrides = m_info.strides;
     const auto srcElementSize = m_info.elementSize;
@@ -123,11 +123,11 @@ void TensorARM::copyToTensor(CommandBuffer &cmd, const TensorARM &dstTensor) {
         cmd.loader->vkCmdCopyBuffer(cmd.commandBuffer, getTensorBuffer(), dstTensor.getTensorBuffer(), 1, &copyInfo);
     } else {
         const auto regionCount = static_cast<uint32_t>(utils::getElementCount(srcDimensions));
-        m_copy_pipeline = std::make_shared<TensorCopyPipeline>(cmd.loader, cmd.device->device, *this, dstTensor);
-        cmd.beginSecondaryCommandBuffer();
+        auto pipeline = std::make_unique<TensorCopyPipeline>(cmd.loader, cmd.device->device, *this, dstTensor);
         assert(regionCount < std::numeric_limits<uint32_t>::max());
-        m_copy_pipeline->cmdBindAndDispatchCopy(cmd.secondaryCommandBuffer, regionCount);
-        cmd.endAndSubmitSecondaryCommandBuffer();
+        cmd.recordSecondaryCommandBuffer(
+            [&](VkCommandBuffer secondary) { pipeline->cmdBindAndDispatchCopy(secondary, regionCount); });
+        cmd.retainCopyPipeline(std::move(pipeline));
     }
 }
 
@@ -388,6 +388,15 @@ void TensorCopyPipeline::cmdBindAndDispatchCopy(VkCommandBuffer cmd, uint32_t re
     loader->vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &descriptorSet, 0,
                                     nullptr);
     loader->vkCmdDispatch(cmd, divideRoundUp(regionCount, warp1D), 1, 1);
+}
+
+void TensorCommandBuffer::resetRecording() {
+    CommandBuffer::resetRecording();
+    m_copyPipelines.clear();
+}
+
+void TensorCommandBuffer::retainCopyPipeline(std::unique_ptr<TensorCopyPipeline> pipeline) {
+    m_copyPipelines.push_back(std::move(pipeline));
 }
 
 const std::string TensorCopyPipeline::glsl =
