@@ -11,9 +11,95 @@
 #include "compute_optical_flow.hpp"
 #include "compute_pipeline_common.hpp"
 
+#include <array>
+#include <stdexcept>
+#include <utility>
+#include <variant>
+
 using namespace mlsdk::el::utils;
 
 namespace mlsdk::el::compute::optical_flow {
+
+/*******************************************************************************
+ * DescriptorBatch
+ *******************************************************************************/
+
+class ComputePipeline::DescriptorBatch {
+  public:
+    static constexpr uint32_t maxDescriptors = 6;
+
+    void sampledImage(uint32_t binding, VkImageView imageView, VkImageLayout imageLayout);
+    void combinedImageSampler(uint32_t binding, VkImageView imageView, VkImageLayout imageLayout, VkSampler sampler);
+    void storageImage(uint32_t binding, VkImageView imageView, VkImageLayout imageLayout);
+    void storageBuffer(uint32_t binding, VkBuffer buffer, VkDeviceSize offset = 0, VkDeviceSize range = VK_WHOLE_SIZE);
+
+    struct Writes {
+        uint32_t count;
+        std::array<VkWriteDescriptorSet, maxDescriptors> descriptors{};
+    };
+
+    // The returned writes reference this batch and must be used before it is modified or destroyed.
+    Writes makeWrites() const;
+
+  private:
+    using Value = std::variant<VkDescriptorImageInfo, VkDescriptorBufferInfo>;
+
+    void add(uint32_t binding, VkDescriptorType type, Value value);
+
+    struct Entry {
+        DescriptorConfig config;
+        Value value;
+    };
+    std::array<Entry, maxDescriptors> entries_{};
+    uint32_t descriptorCount_ = 0;
+};
+
+void ComputePipeline::DescriptorBatch::sampledImage(uint32_t binding, VkImageView imageView,
+                                                    VkImageLayout imageLayout) {
+    add(binding, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VkDescriptorImageInfo{VK_NULL_HANDLE, imageView, imageLayout});
+}
+
+void ComputePipeline::DescriptorBatch::combinedImageSampler(uint32_t binding, VkImageView imageView,
+                                                            VkImageLayout imageLayout, VkSampler sampler) {
+    add(binding, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VkDescriptorImageInfo{sampler, imageView, imageLayout});
+}
+
+void ComputePipeline::DescriptorBatch::storageImage(uint32_t binding, VkImageView imageView,
+                                                    VkImageLayout imageLayout) {
+    add(binding, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VkDescriptorImageInfo{VK_NULL_HANDLE, imageView, imageLayout});
+}
+
+void ComputePipeline::DescriptorBatch::storageBuffer(uint32_t binding, VkBuffer buffer, VkDeviceSize offset,
+                                                     VkDeviceSize range) {
+    add(binding, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VkDescriptorBufferInfo{buffer, offset, range});
+}
+
+void ComputePipeline::DescriptorBatch::add(uint32_t binding, VkDescriptorType type, Value value) {
+    if (descriptorCount_ == maxDescriptors) {
+        throw std::length_error("Optical flow descriptor batch exceeds maxDescriptors");
+    }
+    entries_[descriptorCount_++] = {{binding, type}, value};
+}
+
+ComputePipeline::DescriptorBatch::Writes ComputePipeline::DescriptorBatch::makeWrites() const {
+    Writes writes{descriptorCount_};
+    for (uint32_t index = 0; index < descriptorCount_; ++index) {
+        const auto &entry = entries_[index];
+        writes.descriptors[index] = {
+            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            nullptr,
+            VK_NULL_HANDLE, // dstSet is ignored for push descriptors
+            entry.config.index,
+            0, // dstArrayElement
+            1, // descriptorCount
+            entry.config.type,
+            std::get_if<VkDescriptorImageInfo>(&entry.value),
+            std::get_if<VkDescriptorBufferInfo>(&entry.value),
+            nullptr, // pTexelBufferView
+        };
+    }
+    return writes;
+}
 
 /*******************************************************************************
  * ComputePipeline
@@ -39,9 +125,6 @@ ComputePipeline::~ComputePipeline() {
         if (descriptorSetLayout_) {
             loader_->vkDestroyDescriptorSetLayout(device_, descriptorSetLayout_, pAllocator_);
         }
-        if (descriptorPool_) {
-            loader_->vkDestroyDescriptorPool(device_, descriptorPool_, pAllocator_);
-        }
         for (auto *sampler : samplers_) {
             loader_->vkDestroySampler(device_, sampler, pAllocator_);
         }
@@ -53,27 +136,6 @@ const std::string &ComputePipeline::getDebugName() const { return debugName_; }
 void ComputePipeline::makePipeline() {
     // Shader module
     const VkShaderModule shaderModule = common::createShaderModule(loader_, device_, spirv_, pAllocator_);
-
-    // Create descriptor pool
-    // TODO: maybe use descriptor buffers so we can use session memory instead of seperate allocations?
-    const std::vector<VkDescriptorPoolSize> poolSizes = {
-        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 5}, {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5},
-        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 5}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5},
-        {VK_DESCRIPTOR_TYPE_SAMPLER, 5},
-    };
-
-    const VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {
-        VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        nullptr,
-        0, // flags
-        3, // maxSets
-        static_cast<uint32_t>(poolSizes.size()),
-        poolSizes.data(),
-    };
-    VkResult res = loader_->vkCreateDescriptorPool(device_, &descriptorPoolCreateInfo, pAllocator_, &descriptorPool_);
-    if (res != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create descriptor pool");
-    }
 
     // Create descriptor set layout
     std::vector<VkDescriptorSetLayoutBinding> bindings;
@@ -91,22 +153,14 @@ void ComputePipeline::makePipeline() {
     const VkDescriptorSetLayoutCreateInfo dsetLayoutCreateInfo = {
         VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
         nullptr,
-        0,
+        VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR,
         static_cast<uint32_t>(bindings.size()),
         bindings.data(),
     };
-    res = loader_->vkCreateDescriptorSetLayout(device_, &dsetLayoutCreateInfo, pAllocator_, &descriptorSetLayout_);
+    VkResult res =
+        loader_->vkCreateDescriptorSetLayout(device_, &dsetLayoutCreateInfo, pAllocator_, &descriptorSetLayout_);
     if (res != VK_SUCCESS) {
         throw std::runtime_error("Failed to create descriptor set layout");
-    }
-
-    // Allocate descriptor sets
-    const VkDescriptorSetAllocateInfo dsetAllocInfo = {
-        VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, nullptr, descriptorPool_, 1, &descriptorSetLayout_,
-    };
-    res = loader_->vkAllocateDescriptorSets(device_, &dsetAllocInfo, &descriptorSet_);
-    if (res != VK_SUCCESS) {
-        throw std::runtime_error("Failed to allocate descriptor sets");
     }
 
     // Create pipeline layout
@@ -144,71 +198,28 @@ void ComputePipeline::makePipeline() {
     loader_->vkDestroyShaderModule(device_, shaderModule, nullptr);
 }
 
-void ComputePipeline::setInputStorage(VkCommandBuffer cmdBuf, uint32_t binding, const std::shared_ptr<Image> &image,
-                                      VkSampler sampler) {
+void ComputePipeline::setInputStorage(VkCommandBuffer cmdBuf, DescriptorBatch &batch, uint32_t binding,
+                                      const std::shared_ptr<Image> &image, VkSampler sampler) {
     image->makeBarrier(cmdBuf, Image::BarrierState::ShaderRead);
 
     if (image->isBufferLoad()) {
-        setBuffer(binding, image);
+        assert(image->isInternal());
+        batch.storageBuffer(binding, image->getBuffer());
     } else {
-        setCombinedImageSampler(binding, image, sampler);
+        batch.combinedImageSampler(binding, image->getImageView(), image->getImageLayout(), sampler);
     }
 }
 
-void ComputePipeline::setOutputStorage(VkCommandBuffer cmdBuf, uint32_t binding, const std::shared_ptr<Image> &image) {
+void ComputePipeline::setOutputStorage(VkCommandBuffer cmdBuf, DescriptorBatch &batch, uint32_t binding,
+                                       const std::shared_ptr<Image> &image) {
     image->makeBarrier(cmdBuf, Image::BarrierState::ShaderWrite);
 
     if (image->isBufferStore()) {
-        setBuffer(binding, image);
+        assert(image->isInternal());
+        batch.storageBuffer(binding, image->getBuffer());
     } else {
-        setOutputImage(binding, image);
+        batch.storageImage(binding, image->getImageView(), image->getImageLayout());
     }
-}
-
-void ComputePipeline::setCombinedImageSampler(uint32_t binding, const std::shared_ptr<Image> &image,
-                                              VkSampler sampler) {
-    setImage(binding, image, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, sampler);
-}
-
-void ComputePipeline::setOutputImage(uint32_t binding, const std::shared_ptr<Image> &image) {
-    setImage(binding, image, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_NULL_HANDLE);
-}
-
-void ComputePipeline::setImage(uint32_t binding, const std::shared_ptr<Image> &image, VkDescriptorType descriptorType,
-                               VkSampler sampler) {
-    const VkDescriptorImageInfo imageInfo = {sampler, image->getImageView(), image->getImageLayout()};
-
-    const VkWriteDescriptorSet writeDescriptorSet = {
-        VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        nullptr,
-        descriptorSet_,
-        binding,
-        0, // dstArrayElement
-        1, // descriptorCount
-        descriptorType,
-        &imageInfo, // pImageInfo
-        nullptr,
-        nullptr, // pTexelBufferView
-    };
-    loader_->vkUpdateDescriptorSets(device_, 1, &writeDescriptorSet, 0, nullptr);
-}
-
-void ComputePipeline::setBuffer(uint32_t binding, const std::shared_ptr<Image> &image) {
-    assert(image->isInternal());
-    const VkDescriptorBufferInfo bufferInfo = {image->getBuffer(), 0, VK_WHOLE_SIZE};
-    const VkWriteDescriptorSet writeDescriptorSet = {
-        VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        nullptr,
-        descriptorSet_,
-        binding,
-        0, // dstArrayElement
-        1, // descriptorCount
-        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-        nullptr, // pImageInfo
-        &bufferInfo,
-        nullptr, // pTexelBufferView
-    };
-    loader_->vkUpdateDescriptorSets(device_, 1, &writeDescriptorSet, 0, nullptr);
 }
 
 VkSampler ComputePipeline::createSampler(VkFilter filter, VkSamplerAddressMode addressMode,
@@ -232,13 +243,15 @@ VkSampler ComputePipeline::createSampler(VkFilter filter, VkSamplerAddressMode a
     return sampler;
 }
 
-void ComputePipeline::bindPipeline(VkCommandBuffer cmdBuf) {
+void ComputePipeline::recordDispatch(VkCommandBuffer cmdBuf, const DescriptorBatch &batch) {
     loader_->vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE, vkPipeline_);
-    loader_->vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout_, 0, 1, &descriptorSet_, 0,
-                                     nullptr);
-}
 
-void ComputePipeline::dispatchPipeline(VkCommandBuffer cmdBuf) {
+    const auto writes = batch.makeWrites();
+    if (writes.count > 0) {
+        loader_->vkCmdPushDescriptorSetKHR(cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout_, 0, writes.count,
+                                           writes.descriptors.data());
+    }
+
     loader_->vkCmdDispatch(cmdBuf, scheduler_.groupCountX, scheduler_.groupCountY, scheduler_.groupCountZ);
 }
 
@@ -302,16 +315,16 @@ void RGBToY::setInput(std::shared_ptr<Image> src) {
 }
 
 void RGBToY::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, Bindings::srcImage, srcImage_, nearestSampler_);
-    setOutputStorage(cmdBuf,
+    DescriptorBatch batch;
+    setInputStorage(cmdBuf, batch, Bindings::srcImage, srcImage_, nearestSampler_);
+    setOutputStorage(cmdBuf, batch,
                      dstYDownsampled_->isImageStore() ? Bindings::dstDownsampledImage : Bindings::dstDownsampledBuffer,
                      dstYDownsampled_);
     if (outputFull_) {
-        setOutputStorage(cmdBuf, Bindings::dstFullBuffer, dstYFull_);
+        setOutputStorage(cmdBuf, batch, Bindings::dstFullBuffer, dstYFull_);
     }
 
-    bindPipeline(cmdBuf);
-    dispatchPipeline(cmdBuf);
+    recordDispatch(cmdBuf, batch);
 }
 
 /*******************************************************************************
@@ -345,11 +358,11 @@ Downsample::SpecConstants Downsample::makeSpecConstants() const {
 }
 
 void Downsample::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, Bindings::srcImage, srcImage_, nearestSampler_);
-    setOutputStorage(cmdBuf, Bindings::dstImage, dstImage_);
+    DescriptorBatch batch;
+    setInputStorage(cmdBuf, batch, Bindings::srcImage, srcImage_, nearestSampler_);
+    setOutputStorage(cmdBuf, batch, Bindings::dstImage, dstImage_);
 
-    bindPipeline(cmdBuf);
-    dispatchPipeline(cmdBuf);
+    recordDispatch(cmdBuf, batch);
 }
 
 /*******************************************************************************
@@ -383,13 +396,13 @@ MVProcessAndWarp::SpecConstants MVProcessAndWarp::makeSpecConstants() const {
 }
 
 void MVProcessAndWarp::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, Bindings::srcSearch, srcSearch_, nearestSampler_);
-    setInputStorage(cmdBuf, Bindings::srcFlow, srcFlow_, nearestSampler_);
-    setOutputStorage(cmdBuf, Bindings::dstWarped, dstWarped_);
-    setOutputStorage(cmdBuf, Bindings::dstFlow, dstFlow_);
+    DescriptorBatch batch;
+    setInputStorage(cmdBuf, batch, Bindings::srcSearch, srcSearch_, nearestSampler_);
+    setInputStorage(cmdBuf, batch, Bindings::srcFlow, srcFlow_, nearestSampler_);
+    setOutputStorage(cmdBuf, batch, Bindings::dstWarped, dstWarped_);
+    setOutputStorage(cmdBuf, batch, Bindings::dstFlow, dstFlow_);
 
-    bindPipeline(cmdBuf);
-    dispatchPipeline(cmdBuf);
+    recordDispatch(cmdBuf, batch);
 }
 
 /*******************************************************************************
@@ -426,12 +439,12 @@ void DenseWarp::setInputFlow(std::shared_ptr<Image> srcFlow) {
 }
 
 void DenseWarp::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, Bindings::srcSearch, srcSearch_, nearestSampler_);
-    setInputStorage(cmdBuf, Bindings::srcFlow, srcFlow_, nearestSampler_);
-    setOutputStorage(cmdBuf, Bindings::dstWarped, dstWarped_);
+    DescriptorBatch batch;
+    setInputStorage(cmdBuf, batch, Bindings::srcSearch, srcSearch_, nearestSampler_);
+    setInputStorage(cmdBuf, batch, Bindings::srcFlow, srcFlow_, nearestSampler_);
+    setOutputStorage(cmdBuf, batch, Bindings::dstWarped, dstWarped_);
 
-    bindPipeline(cmdBuf);
-    dispatchPipeline(cmdBuf);
+    recordDispatch(cmdBuf, batch);
 }
 
 /*******************************************************************************
@@ -466,11 +479,11 @@ void MedianFilter::setOutput(std::shared_ptr<Image> dstImage) {
 }
 
 void MedianFilter::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, Bindings::srcFlow, srcFlow_, nearestSampler_);
-    setOutputStorage(cmdBuf, Bindings::dstFlow, dstFlow_);
+    DescriptorBatch batch;
+    setInputStorage(cmdBuf, batch, Bindings::srcFlow, srcFlow_, nearestSampler_);
+    setOutputStorage(cmdBuf, batch, Bindings::dstFlow, dstFlow_);
 
-    bindPipeline(cmdBuf);
-    dispatchPipeline(cmdBuf);
+    recordDispatch(cmdBuf, batch);
 }
 
 /*******************************************************************************
@@ -507,12 +520,12 @@ void BilateralFilter::setOutput(std::shared_ptr<Image> dstFlow) {
 }
 
 void BilateralFilter::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, Bindings::srcTemplate, srcTemplate_, nearestSampler_);
-    setInputStorage(cmdBuf, Bindings::srcFlow, srcFlow_, nearestSampler_);
-    setOutputStorage(cmdBuf, Bindings::dstFlow, dstFlow_);
+    DescriptorBatch batch;
+    setInputStorage(cmdBuf, batch, Bindings::srcTemplate, srcTemplate_, nearestSampler_);
+    setInputStorage(cmdBuf, batch, Bindings::srcFlow, srcFlow_, nearestSampler_);
+    setOutputStorage(cmdBuf, batch, Bindings::dstFlow, dstFlow_);
 
-    bindPipeline(cmdBuf);
-    dispatchPipeline(cmdBuf);
+    recordDispatch(cmdBuf, batch);
 }
 
 /*******************************************************************************
@@ -559,16 +572,16 @@ SubpixelME::SpecConstants SubpixelME::makeSpecConstants() const {
 }
 
 void SubpixelME::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, Bindings::srcSearch, srcSearch_, nearestZeroPadSampler_);
-    setInputStorage(cmdBuf, Bindings::srcTemplate, srcTemplate_, nearestRepeatPadSampler_);
-    setInputStorage(cmdBuf, Bindings::srcFlow, srcFlow_, nearestZeroPadSampler_);
+    DescriptorBatch batch;
+    setInputStorage(cmdBuf, batch, Bindings::srcSearch, srcSearch_, nearestZeroPadSampler_);
+    setInputStorage(cmdBuf, batch, Bindings::srcTemplate, srcTemplate_, nearestRepeatPadSampler_);
+    setInputStorage(cmdBuf, batch, Bindings::srcFlow, srcFlow_, nearestZeroPadSampler_);
     if (doAccumulate_) {
-        setInputStorage(cmdBuf, Bindings::srcPrevLevelFlow, srcPrevLevelFlow_, nearestZeroPadSampler_);
+        setInputStorage(cmdBuf, batch, Bindings::srcPrevLevelFlow, srcPrevLevelFlow_, nearestZeroPadSampler_);
     }
-    setOutputStorage(cmdBuf, Bindings::dstFlow, dstFlow_);
+    setOutputStorage(cmdBuf, batch, Bindings::dstFlow, dstFlow_);
 
-    bindPipeline(cmdBuf);
-    dispatchPipeline(cmdBuf);
+    recordDispatch(cmdBuf, batch);
 }
 
 /*******************************************************************************
@@ -634,18 +647,18 @@ void MVReplace::setOutputCost(std::shared_ptr<Image> dstCost) {
 }
 
 void MVReplace::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, Bindings::srcInputMV, srcInputMV_, nearestSampler_);
-    setInputStorage(cmdBuf, Bindings::srcBlockMatchFlow, srcBlockMatchFlow_, nearestSampler_);
-    setInputStorage(cmdBuf, Bindings::srcInputMVCost, srcInputMVCost_, nearestSampler_);
-    setInputStorage(cmdBuf, Bindings::srcBlockMatchCost, srcBlockMatchCost_, nearestSampler_);
-    setOutputStorage(cmdBuf, Bindings::dstFlow, dstFlow_);
+    DescriptorBatch batch;
+    setInputStorage(cmdBuf, batch, Bindings::srcInputMV, srcInputMV_, nearestSampler_);
+    setInputStorage(cmdBuf, batch, Bindings::srcBlockMatchFlow, srcBlockMatchFlow_, nearestSampler_);
+    setInputStorage(cmdBuf, batch, Bindings::srcInputMVCost, srcInputMVCost_, nearestSampler_);
+    setInputStorage(cmdBuf, batch, Bindings::srcBlockMatchCost, srcBlockMatchCost_, nearestSampler_);
+    setOutputStorage(cmdBuf, batch, Bindings::dstFlow, dstFlow_);
 
     if (outputCost_) {
-        setOutputStorage(cmdBuf, Bindings::dstCost, dstCost_);
+        setOutputStorage(cmdBuf, batch, Bindings::dstCost, dstCost_);
     }
 
-    bindPipeline(cmdBuf);
-    dispatchPipeline(cmdBuf);
+    recordDispatch(cmdBuf, batch);
 }
 
 /*******************************************************************************
@@ -730,23 +743,22 @@ void BlockMatch::setSearchRangeLimit(int newSearchRangeLimit) {
 }
 
 void BlockMatch::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, Bindings::srcTemplate, srcTemplate_, nearestSampler_);
-    setInputStorage(cmdBuf, Bindings::srcSearch, srcSearch_, nearestSampler_);
+    DescriptorBatch batch;
+    setInputStorage(cmdBuf, batch, Bindings::srcTemplate, srcTemplate_, nearestSampler_);
+    setInputStorage(cmdBuf, batch, Bindings::srcSearch, srcSearch_, nearestSampler_);
 
     if (hasFlowOutput()) {
-        setOutputStorage(cmdBuf, Bindings::dstFlow, dstFlow_);
+        setOutputStorage(cmdBuf, batch, Bindings::dstFlow, dstFlow_);
     }
     if (hasCostOutput()) {
-        setOutputStorage(cmdBuf, Bindings::dstCost, dstCost_);
+        setOutputStorage(cmdBuf, batch, Bindings::dstCost, dstCost_);
     }
-
-    bindPipeline(cmdBuf);
 
     const int searchIndexLimit = (searchRangeLimit_ * 2 + 1) * (searchRangeLimit_ * 2 + 1);
     const PushConstants pushConstants{searchIndexLimit};
     setPushConstants(cmdBuf, pushConstants);
 
-    dispatchPipeline(cmdBuf);
+    recordDispatch(cmdBuf, batch);
 }
 
 } // namespace mlsdk::el::compute::optical_flow
