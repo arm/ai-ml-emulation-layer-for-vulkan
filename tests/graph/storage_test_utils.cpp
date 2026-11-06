@@ -21,7 +21,8 @@ using namespace utilities;
 // externally bound Vulkan storage formats independently.
 std::vector<uint32_t> makeStorageConversionGraph(const std::string &inputType, const std::string &outputType,
                                                  uint32_t inputRank, uint32_t outputRank, bool binary,
-                                                 const std::string &operation, const std::string &constants) {
+                                                 const std::string &operation, const std::string &constants,
+                                                 const std::string &importName) {
     std::string source = R"(
 OpCapability VulkanMemoryModel
 OpCapability Shader
@@ -113,6 +114,7 @@ OpDecorate %output_var DescriptorSet 0
         mlsdk::el::utils::replaceAll(source, "%out_tensor", "%in_tensor");
         mlsdk::el::utils::replaceAll(source, "%out_ptr", "%in_ptr");
     }
+    mlsdk::el::utils::replaceAll(source, "TOSA.001000.1", importName);
     return assembleSpirv(source);
 }
 

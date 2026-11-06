@@ -21,6 +21,13 @@ namespace mlsdk::el::tests {
 using utilities::Device;
 using utilities::GraphPipeline;
 
+inline constexpr const char *tosaTestImports[]{
+    "TOSA.001000.1",
+#if VMEL_ENABLE_TOSA_1X
+    "TOSA.1x.1",
+#endif
+};
+
 std::string fileToString(const std::string &filename);
 // Test modules must pass SPIR-V validation for the Vulkan target environment.
 std::vector<uint32_t> assembleSpirv(const std::string &text);
@@ -46,5 +53,6 @@ template <typename Base> class GraphTestWithDevice : public Base {
 
 using MLEmulationLayerGraphForVulkan = GraphTestWithDevice<testing::Test>;
 template <typename Param> using GraphTestWithParam = GraphTestWithDevice<testing::TestWithParam<Param>>;
+using TosaGraphTest = GraphTestWithParam<const char *>;
 
 } // namespace mlsdk::el::tests

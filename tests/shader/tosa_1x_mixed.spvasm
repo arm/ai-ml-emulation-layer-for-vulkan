@@ -1,0 +1,54 @@
+;
+; SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+; SPDX-License-Identifier: Apache-2.0
+;
+OpCapability Shader
+OpCapability VulkanMemoryModel
+OpCapability Int8
+OpCapability TensorsARM
+OpCapability GraphARM
+OpExtension "SPV_ARM_tensors"
+OpExtension "SPV_ARM_graph"
+OpExtension "SPV_KHR_vulkan_memory_model"
+%tosa = OpExtInstImport "TOSA.1x.1"
+OpMemoryModel Logical Vulkan
+OpDecorate %left_var DescriptorSet 0
+OpDecorate %left_var Binding 0
+OpDecorate %right_var DescriptorSet 0
+OpDecorate %right_var Binding 1
+OpDecorate %output_var DescriptorSet 0
+OpDecorate %output_var Binding 2
+%i8 = OpTypeInt 8 0
+%u32 = OpTypeInt 32 0
+%f32 = OpTypeFloat 32
+%zero = OpConstant %u32 0
+%one = OpConstant %u32 1
+%six = OpConstant %u32 6
+%shape_type = OpTypeArray %u32 %one
+%shape = OpConstantComposite %shape_type %six
+%scalar_shape = OpConstantComposite %shape_type %one
+%input_type = OpTypeTensorARM %f32 %one %shape
+%output_type = OpTypeTensorARM %i8 %one %shape
+%scalar_float = OpTypeTensorARM %f32 %one %scalar_shape
+%scalar_int8 = OpTypeTensorARM %i8 %one %scalar_shape
+%float_two = OpConstant %f32 2
+%two = OpConstantComposite %scalar_float %float_two
+%shift = OpConstantNull %scalar_int8
+%minimum = OpConstant %f32 -8
+%maximum = OpConstant %f32 10
+%input_ptr = OpTypePointer UniformConstant %input_type
+%output_ptr = OpTypePointer UniformConstant %output_type
+%left_var = OpVariable %input_ptr UniformConstant
+%right_var = OpVariable %input_ptr UniformConstant
+%output_var = OpVariable %output_ptr UniformConstant
+%graph_type = OpTypeGraphARM 2 %input_type %input_type %output_type
+OpGraphEntryPointARM %graph "mixed" %left_var %right_var %output_var
+%graph = OpGraphARM %graph_type
+%left = OpGraphInputARM %input_type %zero
+%right = OpGraphInputARM %input_type %one
+%max = OpExtInst %input_type %tosa MAXIMUM %one %left %right
+%product = OpExtInst %input_type %tosa MUL %max %two %shift
+%clamped = OpExtInst %input_type %tosa CLAMP %minimum %maximum %one %product
+%result = OpExtInst %output_type %tosa CAST %clamped
+OpGraphSetOutputARM %result %zero
+OpGraphEndARM

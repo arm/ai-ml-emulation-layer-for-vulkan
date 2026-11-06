@@ -23,7 +23,8 @@ using utilities::Tensor;
 
 std::vector<uint32_t> makeStorageConversionGraph(const std::string &inputType, const std::string &outputType,
                                                  uint32_t inputRank, uint32_t outputRank, bool binary,
-                                                 const std::string &operation, const std::string &constants = "");
+                                                 const std::string &operation, const std::string &constants = "",
+                                                 const std::string &importName = "TOSA.001000.1");
 
 template <typename T>
 std::shared_ptr<Tensor> storageTestTensor(std::shared_ptr<Device> &device, vk::Format format,

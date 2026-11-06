@@ -24,6 +24,9 @@ namespace mlsdk::el::tests {
 
 using namespace utilities;
 
+INSTANTIATE_TEST_SUITE_P(TosaImports, TosaGraphTest, testing::ValuesIn(tosaTestImports),
+                         [](const auto &info) { return std::string(info.param) == "TOSA.1x.1" ? "Tosa1x" : "Tosa10"; });
+
 #define STR(str) #str
 #define TOSTRING(str) STR(str)
 

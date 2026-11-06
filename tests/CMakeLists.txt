@@ -130,6 +130,7 @@ endif()
 # scheduled; grouping them would serialize cases without sharing device setup.
 set(MLEL_VULKAN_GROUPED_SUITES
     MLEmulationLayerGraphForVulkan
+    TosaImports/TosaGraphTest
     ConvolutionRegression/Conv2DStorageFormats
     TosaConversions/TosaIntegerStorage
     TosaConversions/TosaPoolingStorage

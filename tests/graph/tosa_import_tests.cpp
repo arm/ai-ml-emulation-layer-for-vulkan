@@ -5,10 +5,11 @@
 #include "graph_ext_inst_registry.hpp"
 #include "mlel/pipeline.hpp"
 #include "spirv-tools/libspirv.hpp"
+#include "storage_test_utils.hpp"
 #include "vulkan_test_utils.hpp"
-#include <array>
 #include <cstring>
 #include <string>
+#include <utility>
 
 namespace mlsdk::el::tests {
 namespace {
@@ -47,17 +48,21 @@ std::vector<uint32_t> withImport(const std::string &name) {
 }
 
 void expectPipelineResult(const std::shared_ptr<Device> &device, const std::vector<uint32_t> &binary, VkResult expected,
-                          const std::string &diagnostic = {}) {
-    const std::array<VkFormat, 4> formats{VK_FORMAT_R8_SINT, VK_FORMAT_R8_SINT, VK_FORMAT_R32_SINT, VK_FORMAT_R32_SINT};
-    const std::array<std::vector<int64_t>, 4> dimensions{{{1, 8, 8, 3}, {3, 2, 2, 3}, {3}, {1, 4, 4, 3}}};
-    std::array<VkTensorDescriptionARM, 4> descriptions{};
-    std::array<VkDataGraphPipelineResourceInfoARM, 4> resources{};
+                          const std::string &diagnostic = {}, const char *entryPoint = "conv2d",
+                          const std::vector<std::pair<VkFormat, std::vector<int64_t>>> &tensors = {
+                              {VK_FORMAT_R8_SINT, {1, 8, 8, 3}},
+                              {VK_FORMAT_R8_SINT, {3, 2, 2, 3}},
+                              {VK_FORMAT_R32_SINT, {3}},
+                              {VK_FORMAT_R32_SINT, {1, 4, 4, 3}}}) {
+    std::vector<VkTensorDescriptionARM> descriptions(tensors.size());
+    std::vector<VkDataGraphPipelineResourceInfoARM> resources(tensors.size());
     for (uint32_t i = 0; i < resources.size(); ++i) {
+        const auto &[format, dimensions] = tensors[i];
         descriptions[i].sType = VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM;
         descriptions[i].tiling = VK_TENSOR_TILING_LINEAR_ARM;
-        descriptions[i].format = formats[i];
-        descriptions[i].dimensionCount = static_cast<uint32_t>(dimensions[i].size());
-        descriptions[i].pDimensions = dimensions[i].data();
+        descriptions[i].format = format;
+        descriptions[i].dimensionCount = static_cast<uint32_t>(dimensions.size());
+        descriptions[i].pDimensions = dimensions.data();
         descriptions[i].usage = VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM;
         resources[i].sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_RESOURCE_INFO_ARM;
         resources[i].pNext = &descriptions[i];
@@ -70,7 +75,7 @@ void expectPipelineResult(const std::shared_ptr<Device> &device, const std::vect
     VkDataGraphPipelineShaderModuleCreateInfoARM graphShader{};
     graphShader.sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SHADER_MODULE_CREATE_INFO_ARM;
     graphShader.pNext = &shader;
-    graphShader.pName = "conv2d";
+    graphShader.pName = entryPoint;
     VkDataGraphPipelineCreateInfoARM info{};
     info.sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CREATE_INFO_ARM;
     info.pNext = &graphShader;
@@ -138,6 +143,121 @@ OpMemoryModel)");
 }
 
 #if VMEL_ENABLE_TOSA_1X
+// Together with the existing GATHER/SCATTER checks, the reused datatype,
+// storage, operator and convolution tests cover 43 shared opcodes under 1.x.
+// These cases cover the remaining 23 through pipeline creation only.
+TEST_F(MLEmulationLayerGraphForVulkan, Tosa1xFloatDispatch) {
+    const std::pair<const char *, bool> cases[]{
+        {"CEIL %a", false},
+        {"FLOOR %a", false},
+        {"ERF %a", false},
+        {"EXP %a", false},
+        {"LOG %a", false},
+        {"RECIPROCAL %a", false},
+        {"RSQRT %a", false},
+        {"SIGMOID %a", false},
+        {"TANH %a", false},
+        {"POW %a %b", true},
+        {"REDUCE_PRODUCT %u0 %a", false},
+        {"REDUCE_SUM %u0 %a", false},
+    };
+    for (const auto &[operation, binary] : cases) {
+        SCOPED_TRACE(operation);
+        const auto graph = makeStorageConversionGraph("%f32", "%f32", 1, 1, binary, operation, "", "TOSA.1x.1");
+        const std::vector<std::pair<VkFormat, std::vector<int64_t>>> tensors(binary ? 3 : 2,
+                                                                             {VK_FORMAT_R32_SFLOAT, {1}});
+        expectPipelineResult(device, graph, VK_SUCCESS, "", "storage_conversion", tensors);
+    }
+}
+
+TEST_F(MLEmulationLayerGraphForVulkan, Tosa1xBooleanDispatch) {
+    const std::pair<const char *, bool> cases[]{
+        {"LOGICAL_AND %a %b", true}, {"LOGICAL_OR %a %b", true},   {"LOGICAL_XOR %a %b", true},
+        {"LOGICAL_NOT %a", false},   {"REDUCE_ALL %u0 %a", false}, {"REDUCE_ANY %u0 %a", false},
+    };
+    for (const auto &[operation, binary] : cases) {
+        SCOPED_TRACE(operation);
+        const auto graph = makeStorageConversionGraph("%bool", "%bool", 1, 1, binary, operation, "", "TOSA.1x.1");
+        const std::vector<std::pair<VkFormat, std::vector<int64_t>>> tensors(binary ? 3 : 2,
+                                                                             {VK_FORMAT_R8_BOOL_ARM, {1}});
+        expectPipelineResult(device, graph, VK_SUCCESS, "", "storage_conversion", tensors);
+    }
+}
+
+TEST_F(MLEmulationLayerGraphForVulkan, Tosa1xSelectDispatch) {
+    const auto graph = makeStorageConversionGraph(
+        "%bool", "%i32", 1, 1, false, "SELECT %a %yes %no",
+        "%yes = OpConstantComposite %const_i32 %u2\n%no = OpConstantComposite %const_i32 %u5\n", "TOSA.1x.1");
+    expectPipelineResult(device, graph, VK_SUCCESS, "", "storage_conversion",
+                         {{VK_FORMAT_R8_BOOL_ARM, {1}}, {VK_FORMAT_R32_SINT, {1}}});
+}
+
+TEST_F(MLEmulationLayerGraphForVulkan, Tosa1xTableDispatch) {
+    // TABLE requires the lookup length in its tensor type.
+    const auto graph = makeStorageConversionGraph("%i8", "%i8", 1, 1, false, "TABLE %a %table", R"(
+%table_size = OpConstant %i32 256
+%table_shape = OpConstantComposite %shape_array %table_size
+%table_type = OpTypeTensorARM %i8 %u1 %table_shape
+%table = OpConstantNull %table_type
+)",
+                                                  "TOSA.1x.1");
+    expectPipelineResult(device, graph, VK_SUCCESS, "", "storage_conversion",
+                         {{VK_FORMAT_R8_SINT, {1}}, {VK_FORMAT_R8_SINT, {1}}});
+}
+
+TEST_F(MLEmulationLayerGraphForVulkan, Tosa1xConvolutionDispatch) {
+    auto source = fileToString("conv2d.spvasm");
+    replace(source, "TOSA.001000.1", "TOSA.1x.1");
+    // With singleton dimensions, both weight layouts fit the CONV2D fixture.
+    replace(source, "%uint_1 %uint_8 %uint_8 %uint_3", "%uint_1 %uint_1 %uint_1 %uint_1");
+    replace(source, "%uint_3 %uint_2 %uint_2 %uint_3", "%uint_1 %uint_1 %uint_1 %uint_1");
+    replace(source, "%uint_1 %uint_4 %uint_4 %uint_3", "%uint_1 %uint_1 %uint_1 %uint_1");
+    replace(source, "%20 = OpConstantComposite %_arr_uint_uint_1 %uint_3",
+            "%20 = OpConstantComposite %_arr_uint_uint_1 %uint_1");
+    replace(source, "OpConstantCompositeReplicateEXT %35 %uint_2", "OpConstantCompositeReplicateEXT %35 %uint_1");
+    for (const std::string operation : {"DEPTHWISE_CONV2D", "TRANSPOSE_CONV2D"}) {
+        SCOPED_TRACE(operation);
+        auto text = source;
+        replace(text, "CONV2D", operation);
+        if (operation == "TRANSPOSE_CONV2D") {
+            replace(text, "%34 %37 %38 %uint_1", "%34 %37 %uint_1");
+        }
+        expectPipelineResult(device, assembleSpirv(text), VK_SUCCESS, "", "conv2d",
+                             {{VK_FORMAT_R8_SINT, {1, 1, 1, 1}},
+                              {VK_FORMAT_R8_SINT, {1, 1, 1, 1}},
+                              {VK_FORMAT_R32_SINT, {1}},
+                              {VK_FORMAT_R32_SINT, {1, 1, 1, 1}}});
+    }
+}
+
+TEST_F(MLEmulationLayerGraphForVulkan, Tosa1xRfftDispatch) {
+    auto source = fileToString("fft2d.spvasm");
+    replace(source, "TOSA.001000.1", "TOSA.1x.1");
+    // A singleton transform has the same input and output shape.
+    replace(source, "%uint_4 = OpConstant %uint 4", "%uint_4 = OpConstant %uint 1");
+    replace(source, "%uint_4096 = OpConstant %uint 4096", "%uint_4096 = OpConstant %uint 1");
+    replace(source, "OpTypeGraphARM 2 %2 %2 %2 %2", "OpTypeGraphARM 1 %2 %2 %2");
+    replace(source, "\"main\" %main_arg_0 %main_arg_1", "\"main\" %main_arg_0");
+    replace(source, "%18 = OpGraphInputARM %2 %uint_1", "");
+    replace(source, "FFT2D %true %false %17 %18", "RFFT2D %false %17");
+    replace(source, "OpDecorate %main_res_0 Binding 2", "OpDecorate %main_res_0 Binding 1");
+    replace(source, "OpDecorate %main_res_1 Binding 3", "OpDecorate %main_res_1 Binding 2");
+    expectPipelineResult(
+        device, assembleSpirv(source), VK_SUCCESS, "", "main",
+        {{VK_FORMAT_R32_SFLOAT, {1, 1, 1}}, {VK_FORMAT_R32_SFLOAT, {1, 1, 1}}, {VK_FORMAT_R32_SFLOAT, {1, 1, 1}}});
+}
+
+TEST_F(MLEmulationLayerGraphForVulkan, Tosa1xRejectsNewOpcodes) {
+    const auto argmin = makeStorageConversionGraph("%f32", "%i32", 2, 1, false, "ARGMIN %u0 %u1 %a", "", "TOSA.1x.1");
+    expectPipelineResult(device, argmin, VK_ERROR_UNKNOWN, "Unsupported TOSA instruction 66", "storage_conversion",
+                         {{VK_FORMAT_R32_SFLOAT, {1, 2}}, {VK_FORMAT_R32_SINT, {2}}});
+    const auto matmul =
+        makeStorageConversionGraph("%i8", "%i32", 3, 3, true, "MATMUL_T %a %b %zp8 %zp8", "", "TOSA.1x.1");
+    expectPipelineResult(
+        device, matmul, VK_ERROR_UNKNOWN, "Unsupported TOSA instruction 68", "storage_conversion",
+        {{VK_FORMAT_R8_SINT, {1, 1, 1}}, {VK_FORMAT_R8_SINT, {1, 1, 1}}, {VK_FORMAT_R32_SINT, {1, 1, 1}}});
+}
+
 TEST_F(MLEmulationLayerGraphForVulkan, Tosa1xOptionalOperands) {
     auto text = fileToString("conv2d_1x.spvasm");
     // Pass the bias through CAST, GATHER and SCATTER with unchanged values.
