@@ -302,10 +302,12 @@ void RGBToY::setInput(std::shared_ptr<Image> src) {
 }
 
 void RGBToY::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, 0, srcImage_, nearestSampler_);
-    setOutputStorage(cmdBuf, dstYDownsampled_->isImageStore() ? 1 : 2, dstYDownsampled_);
+    setInputStorage(cmdBuf, Bindings::srcImage, srcImage_, nearestSampler_);
+    setOutputStorage(cmdBuf,
+                     dstYDownsampled_->isImageStore() ? Bindings::dstDownsampledImage : Bindings::dstDownsampledBuffer,
+                     dstYDownsampled_);
     if (outputFull_) {
-        setOutputStorage(cmdBuf, 3, dstYFull_);
+        setOutputStorage(cmdBuf, Bindings::dstFullBuffer, dstYFull_);
     }
 
     bindPipeline(cmdBuf);
@@ -343,8 +345,8 @@ Downsample::SpecConstants Downsample::makeSpecConstants() const {
 }
 
 void Downsample::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, 0, srcImage_, nearestSampler_);
-    setOutputStorage(cmdBuf, 1, dstImage_);
+    setInputStorage(cmdBuf, Bindings::srcImage, srcImage_, nearestSampler_);
+    setOutputStorage(cmdBuf, Bindings::dstImage, dstImage_);
 
     bindPipeline(cmdBuf);
     dispatchPipeline(cmdBuf);
@@ -381,10 +383,10 @@ MVProcessAndWarp::SpecConstants MVProcessAndWarp::makeSpecConstants() const {
 }
 
 void MVProcessAndWarp::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, 0, srcSearch_, nearestSampler_);
-    setInputStorage(cmdBuf, 1, srcFlow_, nearestSampler_);
-    setOutputStorage(cmdBuf, 2, dstWarped_);
-    setOutputStorage(cmdBuf, 3, dstFlow_);
+    setInputStorage(cmdBuf, Bindings::srcSearch, srcSearch_, nearestSampler_);
+    setInputStorage(cmdBuf, Bindings::srcFlow, srcFlow_, nearestSampler_);
+    setOutputStorage(cmdBuf, Bindings::dstWarped, dstWarped_);
+    setOutputStorage(cmdBuf, Bindings::dstFlow, dstFlow_);
 
     bindPipeline(cmdBuf);
     dispatchPipeline(cmdBuf);
@@ -424,9 +426,9 @@ void DenseWarp::setInputFlow(std::shared_ptr<Image> srcFlow) {
 }
 
 void DenseWarp::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, 0, srcSearch_, nearestSampler_);
-    setInputStorage(cmdBuf, 1, srcFlow_, nearestSampler_);
-    setOutputStorage(cmdBuf, 2, dstWarped_);
+    setInputStorage(cmdBuf, Bindings::srcSearch, srcSearch_, nearestSampler_);
+    setInputStorage(cmdBuf, Bindings::srcFlow, srcFlow_, nearestSampler_);
+    setOutputStorage(cmdBuf, Bindings::dstWarped, dstWarped_);
 
     bindPipeline(cmdBuf);
     dispatchPipeline(cmdBuf);
@@ -464,8 +466,8 @@ void MedianFilter::setOutput(std::shared_ptr<Image> dstImage) {
 }
 
 void MedianFilter::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, 0, srcFlow_, nearestSampler_);
-    setOutputStorage(cmdBuf, 1, dstFlow_);
+    setInputStorage(cmdBuf, Bindings::srcFlow, srcFlow_, nearestSampler_);
+    setOutputStorage(cmdBuf, Bindings::dstFlow, dstFlow_);
 
     bindPipeline(cmdBuf);
     dispatchPipeline(cmdBuf);
@@ -505,9 +507,9 @@ void BilateralFilter::setOutput(std::shared_ptr<Image> dstFlow) {
 }
 
 void BilateralFilter::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, 0, srcTemplate_, nearestSampler_);
-    setInputStorage(cmdBuf, 1, srcFlow_, nearestSampler_);
-    setOutputStorage(cmdBuf, 2, dstFlow_);
+    setInputStorage(cmdBuf, Bindings::srcTemplate, srcTemplate_, nearestSampler_);
+    setInputStorage(cmdBuf, Bindings::srcFlow, srcFlow_, nearestSampler_);
+    setOutputStorage(cmdBuf, Bindings::dstFlow, dstFlow_);
 
     bindPipeline(cmdBuf);
     dispatchPipeline(cmdBuf);
@@ -557,13 +559,13 @@ SubpixelME::SpecConstants SubpixelME::makeSpecConstants() const {
 }
 
 void SubpixelME::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, 0, srcSearch_, nearestZeroPadSampler_);
-    setInputStorage(cmdBuf, 1, srcTemplate_, nearestRepeatPadSampler_);
-    setInputStorage(cmdBuf, 2, srcFlow_, nearestZeroPadSampler_);
+    setInputStorage(cmdBuf, Bindings::srcSearch, srcSearch_, nearestZeroPadSampler_);
+    setInputStorage(cmdBuf, Bindings::srcTemplate, srcTemplate_, nearestRepeatPadSampler_);
+    setInputStorage(cmdBuf, Bindings::srcFlow, srcFlow_, nearestZeroPadSampler_);
     if (doAccumulate_) {
-        setInputStorage(cmdBuf, 3, srcPrevLevelFlow_, nearestZeroPadSampler_);
+        setInputStorage(cmdBuf, Bindings::srcPrevLevelFlow, srcPrevLevelFlow_, nearestZeroPadSampler_);
     }
-    setOutputStorage(cmdBuf, 4, dstFlow_);
+    setOutputStorage(cmdBuf, Bindings::dstFlow, dstFlow_);
 
     bindPipeline(cmdBuf);
     dispatchPipeline(cmdBuf);
@@ -632,14 +634,14 @@ void MVReplace::setOutputCost(std::shared_ptr<Image> dstCost) {
 }
 
 void MVReplace::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, 0, srcInputMV_, nearestSampler_);
-    setInputStorage(cmdBuf, 1, srcBlockMatchFlow_, nearestSampler_);
-    setInputStorage(cmdBuf, 2, srcInputMVCost_, nearestSampler_);
-    setInputStorage(cmdBuf, 3, srcBlockMatchCost_, nearestSampler_);
-    setOutputStorage(cmdBuf, 4, dstFlow_);
+    setInputStorage(cmdBuf, Bindings::srcInputMV, srcInputMV_, nearestSampler_);
+    setInputStorage(cmdBuf, Bindings::srcBlockMatchFlow, srcBlockMatchFlow_, nearestSampler_);
+    setInputStorage(cmdBuf, Bindings::srcInputMVCost, srcInputMVCost_, nearestSampler_);
+    setInputStorage(cmdBuf, Bindings::srcBlockMatchCost, srcBlockMatchCost_, nearestSampler_);
+    setOutputStorage(cmdBuf, Bindings::dstFlow, dstFlow_);
 
     if (outputCost_) {
-        setOutputStorage(cmdBuf, 5, dstCost_);
+        setOutputStorage(cmdBuf, Bindings::dstCost, dstCost_);
     }
 
     bindPipeline(cmdBuf);
@@ -728,14 +730,14 @@ void BlockMatch::setSearchRangeLimit(int newSearchRangeLimit) {
 }
 
 void BlockMatch::bindAndDispatch(VkCommandBuffer cmdBuf) {
-    setInputStorage(cmdBuf, 0, srcTemplate_, nearestSampler_);
-    setInputStorage(cmdBuf, 1, srcSearch_, nearestSampler_);
+    setInputStorage(cmdBuf, Bindings::srcTemplate, srcTemplate_, nearestSampler_);
+    setInputStorage(cmdBuf, Bindings::srcSearch, srcSearch_, nearestSampler_);
 
     if (hasFlowOutput()) {
-        setOutputStorage(cmdBuf, 2, dstFlow_);
+        setOutputStorage(cmdBuf, Bindings::dstFlow, dstFlow_);
     }
     if (hasCostOutput()) {
-        setOutputStorage(cmdBuf, 3, dstCost_);
+        setOutputStorage(cmdBuf, Bindings::dstCost, dstCost_);
     }
 
     bindPipeline(cmdBuf);
