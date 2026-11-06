@@ -35,7 +35,7 @@ enum RoundingMode {
 } // namespace
 
 void GraphTosaExtInst::handleOp(const Instruction *opExtInst) const {
-    const auto &tosa = TOSAInstructions(opExtInst->GetInOperand(1).words[0]);
+    const auto tosa = static_cast<TOSAInstructions>(opExtInst->GetSingleWordInOperand(1));
 
     // Verify that this is a TOSA external instruction
     static const std::unordered_map<TOSAInstructions, std::string> opNameMap = {
@@ -308,7 +308,7 @@ void GraphTosaExtInst::handleOp(const Instruction *opExtInst) const {
         handleTransposeConv2D(opExtInst, debugName);
         break;
     default:
-        throw std::runtime_error(std::string("Unsupported TOSA.001000.1 operand ") + std::to_string(tosa));
+        throw std::runtime_error(std::string("Unsupported TOSA instruction ") + std::to_string(tosa));
     }
 }
 
@@ -368,6 +368,9 @@ void GraphTosaExtInst::handleAvgPool2D(const Instruction *opExtInst, const std::
 
 void GraphTosaExtInst::handleCast(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> CAST input
+    if (opExtInst->NumInOperands() > 3) {
+        throw std::runtime_error("CAST optional operands are not supported");
+    }
     assert(opExtInst->NumInOperands() == 3);
 
     const auto &resultId = opExtInst->result_id();
@@ -557,6 +560,9 @@ void GraphTosaExtInst::handleFft2D(const Instruction *opExtInst, const std::stri
 
 void GraphTosaExtInst::handleGather(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> GATHER values indices
+    if (opExtInst->NumInOperands() > 4) {
+        throw std::runtime_error("GATHER optional operands are not supported");
+    }
     assert(opExtInst->NumInOperands() == 4);
 
     const auto &resultId = opExtInst->result_id();
@@ -845,6 +851,9 @@ void GraphTosaExtInst::handleRfft2D(const Instruction *opExtInst, const std::str
 
 void GraphTosaExtInst::handleScatter(const Instruction *opExtInst, const std::string &debugName) const {
     // OpExtInst <result id> <OpExtInstImport id> SCATTER valuesIn indices input
+    if (opExtInst->NumInOperands() > 5) {
+        throw std::runtime_error("SCATTER optional operands are not supported");
+    }
     assert(opExtInst->NumInOperands() == 5);
 
     const auto &resultId = opExtInst->result_id();

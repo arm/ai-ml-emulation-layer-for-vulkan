@@ -14,6 +14,8 @@
 #include "graph_tosa_ext_inst.hpp"
 #include "source/opt/build_module.h"
 
+#include <spirv-tools/libspirv.h>
+
 #include <algorithm>
 #include <stdexcept>
 #include <vector>
@@ -32,6 +34,9 @@ template <typename Decoder> std::unique_ptr<GraphExtInstDecoder> makeDecoder(Gra
 const std::vector<GraphExtInstSetDescriptor> &registeredGraphExtInstSets() {
     static const std::vector<GraphExtInstSetDescriptor> instructionSets{
         {std::string(tosaSpv100), &makeDecoder<GraphTosaExtInst>},
+#if VMEL_ENABLE_TOSA_1X
+        {std::string(tosaSpv1x), &makeDecoder<GraphTosaExtInst>},
+#endif
         {std::string(motionEngine100), &makeDecoder<GraphMotionEngine10ExtInst>},
     };
     return instructionSets;
@@ -61,6 +66,13 @@ GraphModuleInfo analyzeGraphModule(const uint32_t *code, size_t wordCount) {
     if (module.graphs().empty()) {
         throw std::runtime_error("Module contains no graph");
     }
+    // Tools cannot analyze scaled tensor types yet, including unused ones.
+    for (const auto &inst : module.types_values()) {
+        if (std::string_view(spvOpcodeString(static_cast<uint32_t>(inst.opcode()))) == "TypeTensorScaledBlockARM") {
+            throw std::runtime_error(
+                "OpTypeTensorScaledBlockARM is unsupported; rejected before optimizer type analysis");
+        }
+    }
     GraphModuleInfo info;
     for (const auto &inst : module.ext_inst_imports()) {
         const auto name = inst.GetInOperand(0).AsString();
@@ -72,7 +84,7 @@ GraphModuleInfo analyzeGraphModule(const uint32_t *code, size_t wordCount) {
             continue;
         }
         info.extInstImports.emplace(inst.result_id(), descriptor);
-        info.tosa |= name == tosaSpv100;
+        info.tosa |= name == tosaSpv100 || name == tosaSpv1x;
         info.motionEngine |= name == motionEngine100;
     }
     return info;

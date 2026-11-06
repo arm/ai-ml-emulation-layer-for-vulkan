@@ -563,6 +563,31 @@ application. The command locates the native libraries and layer manifests
 bundled in the installed package; their installation paths do not need to be
 configured manually.
 
+## Experimental TOSA 1.x support
+
+The default build supports the established TOSA 1.0 import. To additionally
+accept the selected `TOSA.1x.1` SPIR-V™ import, configure CMake with
+`-DVMEL_ENABLE_TOSA_1X=ON`, or pass `--enable-tosa-1x` to `scripts/build.py`.
+
+Both imports use the existing TOSA decoder, constructors and shaders. A module
+may mix `TOSA.001000.1` and `TOSA.1x.1`; each instruction selects its decoder
+using its import ID. Recognizing the import does not add implementations for
+new 1.x operations, types or semantics.
+
+Supplying optional operands to `CAST`, `GATHER` or `SCATTER` is unsupported,
+including explicitly supplied defaults. These forms, unknown operation
+opcodes, unknown TOSA imports (including `TOSA.001001.1`), and block-scaled
+tensor types are rejected with a Vulkan® graph-pipeline creation error.
+Scaled declarations are rejected even when unused, before optimizer type
+analysis. EL does not advertise full TOSA 1.x conformance.
+
+Pipeline creation assumes valid SPIR-V™ modules, operation operands and
+resource bindings. Validation remains the caller's responsibility; EL does
+not enable the Tools validator. Decoder exceptions are logged and returned as
+Vulkan® errors, but this does not guarantee rejection of arbitrary malformed
+input. The scaled-type rejection is a temporary guard while optimizer type
+analysis lacks support for those declarations.
+
 ## Known Limitations
 
 - Resources created with `VK_IMAGE_TILING_OPTIMAL` and

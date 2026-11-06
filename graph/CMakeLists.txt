@@ -9,6 +9,7 @@
 add_subdirectory(shaders)
 
 add_library(MLELGraph STATIC)
+target_compile_definitions(MLELGraph PUBLIC VMEL_ENABLE_TOSA_1X=$<BOOL:${VMEL_ENABLE_TOSA_1X}>)
 
 add_library(${ML_SDK_EL_NAMESPACE}::MLELGraph ALIAS MLELGraph)
 

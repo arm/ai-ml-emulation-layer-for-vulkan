@@ -33,6 +33,7 @@ class Builder:
         self.test_dir = pathlib.Path(self.build_dir) / "tests"
         self.threads = args.threads
         self.coverage = args.coverage
+        self.enable_tosa_1x = args.enable_tosa_1x
         self.run_tests = args.test or self.coverage
         self.build_type = args.build_type
         self.lint = args.lint
@@ -199,6 +200,9 @@ class Builder:
         # Extra options
         if self.run_tests:
             cmake_setup_cmd.append("-DVMEL_TESTS_ENABLE=ON")
+        cmake_setup_cmd.append(
+            f"-DVMEL_ENABLE_TOSA_1X={'ON' if self.enable_tosa_1x else 'OFF'}"
+        )
 
         if self.coverage:
             if self.target_platform != "host" or platform.system() != "Linux":
@@ -522,6 +526,11 @@ def get_package_version():
 
 def parse_arguments(argv=None):
     parser = argparse.ArgumentParser(description="Build ML SDK Emulation Layer")
+    parser.add_argument(
+        "--enable-tosa-1x",
+        action="store_true",
+        help="Enable experimental TOSA.1x.1 support; requires matching Tools/Headers",
+    )
     parser.add_argument(
         "--build-dir",
         help="Name of folder where to build the ML SDK Emulation Layer. Default: build",

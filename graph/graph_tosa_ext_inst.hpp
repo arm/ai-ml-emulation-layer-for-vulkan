@@ -24,6 +24,7 @@
 namespace spvtools::opt {
 
 inline constexpr std::string_view tosaSpv100 = "TOSA.001000.1";
+inline constexpr std::string_view tosaSpv1x = "TOSA.1x.1";
 using mlsdk::el::compute::graph_op::GraphPipeline;
 
 class GraphTosaExtInst final : public GraphExtInstDecoder {
