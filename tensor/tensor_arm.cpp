@@ -13,31 +13,40 @@
 using namespace mlsdk::el::utils;
 
 namespace mlsdk::el::layer {
+
+TensorStorage::TensorStorage(const VkTensorCreateInfoARM &createInfo) {
+    planes.push_back({TensorLayout(*createInfo.pDescription, createInfo.flags)});
+}
+
 VkResult TensorARM::create(const Device &dev, const VkTensorCreateInfoARM &createInfo,
                            const VkAllocationCallbacks *allocator) {
     m_info = TensorLayout(*createInfo.pDescription, createInfo.flags);
+    m_storage = TensorStorage(createInfo);
+    auto &plane = m_storage.planes.front();
     const auto *pCaptureDescriptorInfo = findType<VkOpaqueCaptureDescriptorDataCreateInfoEXT>(
         createInfo.pNext, VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT);
     const VkBufferCreateInfo bufferInfo = {
         VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, // type
         pCaptureDescriptorInfo,               // next
-        m_info.flags,                         // flags
-        m_info.size,                          // size
-        m_info.usage,                         // usage flags
+        plane.layout.flags,                   // flags
+        plane.layout.size,                    // size
+        plane.layout.usage,                   // usage flags
         createInfo.sharingMode,               // sharing
         createInfo.queueFamilyIndexCount,     // queue family index count
         createInfo.pQueueFamilyIndices,       // queue family index
 
     };
-    return dev.loader->vkCreateBuffer(dev.device, &bufferInfo, allocator, &m_tensorBuffer);
+    return dev.loader->vkCreateBuffer(dev.device, &bufferInfo, allocator, &plane.buffer);
 }
 
 void TensorARM::destroy(const Device &dev, const VkAllocationCallbacks *pAllocator) {
-    dev.loader->vkDestroyBuffer(dev.device, m_tensorBuffer, pAllocator);
+    for (const auto &plane : m_storage.planes) {
+        dev.loader->vkDestroyBuffer(dev.device, plane.buffer, pAllocator);
+    }
 }
 
 void TensorARM::getMemoryRequirements(const Device &dev, VkMemoryRequirements *requirements) const {
-    dev.loader->vkGetBufferMemoryRequirements(dev.device, m_tensorBuffer, requirements);
+    dev.loader->vkGetBufferMemoryRequirements(dev.device, getTensorBuffer(), requirements);
 }
 
 void TensorARM::getDeviceTensorMemoryRequirements(const Device &dev, const VkTensorCreateInfoARM &createInfo,
@@ -72,17 +81,18 @@ void TensorARM::getDeviceTensorMemoryRequirements(const Device &dev, const VkTen
     }
 }
 
-VkResult TensorARM::bindTensorMemory(const Device &dev, VkDeviceMemory memory, VkDeviceSize offset) {
-    return dev.loader->vkBindBufferMemory(dev.device, m_tensorBuffer, memory, offset);
+VkResult TensorARM::bindTensorMemory(const Device &dev, VkDeviceMemory memory, VkDeviceSize offset) const {
+    return dev.loader->vkBindBufferMemory(dev.device, getTensorBuffer(), memory, offset);
 }
 
 void TensorARM::updateAliasedTensorInfo(const Device &dev, VkImage image) {
-    auto rank = m_info.dimensions.size();
+    auto &info = m_info;
+    auto rank = info.dimensions.size();
     if (rank < 2 || rank > 4) {
         throw std::runtime_error("Tensor rank should be 2, 3 or 4 to alias with image.");
     }
 
-    if (m_info.usesImageAliasing) {
+    if (info.usesImageAliasing) {
         const VkImageSubresource imageSubresource = {
             VK_IMAGE_ASPECT_COLOR_BIT,
             0,
@@ -90,7 +100,8 @@ void TensorARM::updateAliasedTensorInfo(const Device &dev, VkImage image) {
         };
         VkSubresourceLayout imageSubresourceLayout{};
         dev.loader->vkGetImageSubresourceLayout(dev.device, image, &imageSubresource, &imageSubresourceLayout);
-        tensor_description_detail::updateAliasedStrides(rank, m_info.strides, imageSubresourceLayout);
+        tensor_description_detail::updateAliasedStrides(rank, info.strides, imageSubresourceLayout);
+        m_storage.planes.front().layout.strides = info.strides;
     }
 }
 
@@ -120,11 +131,11 @@ void TensorARM::copyToTensor(CommandBuffer &cmd, const TensorARM &dstTensor) {
     }
 }
 
-VkResult TensorARM::getOpaqueCaptureDescriptorDataEXT(const Device &dev, void *pData) {
+VkResult TensorARM::getOpaqueCaptureDescriptorDataEXT(const Device &dev, void *pData) const {
     const VkBufferCaptureDescriptorDataInfoEXT info = {
         VK_STRUCTURE_TYPE_BUFFER_CAPTURE_DESCRIPTOR_DATA_INFO_EXT,
         nullptr,
-        m_tensorBuffer,
+        getTensorBuffer(),
     };
     return dev.loader->vkGetBufferOpaqueCaptureDescriptorDataEXT(dev.device, &info, pData);
 }
