@@ -8,7 +8,6 @@
 #include "mlel/utils.hpp"
 
 #include <numeric>
-#include <vulkan/vulkan_format_traits.hpp>
 
 using namespace mlsdk::el::utils;
 
@@ -106,27 +105,22 @@ void TensorARM::updateAliasedTensorInfo(const Device &dev, VkImage image) {
 }
 
 void TensorARM::copyToTensor(TensorCommandBuffer &cmd, const TensorARM &dstTensor) {
-    const auto &srcDimensions = m_info.dimensions;
-    const auto &srcStrides = m_info.strides;
-    const auto srcElementSize = m_info.elementSize;
-    const auto &dstDimensions = dstTensor.m_info.dimensions;
-    const auto &dstStrides = dstTensor.m_info.strides;
-    const auto dstElementSize = dstTensor.m_info.elementSize;
-
-    if (srcDimensions.size() != dstDimensions.size() || srcElementSize != dstElementSize ||
-        !std::equal(srcDimensions.begin(), srcDimensions.end(), dstDimensions.begin())) {
+    if (m_info.dimensions != dstTensor.m_info.dimensions || m_info.elementSize != dstTensor.m_info.elementSize) {
         throw std::runtime_error("Src tensor and dst tensor should have same dimensions and element size.");
     }
 
-    if (std::equal(srcStrides.begin(), srcStrides.end(), dstStrides.begin())) {
-        VkBufferCopy copyInfo = {0, 0, m_info.size};
-        cmd.loader->vkCmdCopyBuffer(cmd.commandBuffer, getTensorBuffer(), dstTensor.getTensorBuffer(), 1, &copyInfo);
+    const auto &srcPlane = m_storage.planes.front();
+    const auto &dstPlane = dstTensor.m_storage.planes.front();
+    if (srcPlane.layout.strides == dstPlane.layout.strides) {
+        const VkBufferCopy copyInfo{0, 0, srcPlane.layout.size};
+        cmd.loader->vkCmdCopyBuffer(cmd.commandBuffer, srcPlane.buffer, dstPlane.buffer, 1, &copyInfo);
     } else {
-        const auto regionCount = static_cast<uint32_t>(utils::getElementCount(srcDimensions));
-        auto pipeline = std::make_unique<TensorCopyPipeline>(cmd.loader, cmd.device->device, *this, dstTensor);
+        const auto regionCount = utils::getElementCount(srcPlane.layout.dimensions);
         assert(regionCount < std::numeric_limits<uint32_t>::max());
-        cmd.recordSecondaryCommandBuffer(
-            [&](VkCommandBuffer secondary) { pipeline->cmdBindAndDispatchCopy(secondary, regionCount); });
+        auto pipeline = std::make_unique<TensorCopyPipeline>(cmd.loader, cmd.device->device, srcPlane, dstPlane);
+        cmd.recordSecondaryCommandBuffer([&](VkCommandBuffer secondary) {
+            pipeline->cmdBindAndDispatchCopy(secondary, static_cast<uint32_t>(regionCount));
+        });
         cmd.retainCopyPipeline(std::move(pipeline));
     }
 }
@@ -142,11 +136,11 @@ VkResult TensorARM::getOpaqueCaptureDescriptorDataEXT(const Device &dev, void *p
 
 TensorCopyPipeline::TensorCopyPipeline(
     const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader, VkDevice _device,
-    const TensorARM &srcTensor, const TensorARM &dstTensor)
-    : loader{_loader}, device{_device}, pushConstant{createPushConstant(srcTensor, dstTensor)},
-      shaderModule{createShaderModule(srcTensor)}, descriptorPool{createDescriptorPool()},
+    const TensorPlane &srcPlane, const TensorPlane &dstPlane)
+    : loader{_loader}, device{_device}, pushConstant{createPushConstant(srcPlane, dstPlane)},
+      shaderModule{createShaderModule(srcPlane)}, descriptorPool{createDescriptorPool()},
       descriptorSetLayout{createDescriptorSetLayout()}, pipelineLayout{createPipelineLayout()},
-      pipeline{createPipeline(srcTensor)}, descriptorSet{createDescriptorSet(srcTensor, dstTensor)} {}
+      pipeline{createPipeline(srcPlane)}, descriptorSet{createDescriptorSet(srcPlane, dstPlane)} {}
 
 TensorCopyPipeline::~TensorCopyPipeline() {
     loader->vkFreeDescriptorSets(device, descriptorPool, 1, &descriptorSet);
@@ -157,27 +151,27 @@ TensorCopyPipeline::~TensorCopyPipeline() {
     loader->vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 }
 
-TensorCopyPipeline::PushConstant TensorCopyPipeline::createPushConstant(const TensorARM &srcTensor,
-                                                                        const TensorARM &dstTensor) const {
+TensorCopyPipeline::PushConstant TensorCopyPipeline::createPushConstant(const TensorPlane &srcPlane,
+                                                                        const TensorPlane &dstPlane) const {
     PushConstant constant;
-    const auto &dimensions = srcTensor.getTensorInfo().dimensions;
-    const auto &srcStrides = srcTensor.getTensorInfo().strides;
-    const auto &dstStrides = dstTensor.getTensorInfo().strides;
+    const auto &dimensions = srcPlane.layout.dimensions;
+    const auto &srcStrides = srcPlane.layout.strides;
+    const auto &dstStrides = dstPlane.layout.strides;
     std::copy(dimensions.begin(), dimensions.end(), &constant.dimensions[0]);
     std::copy(srcStrides.begin(), srcStrides.end(), &constant.srcStrides[0]);
     std::copy(dstStrides.begin(), dstStrides.end(), &constant.dstStrides[0]);
     return constant;
 }
 
-VkShaderModule TensorCopyPipeline::createShaderModule(const TensorARM &srcTensor) const {
-    const auto srcType = std::string(getFormatInfo(srcTensor.getTensorInfo().format)->glslType);
+VkShaderModule TensorCopyPipeline::createShaderModule(const TensorPlane &srcPlane) const {
+    const auto srcType = std::string(getFormatInfo(srcPlane.layout.format)->glslType);
     const std::lock_guard lock(cacheMutex);
     auto &spirv = spirvCache[srcType];
     if (spirv.empty()) {
         std::string tmp = glsl;
         replaceAll(tmp, "%warpX%", std::to_string(warp1D));
         replaceAll(tmp, "%type%", srcType);
-        replaceAll(tmp, "%type_size%", std::to_string(vk::blockSize(vk::Format(srcTensor.getTensorInfo().format))));
+        replaceAll(tmp, "%type_size%", std::to_string(srcPlane.layout.elementSize));
         spirv = glslToSpirv(tmp);
     }
 
@@ -279,8 +273,8 @@ VkPipelineLayout TensorCopyPipeline::createPipelineLayout() const {
     return layout;
 }
 
-VkPipeline TensorCopyPipeline::createPipeline(const TensorARM &srcTensor) const {
-    const auto rank = static_cast<uint32_t>(srcTensor.getTensorInfo().dimensions.size());
+VkPipeline TensorCopyPipeline::createPipeline(const TensorPlane &srcPlane) const {
+    const auto rank = static_cast<uint32_t>(srcPlane.layout.dimensions.size());
     const VkSpecializationMapEntry entry = {
         0,               // constantID
         0,               // offset
@@ -323,7 +317,8 @@ VkPipeline TensorCopyPipeline::createPipeline(const TensorARM &srcTensor) const 
     return vkPipeline;
 }
 
-VkDescriptorSet TensorCopyPipeline::createDescriptorSet(const TensorARM &srcTensor, const TensorARM &dstTensor) const {
+VkDescriptorSet TensorCopyPipeline::createDescriptorSet(const TensorPlane &srcPlane,
+                                                        const TensorPlane &dstPlane) const {
     const VkDescriptorSetAllocateInfo allocateInfo = {
         VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, // type
         nullptr,                                        // next
@@ -338,15 +333,15 @@ VkDescriptorSet TensorCopyPipeline::createDescriptorSet(const TensorARM &srcTens
     }
 
     struct VkDescriptorBufferInfo srcBufferInfo = {
-        srcTensor.getTensorBuffer(), // buffer
-        0,                           // offset
-        VK_WHOLE_SIZE,               // range
+        srcPlane.buffer, // buffer
+        0,               // offset
+        VK_WHOLE_SIZE,   // range
     };
 
     struct VkDescriptorBufferInfo dstBufferInfo = {
-        dstTensor.getTensorBuffer(), // buffer
-        0,                           // offset
-        VK_WHOLE_SIZE,               // range
+        dstPlane.buffer, // buffer
+        0,               // offset
+        VK_WHOLE_SIZE,   // range
     };
 
     const std::vector<VkWriteDescriptorSet> write = {
