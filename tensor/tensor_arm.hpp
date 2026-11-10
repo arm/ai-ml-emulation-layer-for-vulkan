@@ -28,6 +28,7 @@ struct TensorPlane {
 struct TensorStorage {
     TensorStorage() : planes(1) {}
     explicit TensorStorage(const VkTensorCreateInfoARM &createInfo);
+    void destroy(const Device &dev, const VkAllocationCallbacks *pAllocator);
 
     std::vector<TensorPlane> planes;
 };
@@ -41,6 +42,7 @@ class TensorARM {
 
     VkBuffer getTensorBuffer() const { return m_storage.planes.front().buffer; };
     const TensorLayout &getTensorInfo() const { return m_info; };
+    const std::vector<TensorPlane> &getPlanes() const { return m_storage.planes; }
 
     VkResult create(const Device &dev, const VkTensorCreateInfoARM &createInfo, const VkAllocationCallbacks *allocator);
     void destroy(const Device &dev, const VkAllocationCallbacks *pAllocator);

@@ -17,31 +17,41 @@ TensorStorage::TensorStorage(const VkTensorCreateInfoARM &createInfo) {
     planes.push_back({TensorLayout(*createInfo.pDescription, createInfo.flags)});
 }
 
+void TensorStorage::destroy(const Device &dev, const VkAllocationCallbacks *pAllocator) {
+    for (const auto &plane : planes) {
+        dev.loader->vkDestroyBuffer(dev.device, plane.buffer, pAllocator);
+    }
+}
+
 VkResult TensorARM::create(const Device &dev, const VkTensorCreateInfoARM &createInfo,
                            const VkAllocationCallbacks *allocator) {
-    m_info = TensorLayout(*createInfo.pDescription, createInfo.flags);
     m_storage = TensorStorage(createInfo);
-    auto &plane = m_storage.planes.front();
+    m_info = m_storage.planes.front().layout;
     const auto *pCaptureDescriptorInfo = findType<VkOpaqueCaptureDescriptorDataCreateInfoEXT>(
         createInfo.pNext, VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT);
-    const VkBufferCreateInfo bufferInfo = {
-        VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, // type
-        pCaptureDescriptorInfo,               // next
-        plane.layout.flags,                   // flags
-        plane.layout.size,                    // size
-        plane.layout.usage,                   // usage flags
-        createInfo.sharingMode,               // sharing
-        createInfo.queueFamilyIndexCount,     // queue family index count
-        createInfo.pQueueFamilyIndices,       // queue family index
-
-    };
-    return dev.loader->vkCreateBuffer(dev.device, &bufferInfo, allocator, &plane.buffer);
+    for (auto &plane : m_storage.planes) {
+        const VkBufferCreateInfo bufferInfo = {
+            VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            pCaptureDescriptorInfo,
+            plane.layout.flags,
+            plane.layout.size,
+            plane.layout.usage,
+            createInfo.sharingMode,
+            createInfo.queueFamilyIndexCount,
+            createInfo.pQueueFamilyIndices,
+        };
+        const VkResult result = dev.loader->vkCreateBuffer(dev.device, &bufferInfo, allocator, &plane.buffer);
+        if (result != VK_SUCCESS) {
+            plane.buffer = VK_NULL_HANDLE;
+            destroy(dev, allocator);
+            return result;
+        }
+    }
+    return VK_SUCCESS;
 }
 
 void TensorARM::destroy(const Device &dev, const VkAllocationCallbacks *pAllocator) {
-    for (const auto &plane : m_storage.planes) {
-        dev.loader->vkDestroyBuffer(dev.device, plane.buffer, pAllocator);
-    }
+    m_storage.destroy(dev, pAllocator);
 }
 
 void TensorARM::getMemoryRequirements(const Device &dev, VkMemoryRequirements *requirements) const {
