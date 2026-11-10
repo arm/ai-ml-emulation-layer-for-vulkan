@@ -42,8 +42,6 @@ class Builder:
         self.target_platform = args.target_platform
         self.cmake_toolchain_for_android = args.cmake_toolchain_for_android
         self.use_float_as_double = args.use_float_as_double
-        self.doc_only = args.doc_only
-        self.doc = args.doc or self.doc_only
         self.clang_tidy_fix = args.clang_tidy_fix
 
         self.package_dir = args.package_dir or self.build_dir
@@ -218,8 +216,6 @@ class Builder:
             "-DVMEL_USE_FLOAT_AS_DOUBLE="
             + ("ON" if self.use_float_as_double else "OFF")
         )
-        if self.doc:
-            cmake_setup_cmd.append("-DVMEL_BUILD_DOCS=ON")
 
         if self.package_version:
             cmake_setup_cmd.append(f"-DML_SDK_PACKAGE_VERSION={self.package_version}")
@@ -266,8 +262,6 @@ class Builder:
             "--config",
             self.build_type,
         ]
-        if self.doc_only:
-            cmake_build_cmd.extend(["--target", "mlel_doc"])
 
         try:
             subprocess.run(cmake_setup_cmd, check=True)
@@ -582,19 +576,6 @@ def parse_arguments(argv=None):
         "--cmake-toolchain-for-android",
         help="Path to the cmake compiler toolchain. Default: %(default)s",
         default="",
-    )
-    doc_group = parser.add_mutually_exclusive_group()
-    doc_group.add_argument(
-        "--doc",
-        help="Build documentation. Default: %(default)s",
-        action="store_true",
-        default=False,
-    )
-    doc_group.add_argument(
-        "--doc-only",
-        help="Only build documentation. Default: %(default)s",
-        action="store_true",
-        default=False,
     )
     parser.add_argument(
         "--install-libdir",

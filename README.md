@@ -135,9 +135,8 @@ python3 $SDK_PATH/sw/emulation-layer/scripts/build.py -j $(nproc) --target-platf
 ```
 
 To enable and run tests, use the `--test` option. To lint the tests, use the
-`--lint` option. To build the documentation, use the `--doc` option. To build
-the documentation, you must have `sphinx`, `doxygen`, PlantUML, a compatible
-Java runtime, and Graphviz installed on your machine.
+`--lint` option. To build the documentation, install the locked Sphinx tooling
+dependencies, PlantUML, a compatible Java runtime, and Graphviz.
 
 To build only the documentation without configuring or compiling the native
 project, run these commands from the emulation-layer repository root:
@@ -148,12 +147,9 @@ uv run --no-sync cmake -S docs -B build-docs -G Ninja
 cmake --build build-docs
 ```
 
-The standalone documentation build requires Doxygen 1.9.1 or later and the
-locked Sphinx tooling dependencies. The HTML entry page is
+The HTML entry page is
 `build-docs/docs/out/index.html`. Use a separate build directory for the native
-project; the two CMake entry points cannot share one cache. The build script's
-`--doc` and `--doc-only` options continue to use the native project during the
-transition.
+project; the two CMake entry points cannot share one cache.
 
 You can install the build artifacts for this project into a specified location.
 To install the build artifacts, pass the `--install` option with the required
