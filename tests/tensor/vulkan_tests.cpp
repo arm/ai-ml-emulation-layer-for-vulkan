@@ -29,8 +29,7 @@ TEST_F(MLEmulationLayerGraphForVulkan, Tensors2CreationRemainsUnimplemented) {
     const auto &vkDevice = &(*device);
     const auto *dispatch = vkDevice.getDispatcher();
     // Header-only inputs verify rejection before any draft fields are read.
-    const VkBaseInStructure planar{VK_STRUCTURE_TYPE_PLANAR_TENSOR_DESCRIPTION_ARM, nullptr};
-    const VkBaseInStructure scaling{VK_STRUCTURE_TYPE_TENSOR_BLOCK_SCALING_CREATE_INFO_ARM, nullptr};
+    const VkBaseInStructure blockScaled{VK_STRUCTURE_TYPE_BLOCK_SCALED_TENSOR_DESCRIPTION_ARM, nullptr};
     VkTensorDescriptionARM description{};
     description.sType = VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM;
     description.format = VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM;
@@ -38,8 +37,8 @@ TEST_F(MLEmulationLayerGraphForVulkan, Tensors2CreationRemainsUnimplemented) {
     create.sType = VK_STRUCTURE_TYPE_TENSOR_CREATE_INFO_ARM;
     const VkDeviceTensorMemoryRequirementsARM query{VK_STRUCTURE_TYPE_DEVICE_TENSOR_MEMORY_REQUIREMENTS_ARM, nullptr,
                                                     &create};
-    // Reject each new type without inspecting its fields or requiring other descriptions.
-    for (const auto *chain : {&planar, &scaling, static_cast<const VkBaseInStructure *>(nullptr)}) {
+    // Reject block-scaled descriptions without reading their fields, and standalone E8M0 tensors.
+    for (const auto *chain : {&blockScaled, static_cast<const VkBaseInStructure *>(nullptr)}) {
         create.pNext = chain;
         create.pDescription = chain ? nullptr : &description;
         VkTensorARM tensor = VK_NULL_HANDLE;
@@ -75,14 +74,13 @@ TEST_F(MLEmulationLayerGraphForVulkan, Tensors2QueriesRemainUnimplemented) {
     const auto &physical = &(*device->getPhysicalDevice());
     const auto *dispatch = physical.getDispatcher();
     VkPhysicalDeviceTensors2FeaturesARM tensors2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSORS_2_FEATURES_ARM, nullptr,
-                                                 VK_TRUE, VK_TRUE, VK_TRUE};
+                                                 VK_TRUE, VK_TRUE};
     VkPhysicalDeviceFeatures2 features{};
     features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     features.pNext = &tensors2;
     dispatch->vkGetPhysicalDeviceFeatures2(*physical, &features);
     EXPECT_FALSE(tensors2.tensorFlexibleStrides);
     EXPECT_FALSE(tensors2.tensorBlockScaled);
-    EXPECT_FALSE(tensors2.tensorSparsity);
     VkTensorFormatPropertiesARM tensorFormat{VK_STRUCTURE_TYPE_TENSOR_FORMAT_PROPERTIES_ARM, nullptr, 1, 1};
     VkFormatProperties2 format{VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2, &tensorFormat, {}};
     dispatch->vkGetPhysicalDeviceFormatProperties2(*physical, VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM,
@@ -102,7 +100,7 @@ TEST_F(MLEmulationLayerGraphForVulkan, Tensors2QueriesRemainUnimplemented) {
     const vk::raii::Device created(physical, createdDevice);
     EXPECT_EQ(create.pNext, &features);
     EXPECT_EQ(features.pNext, &tensors2);
-    for (auto *flag : {&tensors2.tensorFlexibleStrides, &tensors2.tensorBlockScaled, &tensors2.tensorSparsity}) {
+    for (auto *flag : {&tensors2.tensorFlexibleStrides, &tensors2.tensorBlockScaled}) {
         *flag = VK_TRUE;
         VkDevice rejectedDevice = VK_NULL_HANDLE;
         EXPECT_EQ(dispatch->vkCreateDevice(*physical, &create, nullptr, &rejectedDevice), VK_ERROR_FEATURE_NOT_PRESENT);

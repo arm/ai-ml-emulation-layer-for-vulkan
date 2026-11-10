@@ -184,8 +184,7 @@ class TensorLayer : public VulkanLayerImpl {
     static VkResult VKAPI_CALL vkCreateTensorARM(VkDevice device, const VkTensorCreateInfoARM *createInfo,
                                                  const VkAllocationCallbacks *allocator, VkTensorARM *tensor) {
 #ifdef VK_ARM_tensors2
-        if (findType<VkBaseInStructure>(createInfo->pNext, VK_STRUCTURE_TYPE_PLANAR_TENSOR_DESCRIPTION_ARM) ||
-            findType<VkBaseInStructure>(createInfo->pNext, VK_STRUCTURE_TYPE_TENSOR_BLOCK_SCALING_CREATE_INFO_ARM) ||
+        if (findType<VkBaseInStructure>(createInfo->pNext, VK_STRUCTURE_TYPE_BLOCK_SCALED_TENSOR_DESCRIPTION_ARM) ||
             (createInfo->pDescription &&
              createInfo->pDescription->format == VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM)) {
             tensorLog(Severity::Error) << "Tensors2 creation is not implemented" << std::endl;
@@ -293,8 +292,7 @@ class TensorLayer : public VulkanLayerImpl {
                                                                   VkMemoryRequirements2 *requirements) {
 #ifdef VK_ARM_tensors2
         const auto *createInfo = info->pCreateInfo;
-        if (findType<VkBaseInStructure>(createInfo->pNext, VK_STRUCTURE_TYPE_PLANAR_TENSOR_DESCRIPTION_ARM) ||
-            findType<VkBaseInStructure>(createInfo->pNext, VK_STRUCTURE_TYPE_TENSOR_BLOCK_SCALING_CREATE_INFO_ARM) ||
+        if (findType<VkBaseInStructure>(createInfo->pNext, VK_STRUCTURE_TYPE_BLOCK_SCALED_TENSOR_DESCRIPTION_ARM) ||
             (createInfo->pDescription &&
              createInfo->pDescription->format == VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM)) {
             tensorLog(Severity::Error) << "Tensors2 memory queries are not implemented" << std::endl;
@@ -838,7 +836,6 @@ class TensorLayer : public VulkanLayerImpl {
             tensorLog(Severity::Error) << "Tensors2 feature queries are not implemented" << std::endl;
             features->tensorFlexibleStrides = VK_FALSE;
             features->tensorBlockScaled = VK_FALSE;
-            features->tensorSparsity = VK_FALSE;
         }
 #endif
         if (pTensorFeatures) {
@@ -909,7 +906,7 @@ class TensorLayer : public VulkanLayerImpl {
 #ifdef VK_ARM_tensors2
         if (const auto *features = findType<VkPhysicalDeviceTensors2FeaturesARM>(
                 createInfo->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSORS_2_FEATURES_ARM);
-            features && (features->tensorFlexibleStrides || features->tensorBlockScaled || features->tensorSparsity)) {
+            features && (features->tensorFlexibleStrides || features->tensorBlockScaled)) {
             tensorLog(Severity::Error) << "Tensors2 device features are not implemented" << std::endl;
             *device = VK_NULL_HANDLE;
             return VK_ERROR_FEATURE_NOT_PRESENT;
