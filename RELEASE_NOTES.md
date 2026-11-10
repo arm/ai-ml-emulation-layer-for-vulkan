@@ -16,6 +16,16 @@
   and resource-binding validation remains the caller's responsibility; Tools
   validation remains disabled.
 
+### Tensor Support
+
+- Added gated FP8/E8M0 block-scaled tensor backing with separate plane memory, copies,
+  and synchronization for the `VK_ARM_tensors2` API. Plane copies use
+  `VkTensorPlaneInfoARM` in `VkCopyTensorInfoARM::pNext` as a prototype
+  convention pending specification.
+- Prepared tensor-view descriptor metadata to include every backing plane's
+  address, dimensions, and strides. The graph layer is responsible for lowering
+  block-scaled accesses to formats supported by the tensor shaders.
+
 ### Build, Packaging & Dependencies
 
 - Locked development tooling with `uv.lock` in place of the tooling

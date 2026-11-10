@@ -137,11 +137,15 @@ substituteTensorWriteDescriptorSet(const Device &dev, uint32_t descriptorWriteCo
             });
 
 #ifdef EXPERIMENTAL_MOLTEN_VK_SUPPORT
-            // Bind the storage buffer for the raw tensor data at binding + EXPERIMENTAL_MVK_BUFFER_BINDING_OFFSET
+            const auto *plane = tensorViewARM->findPlane(std::nullopt);
+            if (!plane) {
+                throw std::runtime_error("MoltenVK raw storage bindings require an ordinary tensor.");
+            }
+            // Bind at binding + EXPERIMENTAL_MVK_BUFFER_BINDING_OFFSET.
             bufferInfos.emplace_back(VkDescriptorBufferInfo{
-                tensorViewARM->getTensorBuffer(), // buffer
-                0,                                // offset
-                VK_WHOLE_SIZE,                    // range
+                plane->buffer, // buffer
+                0,             // offset
+                VK_WHOLE_SIZE, // range
             });
             writes.emplace_back(VkWriteDescriptorSet{
                 VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,                                           // sType

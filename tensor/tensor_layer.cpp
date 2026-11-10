@@ -21,6 +21,8 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <optional>
+#include <stdexcept>
 #include <utility>
 #include <variant>
 
@@ -63,9 +65,16 @@ std::size_t spirvHash(const uint32_t *spirvCode, std::size_t spirvSize) {
  * Layer
  *******************************************************************************/
 
+#ifdef VK_ARM_tensors2
+constexpr std::array<const VkExtensionProperties, 2> extensions = {
+    VkExtensionProperties{VK_ARM_TENSORS_EXTENSION_NAME, VK_ARM_TENSORS_SPEC_VERSION},
+    VkExtensionProperties{VK_ARM_TENSORS_2_EXTENSION_NAME, VK_ARM_TENSORS_2_SPEC_VERSION},
+};
+#else
 constexpr std::array<const VkExtensionProperties, 1> extensions = {
     VkExtensionProperties{VK_ARM_TENSORS_EXTENSION_NAME, VK_ARM_TENSORS_SPEC_VERSION},
 };
+#endif
 constexpr std::array<const VkExtensionProperties, 0> requiredExtensions = {};
 constexpr VkLayerProperties layerProperties = {
     "VK_LAYER_ML_Tensor_Emulation",
@@ -184,17 +193,32 @@ class TensorLayer : public VulkanLayerImpl {
     static VkResult VKAPI_CALL vkCreateTensorARM(VkDevice device, const VkTensorCreateInfoARM *createInfo,
                                                  const VkAllocationCallbacks *allocator, VkTensorARM *tensor) {
 #ifdef VK_ARM_tensors2
-        if (findType<VkBaseInStructure>(createInfo->pNext, VK_STRUCTURE_TYPE_BLOCK_SCALED_TENSOR_DESCRIPTION_ARM) ||
-            (createInfo->pDescription &&
-             createInfo->pDescription->format == VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM)) {
-            tensorLog(Severity::Error) << "Tensors2 creation is not implemented" << std::endl;
+        const auto *scaled = findType<VkBlockScaledTensorDescriptionARM>(
+            createInfo->pNext, VK_STRUCTURE_TYPE_BLOCK_SCALED_TENSOR_DESCRIPTION_ARM);
+        if ((scaled && (createInfo->pDescription ||
+                        scaled->blockScalingScheme != VK_TENSOR_BLOCK_SCALING_SCHEME_PLANAR_OCP_MICROSCALING_ARM ||
+                        scaled->planeCount != 2 || !scaled->pPlaneTypes || !scaled->pPlaneDescriptions ||
+                        scaled->pPlaneTypes[0] != VK_TENSOR_PLANE_VALUES_ARM ||
+                        scaled->pPlaneTypes[1] != VK_TENSOR_PLANE_SCALES_ARM)) ||
+            (!scaled && !createInfo->pDescription)) {
+            tensorLog(Severity::Error) << "Unsupported tensor creation description" << std::endl;
             *tensor = VK_NULL_HANDLE;
-            return VK_ERROR_FEATURE_NOT_PRESENT;
+            return VK_ERROR_VALIDATION_FAILED;
         }
 #endif
         auto *tensorARM = allocateObject<TensorARM>(allocator);
-        VkResult result = tensorARM->create(*VulkanLayerImpl::getHandle(device), *createInfo, allocator);
+        VkResult result;
+        try {
+            result = tensorARM->create(*VulkanLayerImpl::getHandle(device), *createInfo, allocator);
+        } catch (const std::invalid_argument &error) {
+            tensorLog(Severity::Error) << error.what() << std::endl;
+            result = VK_ERROR_VALIDATION_FAILED;
+        } catch (const std::runtime_error &error) {
+            tensorLog(Severity::Error) << error.what() << std::endl;
+            result = VK_ERROR_UNKNOWN;
+        }
         if (result != VK_SUCCESS) {
+            *tensor = VK_NULL_HANDLE;
             destroyObject(allocator, tensorARM);
             return result;
         }
@@ -240,39 +264,48 @@ class TensorLayer : public VulkanLayerImpl {
     static void VKAPI_CALL vkGetTensorMemoryRequirementsARM(VkDevice device,
                                                             const VkTensorMemoryRequirementsInfoARM *info,
                                                             VkMemoryRequirements2 *requirements) {
+        const auto *tensor = reinterpret_cast<const TensorARM *>(info->tensor);
+        std::optional<uint32_t> planeIndex;
 #ifdef VK_ARM_tensors2
-        if (findType<VkBaseInStructure>(info->pNext, VK_STRUCTURE_TYPE_TENSOR_PLANE_INFO_ARM)) {
+        if (const auto *plane = findType<VkTensorPlaneInfoARM>(info->pNext, VK_STRUCTURE_TYPE_TENSOR_PLANE_INFO_ARM)) {
+            planeIndex = plane->planeIndex;
+        }
+#endif
+        if (!tensor || !tensor->getMemoryRequirements(*VulkanLayerImpl::getHandle(device),
+                                                      &requirements->memoryRequirements, planeIndex)) {
             requirements->memoryRequirements = {};
             if (auto *dedicated = findTypeMutable<VkMemoryDedicatedRequirements>(
                     requirements->pNext, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS)) {
                 dedicated->prefersDedicatedAllocation = VK_FALSE;
                 dedicated->requiresDedicatedAllocation = VK_FALSE;
             }
-            tensorLog(Severity::Error) << "Tensor plane memory queries are not implemented" << std::endl;
-            return;
+            tensorLog(Severity::Error) << "Tensor memory query requires a valid plane selector" << std::endl;
         }
-#endif
-        const auto *tensor = reinterpret_cast<const TensorARM *>(info->tensor);
-        tensor->getMemoryRequirements(*VulkanLayerImpl::getHandle(device), &requirements->memoryRequirements);
     }
 
     static VkResult VKAPI_CALL vkBindTensorMemoryARM(VkDevice device, uint32_t bindInfoCount,
                                                      const VkBindTensorMemoryInfoARM *bindInfos) {
-#ifdef VK_ARM_tensors2
-        // Check the whole batch before binding any ordinary tensor in it.
-        for (uint32_t i = 0; i < bindInfoCount; ++i) {
-            if (findType<VkBaseInStructure>(bindInfos[i].pNext, VK_STRUCTURE_TYPE_TENSOR_PLANE_INFO_ARM)) {
-                tensorLog(Severity::Error) << "Tensor plane memory binding is not implemented" << std::endl;
-                return VK_ERROR_FEATURE_NOT_PRESENT;
-            }
-        }
-#endif
         auto handle = VulkanLayerImpl::getHandle(device);
-        VkResult result = VK_SUCCESS;
         for (uint32_t i = 0; i < bindInfoCount; i++) {
             auto *tensor = reinterpret_cast<TensorARM *>(bindInfos[i].tensor);
-            result = tensor->bindTensorMemory(*handle, bindInfos[i].memory, bindInfos[i].memoryOffset);
-            if (result == VK_SUCCESS) {
+            if (!tensor) {
+                return VK_ERROR_VALIDATION_FAILED;
+            }
+            std::optional<uint32_t> planeIndex;
+#ifdef VK_ARM_tensors2
+            if (const auto *plane =
+                    findType<VkTensorPlaneInfoARM>(bindInfos[i].pNext, VK_STRUCTURE_TYPE_TENSOR_PLANE_INFO_ARM)) {
+                planeIndex = plane->planeIndex;
+            }
+#endif
+            const auto result =
+                tensor->bindTensorMemory(*handle, bindInfos[i].memory, bindInfos[i].memoryOffset, planeIndex);
+            if (result != VK_SUCCESS) {
+                return result;
+            }
+            if (!planeIndex) {
+                // Implementation limit: image aliasing tracking handles only ordinary tensors.
+                // The draft does not specify image aliasing for block-scaled planes.
                 scopedMutex l(globalMutex);
                 memoryAliasing.addAliasingResource(bindInfos[i].memory, bindInfos[i].memoryOffset, bindInfos[i].tensor);
                 auto images =
@@ -280,11 +313,9 @@ class TensorLayer : public VulkanLayerImpl {
                 if (!images.empty()) {
                     tensor->updateAliasedTensorInfo(*handle, images[0]);
                 }
-            } else {
-                break;
             }
         }
-        return result;
+        return VK_SUCCESS;
     }
 
     static void VKAPI_CALL vkGetDeviceTensorMemoryRequirementsARM(VkDevice device,
@@ -293,9 +324,10 @@ class TensorLayer : public VulkanLayerImpl {
 #ifdef VK_ARM_tensors2
         const auto *createInfo = info->pCreateInfo;
         if (findType<VkBaseInStructure>(createInfo->pNext, VK_STRUCTURE_TYPE_BLOCK_SCALED_TENSOR_DESCRIPTION_ARM) ||
-            (createInfo->pDescription &&
-             createInfo->pDescription->format == VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM)) {
-            tensorLog(Severity::Error) << "Tensors2 memory queries are not implemented" << std::endl;
+            !createInfo->pDescription) {
+            // Implementation limit: return no requirements for block-scaled tensors here.
+            // The draft provides neither a plane selector nor a rule for combining plane requirements.
+            tensorLog(Severity::Error) << "Unsupported device tensor memory query" << std::endl;
             requirements->memoryRequirements = {};
             if (auto *dedicated = findTypeMutable<VkMemoryDedicatedRequirements>(
                     requirements->pNext, VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS)) {
@@ -314,7 +346,16 @@ class TensorLayer : public VulkanLayerImpl {
         assert(copyTensorInfo->regionCount == 1 && "Only support single region to copy tensor.");
         auto *srcTensor = reinterpret_cast<TensorARM *>(copyTensorInfo->srcTensor);
         const auto *dstTensor = reinterpret_cast<const TensorARM *>(copyTensorInfo->dstTensor);
-        srcTensor->copyToTensor(*VulkanLayerImpl::getHandle(commandBuffer), *dstTensor);
+        std::optional<uint32_t> planeIndex;
+#ifdef VK_ARM_tensors2
+        // Assumption: pNext selects the same plane in both tensors; each copy covers that complete plane.
+        // The draft does not yet allow VkTensorPlaneInfoARM on VkCopyTensorInfoARM.
+        if (const auto *plane =
+                findType<VkTensorPlaneInfoARM>(copyTensorInfo->pNext, VK_STRUCTURE_TYPE_TENSOR_PLANE_INFO_ARM)) {
+            planeIndex = plane->planeIndex;
+        }
+#endif
+        srcTensor->copyToTensor(*VulkanLayerImpl::getHandle(commandBuffer), *dstTensor, planeIndex);
     }
 
     static VkResult vkGetTensorViewOpaqueCaptureDescriptorDataARM(VkDevice device,
@@ -619,6 +660,8 @@ class TensorLayer : public VulkanLayerImpl {
                                                                      pDependencyInfo->bufferMemoryBarrierCount};
         const auto appendTensorBarriers = [&bufferMemoryBarriers](const VkTensorMemoryBarrierARM &barrier) {
             const auto *tensorARM = reinterpret_cast<const TensorARM *>(barrier.tensor);
+            // Assumption: a block-scaled tensor barrier covers all planes, including queue ownership.
+            // The draft does not explicitly define barriers for block-scaled tensors.
             for (const auto &plane : tensorARM->getPlanes()) {
                 bufferMemoryBarriers.emplace_back(VkBufferMemoryBarrier2{
                     VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2, nullptr, barrier.srcStageMask, barrier.srcAccessMask,
@@ -790,11 +833,22 @@ class TensorLayer : public VulkanLayerImpl {
         handle->loader->vkGetPhysicalDeviceFormatProperties2(physicalDevice, format, pFormatProperties);
         if (pTensorFormatProp) {
 #ifdef VK_ARM_tensors2
-            if (format == VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM) {
-                // The graph layer does not yet lower E8M0 shader use, so advertise no tensor capabilities.
+            switch (format) {
+            case VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM:
+                // Storage and copies are supported; shader/graph lowering is not yet implemented.
+                pTensorFormatProp->optimalTilingTensorFeatures =
+                    VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT;
+                pTensorFormatProp->linearTilingTensorFeatures = pTensorFormatProp->optimalTilingTensorFeatures;
+                return;
+            case VK_FORMAT_R8_SFLOAT_FPENCODING_MXINT8_ARM:
+            case VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT4E2M1_ARM:
+            case VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT6E2M3_ARM:
+            case VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT6E3M2_ARM:
                 pTensorFormatProp->optimalTilingTensorFeatures = 0;
                 pTensorFormatProp->linearTilingTensorFeatures = 0;
                 return;
+            default:
+                break;
             }
 #endif
             pTensorFormatProp->optimalTilingTensorFeatures = VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT |
@@ -816,9 +870,10 @@ class TensorLayer : public VulkanLayerImpl {
 #ifdef VK_ARM_tensors2
         if (auto *features = findTypeMutable<VkPhysicalDeviceTensors2FeaturesARM>(
                 pFeatures->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSORS_2_FEATURES_ARM)) {
-            tensorLog(Severity::Error) << "Tensors2 feature queries are not implemented" << std::endl;
             features->tensorFlexibleStrides = VK_FALSE;
-            features->tensorBlockScaled = VK_FALSE;
+            // Assumption: block-scaled storage does not imply shader/graph support;
+            // those uses require separately advertised tensor format features.
+            features->tensorBlockScaled = VK_TRUE;
         }
 #endif
         if (pTensorFeatures) {
@@ -889,8 +944,8 @@ class TensorLayer : public VulkanLayerImpl {
 #ifdef VK_ARM_tensors2
         if (const auto *features = findType<VkPhysicalDeviceTensors2FeaturesARM>(
                 createInfo->pNext, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSORS_2_FEATURES_ARM);
-            features && (features->tensorFlexibleStrides || features->tensorBlockScaled)) {
-            tensorLog(Severity::Error) << "Tensors2 device features are not implemented" << std::endl;
+            features && features->tensorFlexibleStrides) {
+            tensorLog(Severity::Error) << "Tensor flexible strides are not supported" << std::endl;
             *device = VK_NULL_HANDLE;
             return VK_ERROR_FEATURE_NOT_PRESENT;
         }

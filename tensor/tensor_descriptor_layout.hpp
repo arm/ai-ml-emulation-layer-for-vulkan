@@ -13,7 +13,8 @@ namespace mlsdk::el::layer {
 
 inline constexpr std::size_t maxTensorRank = 6;
 
-// Shared memory layout for host-written tensor metadata and shader accesses.
+// Shared memory layout for one backing plane's metadata and shader accesses.
+// Assumption: a multi-plane descriptor stores consecutive records in tensor plane order.
 struct TensorDescriptorLayout {
     template <typename T, std::size_t ALIGN> struct alignas(ALIGN) AlignAs {
         T v;

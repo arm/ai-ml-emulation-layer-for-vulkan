@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2023-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2023-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  *
  */
@@ -24,7 +24,13 @@ VkBuffer TensorViewARM::getDescriptorBuffer(const Device &dev) const {
     return m_descriptor->getTensorDescriptorBuffer(dev, m_tensor);
 }
 
-VkBuffer TensorViewARM::getTensorBuffer() const { return reinterpret_cast<TensorARM *>(m_tensor)->getTensorBuffer(); }
+const std::vector<TensorPlane> &TensorViewARM::getPlanes() const {
+    return reinterpret_cast<const TensorARM *>(m_tensor)->getPlanes();
+}
+
+const TensorPlane *TensorViewARM::findPlane(std::optional<uint32_t> planeIndex) const {
+    return reinterpret_cast<const TensorARM *>(m_tensor)->findPlane(planeIndex);
+}
 
 VkResult TensorViewARM::getOpaqueCaptureDescriptorDataEXT(const Device &dev, void *pData) const {
     const VkBufferCaptureDescriptorDataInfoEXT info = {

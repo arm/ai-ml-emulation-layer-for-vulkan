@@ -9,6 +9,7 @@
 #include "mlel/vulkan_layer.hpp"
 #include "tensor_description.hpp"
 
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -22,6 +23,7 @@ class TensorCommandBuffer;
 struct TensorPlane {
     TensorLayout layout;
     VkBuffer buffer = VK_NULL_HANDLE;
+    std::optional<uint32_t> planeIndex = std::nullopt;
 };
 
 // A tensor's backing storage. Ordinary tensors have one entry.
@@ -40,22 +42,23 @@ class TensorARM {
     TensorARM(const TensorARM &) = delete;
     TensorARM &operator=(const TensorARM &) = delete;
 
-    VkBuffer getTensorBuffer() const { return m_storage.planes.front().buffer; };
-    const TensorLayout &getTensorInfo() const { return m_info; };
     const std::vector<TensorPlane> &getPlanes() const { return m_storage.planes; }
+    const TensorPlane *findPlane(std::optional<uint32_t> planeIndex) const;
 
     VkResult create(const Device &dev, const VkTensorCreateInfoARM &createInfo, const VkAllocationCallbacks *allocator);
     void destroy(const Device &dev, const VkAllocationCallbacks *pAllocator);
-    void getMemoryRequirements(const Device &dev, VkMemoryRequirements *requirements) const;
+    bool getMemoryRequirements(const Device &dev, VkMemoryRequirements *requirements,
+                               std::optional<uint32_t> planeIndex) const;
     static void getDeviceTensorMemoryRequirements(const Device &dev, const VkTensorCreateInfoARM &createInfo,
                                                   VkMemoryRequirements2 *requirements);
-    VkResult bindTensorMemory(const Device &dev, VkDeviceMemory memory, VkDeviceSize offset) const;
+    VkResult bindTensorMemory(const Device &dev, VkDeviceMemory memory, VkDeviceSize offset,
+                              std::optional<uint32_t> planeIndex) const;
     void updateAliasedTensorInfo(const Device &dev, VkImage image);
-    void copyToTensor(TensorCommandBuffer &cmd, const TensorARM &dstTensor);
+    void copyToTensor(TensorCommandBuffer &cmd, const TensorARM &dstTensor, std::optional<uint32_t> planeIndex);
     VkResult getOpaqueCaptureDescriptorDataEXT(const Device &dev, void *pData) const;
 
   private:
-    TensorLayout m_info;
+    TensorPlane *findPlane(std::optional<uint32_t> planeIndex);
     TensorStorage m_storage;
 };
 

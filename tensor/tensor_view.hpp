@@ -23,7 +23,8 @@ class TensorViewARM {
                     const VkAllocationCallbacks *allocator);
     void destroy(const Device &dev, const VkAllocationCallbacks *pAllocator);
     VkBuffer getDescriptorBuffer(const Device &dev) const;
-    VkBuffer getTensorBuffer() const;
+    const std::vector<TensorPlane> &getPlanes() const;
+    const TensorPlane *findPlane(std::optional<uint32_t> planeIndex) const;
     VkResult getOpaqueCaptureDescriptorDataEXT(const Device &dev, void *pData) const;
 
   private:
