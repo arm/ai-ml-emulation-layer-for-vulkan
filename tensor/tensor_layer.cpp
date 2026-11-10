@@ -80,7 +80,7 @@ constexpr bool isSupportedShaderTensorFormat(VkFormat format) {
            format != VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM;
 }
 
-using VulkanLayerImpl = VulkanLayer<layerProperties, extensions, requiredExtensions, TensorDevice>;
+using VulkanLayerImpl = VulkanLayer<layerProperties, extensions, requiredExtensions, TensorDevice, TensorCommandBuffer>;
 
 class TensorLayer : public VulkanLayerImpl {
   public:
