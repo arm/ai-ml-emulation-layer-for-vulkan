@@ -13,7 +13,6 @@ test = [
 ]
 tooling = [
     { name = "argcomplete" },
-    { name = "breathe" },
     { name = "build" },
     { name = "debian-inspector" },
     { name = "gcovr", marker = "sys_platform == 'linux'" },
@@ -35,7 +34,6 @@ test = [
 ]
 tooling = [
     { name = "argcomplete", specifier = "==3.7.2" },
-    { name = "breathe", specifier = "==4.36.0" },
     { name = "build", specifier = "==1.6.1" },
     { name = "debian-inspector", specifier = "==31.1.1" },
     { name = "gcovr", marker = "sys_platform == 'linux'", specifier = "==7.2" },
@@ -82,18 +80,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7d/b2/51899539b6ceeeb420d40ed3cd4b7a40519404f9baf3d4ac99dc413a834b/babel-2.18.0.tar.gz", hash = "sha256:b80b99a14bd085fcacfa15c9165f651fbb3406e66cc603abf11c5750937c992d", size = 9959554, upload-time = "2026-02-01T12:30:56.078Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/77/f5/21d2de20e8b8b0408f0681956ca2c69f1320a3848ac50e6e7f39c6159675/babel-2.18.0-py3-none-any.whl", hash = "sha256:e2b422b277c2b9a9630c1d7903c2a00d0830c409c59ac8cae9081c92f1aeba35", size = 10196845, upload-time = "2026-02-01T12:30:53.445Z" },
-]
-
-[[package]]
-name = "breathe"
-version = "4.36.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "sphinx" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/01/56/99bf7d0799d95ad485d95596dc01c2a5b3dda58ebf50a94f6f73b33bacdf/breathe-4.36.0.tar.gz", hash = "sha256:14860b73118ac140b7a3f55446890c777d1b67149cb024279fe3710dad7f535c", size = 154842, upload-time = "2025-02-22T18:36:03.36Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/2c/bc/d67ef1e11ed6e6343c135bf605aa9d5734ff0cc77eb42a2a41f182abc9d9/breathe-4.36.0-py3-none-any.whl", hash = "sha256:af85436f1f09e842bd1fd95617281211c635f8768d245ff830c59b979888d1d5", size = 97231, upload-time = "2025-02-22T18:36:01.087Z" },
 ]
 
 [[package]]

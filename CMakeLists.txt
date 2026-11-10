@@ -42,7 +42,6 @@ endif()
 option(VMEL_TESTS_ENABLE "Enable tests" OFF)
 option(VMEL_ENABLE_TOSA_1X "Enable experimental TOSA.1x.1 support" OFF)
 option(VMEL_USE_FLOAT_AS_DOUBLE "Use float as double precision type" OFF)
-option(VMEL_BUILD_DOCS "Build documentation" OFF)
 option(VMEL_ENABLE_COVERAGE "Enable GCC code coverage instrumentation" OFF)
 
 if(VMEL_ENABLE_COVERAGE)
@@ -141,12 +140,4 @@ if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
         LICENSES "${CMAKE_CURRENT_LIST_DIR}/LICENSES/Apache-2.0.txt")
 endif()
 
-###############################################################################
-# Documentation
-###############################################################################
-if(ML_SDK_BUILD_DOCS OR VMEL_BUILD_DOCS)
-    include(docs/docs.cmake)
-endif()
-
-unset(VMEL_BUILD_DOCS CACHE)
 unset(ANDROID_ABI CACHE)

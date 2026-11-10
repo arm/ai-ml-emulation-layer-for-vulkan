@@ -26,9 +26,7 @@ rst_epilog = """
 
 # Enabled extensions
 extensions = [
-    "breathe",
     "sphinx_rtd_theme",
-    "sphinx.ext.autodoc",
     "sphinx.ext.autosectionlabel",
     "myst_parser",
     "sphinxcontrib.plantuml",
@@ -41,11 +39,6 @@ suppress_warnings = [
     "sphinx.ext.autosectionlabel.*",
     "myst.header",
 ]
-
-# Breathe Configuration
-breathe_projects = {"VMEL": "../generated/xml"}
-breathe_default_project = "VMEL"
-breathe_domain_by_extension = {"h": "c"}
 
 # Enable RTD theme
 html_theme = "sphinx_rtd_theme"

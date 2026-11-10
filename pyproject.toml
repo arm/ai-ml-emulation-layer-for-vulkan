@@ -49,7 +49,6 @@ test = [
 ]
 tooling = [
     "argcomplete==3.7.2",
-    "breathe==4.36.0",
     "build==1.6.1",
     "debian-inspector==31.1.1",
     "gcovr==7.2; sys_platform == 'linux'",
