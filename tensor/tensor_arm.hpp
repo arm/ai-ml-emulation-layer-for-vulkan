@@ -60,7 +60,7 @@ class TensorARM {
 class TensorCopyPipeline {
   public:
     TensorCopyPipeline(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader,
-                       VkDevice _device, const TensorARM &srcTensor, const TensorARM &dstTensor);
+                       VkDevice _device, const TensorPlane &srcPlane, const TensorPlane &dstPlane);
     TensorCopyPipeline(const TensorCopyPipeline &) = delete;
     TensorCopyPipeline &operator=(const TensorCopyPipeline &) = delete;
     virtual ~TensorCopyPipeline();
@@ -75,11 +75,11 @@ class TensorCopyPipeline {
 
     VkDescriptorPool createDescriptorPool() const;
     VkDescriptorSetLayout createDescriptorSetLayout() const;
-    VkDescriptorSet createDescriptorSet(const TensorARM &srcTensor, const TensorARM &dstTensor) const;
+    VkDescriptorSet createDescriptorSet(const TensorPlane &srcPlane, const TensorPlane &dstPlane) const;
     VkPipelineLayout createPipelineLayout() const;
-    VkShaderModule createShaderModule(const TensorARM &srcTensor) const;
-    VkPipeline createPipeline(const TensorARM &srcTensor) const;
-    PushConstant createPushConstant(const TensorARM &srcTensor, const TensorARM &dstTensor) const;
+    VkShaderModule createShaderModule(const TensorPlane &srcPlane) const;
+    VkPipeline createPipeline(const TensorPlane &srcPlane) const;
+    PushConstant createPushConstant(const TensorPlane &srcPlane, const TensorPlane &dstPlane) const;
 
     std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> loader;
     VkDevice device;
