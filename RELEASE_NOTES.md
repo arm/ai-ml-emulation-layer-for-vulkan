@@ -46,6 +46,11 @@
   returning `NaN` before invoking driver-dependent trigonometric functions.
 - Fixed optical-flow search range mapping to align with reference
   implementation.
+- Fixed floating-point TOSA `MAX_POOL2D`, `REDUCE_MAX`, `REDUCE_MIN` and
+  `ARGMAX` to start from the infinities, or from `NaN` when ignoring `NaN`,
+  instead of the finite type limits. Infinite inputs are no longer replaced by
+  the largest finite values, and an all-`NaN` `MAX_POOL2D` window now returns
+  `NaN` when ignoring `NaN`.
 
 ## Version 0.11.0 – *Datatype Fixes & Shader Precompilation*
 

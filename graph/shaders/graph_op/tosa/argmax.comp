@@ -34,7 +34,13 @@ void main() {
         inputIndex[i + 1] = index[i];
     }
 
+#if IS_FLOAT(TYPE_IN) || IS_REDUCED_FLOAT(TYPE_IN)
+    // Start from NaN when ignoring NaN and from -infinity otherwise, as TOSA does, so that -infinity is not
+    // treated as equal to the lowest finite value.
+    COMP_T maxValue = COMP_T((pushConstants.nanMode == NAN_MODE_IGNORE) ? NAN : -INF);
+#else
     COMP_T maxValue = COMP_T(%in_t_lowest%);
+#endif
     int32_t maxIndex = 0;
 
     uint[RANK_IN] inputShape;
@@ -54,6 +60,13 @@ void main() {
             }
             maxIndex = i;
             break;
+        }
+
+        // maxValue is NaN until the first non-NaN value when ignoring NaN
+        if (isnan(maxValue)) {
+            maxValue = value;
+            maxIndex = i;
+            continue;
         }
         #endif
 
