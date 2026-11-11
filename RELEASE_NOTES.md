@@ -46,6 +46,9 @@
   returning `NaN` before invoking driver-dependent trigonometric functions.
 - Fixed optical-flow search range mapping to align with reference
   implementation.
+- Fixed integer TOSA `AVG_POOL2D` rounding to divide with `reciprocal_scale`
+  and `apply_scale_32` as the specification does. Exact division rounded
+  differently for some `INT16` windows of about 16K or more elements.
 
 ## Version 0.11.0 – *Datatype Fixes & Shader Precompilation*
 
