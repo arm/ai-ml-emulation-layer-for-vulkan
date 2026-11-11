@@ -643,8 +643,10 @@ OpFunctionEnd
                  offset = text.find(" = OpFunction ", offset + 1)) {
                 ++functions;
             }
-            // Entry point and a read/write pair for each distinct scalar/array type.
-            EXPECT_EQ(functions, 9u);
+            // Entry point plus scalar read/write helpers for every array lane.
+            // Array accesses are deliberately scalarized at function boundaries
+            // so MSL does not need to copy SPIR-V unsafe arrays.
+            EXPECT_EQ(functions, 15u);
             if (specialized) {
                 for (const uint32_t rank : {1u, 2u, 6u}) {
                     expectSpecialized(spirv, {{0, {rank}}});
