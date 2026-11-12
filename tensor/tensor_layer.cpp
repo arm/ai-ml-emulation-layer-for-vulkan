@@ -617,42 +617,25 @@ class TensorLayer : public VulkanLayerImpl {
         std::vector<VkBufferMemoryBarrier2> bufferMemoryBarriers{pDependencyInfo->pBufferMemoryBarriers,
                                                                  pDependencyInfo->pBufferMemoryBarriers +
                                                                      pDependencyInfo->bufferMemoryBarrierCount};
+        const auto appendTensorBarriers = [&bufferMemoryBarriers](const VkTensorMemoryBarrierARM &barrier) {
+            const auto *tensorARM = reinterpret_cast<const TensorARM *>(barrier.tensor);
+            for (const auto &plane : tensorARM->getPlanes()) {
+                bufferMemoryBarriers.emplace_back(VkBufferMemoryBarrier2{
+                    VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2, nullptr, barrier.srcStageMask, barrier.srcAccessMask,
+                    barrier.dstStageMask, barrier.dstAccessMask, barrier.srcQueueFamilyIndex,
+                    barrier.dstQueueFamilyIndex, plane.buffer, 0, VK_WHOLE_SIZE});
+            }
+        };
         if (tensorDependencyInfo != nullptr) {
             std::vector<VkTensorMemoryBarrierARM> tensorMemoryBarriers{
                 tensorDependencyInfo->pTensorMemoryBarriers,
                 tensorDependencyInfo->pTensorMemoryBarriers + tensorDependencyInfo->tensorMemoryBarrierCount};
 
             for (const auto &barrier : tensorMemoryBarriers) {
-                const auto *tensorARM = reinterpret_cast<const TensorARM *>(barrier.tensor);
-                bufferMemoryBarriers.emplace_back(VkBufferMemoryBarrier2{
-                    VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2, // sType
-                    nullptr,                                   // pNext
-                    barrier.srcStageMask,                      // srcStageMask
-                    barrier.srcAccessMask,                     // srcAccessMask
-                    barrier.dstStageMask,                      // dstStageMask
-                    barrier.dstAccessMask,                     // dstAccessMask
-                    barrier.srcQueueFamilyIndex,               // srcQueueFamilyIndex
-                    barrier.dstQueueFamilyIndex,               // dstQueueFamilyIndex
-                    tensorARM->getTensorBuffer(),              // buffer
-                    0,                                         // offset
-                    VK_WHOLE_SIZE                              // size
-                });
+                appendTensorBarriers(barrier);
             }
         } else if (tensorBarrier != nullptr) {
-            const auto *tensorARM = reinterpret_cast<const TensorARM *>(tensorBarrier->tensor);
-            bufferMemoryBarriers.emplace_back(VkBufferMemoryBarrier2{
-                VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2, // sType
-                nullptr,                                   // pNext
-                tensorBarrier->srcStageMask,               // srcStageMask
-                tensorBarrier->srcAccessMask,              // srcAccessMask
-                tensorBarrier->dstStageMask,               // dstStageMask
-                tensorBarrier->dstAccessMask,              // dstAccessMask
-                tensorBarrier->srcQueueFamilyIndex,        // srcQueueFamilyIndex
-                tensorBarrier->dstQueueFamilyIndex,        // dstQueueFamilyIndex
-                tensorARM->getTensorBuffer(),              // buffer
-                0,                                         // offset
-                VK_WHOLE_SIZE                              // size
-            });
+            appendTensorBarriers(*tensorBarrier);
         }
         const VkDependencyInfo newDependencyInfo{
             VK_STRUCTURE_TYPE_DEPENDENCY_INFO,                  // sType
@@ -972,10 +955,16 @@ class TensorLayer : public VulkanLayerImpl {
         switch (pNameInfo->objectType) {
         case VK_OBJECT_TYPE_TENSOR_ARM: {
             const auto *tensorARM = reinterpret_cast<const TensorARM *>(pNameInfo->objectHandle);
-            VkDebugUtilsObjectNameInfoEXT newNameInfo{
-                VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT, pNameInfo->pNext, VK_OBJECT_TYPE_BUFFER,
-                reinterpret_cast<uint64_t>(tensorARM->getTensorBuffer()), pNameInfo->pObjectName};
-            return handle->loader->vkSetDebugUtilsObjectNameEXT(device, &newNameInfo);
+            VkDebugUtilsObjectNameInfoEXT newNameInfo{VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+                                                      pNameInfo->pNext, VK_OBJECT_TYPE_BUFFER, 0,
+                                                      pNameInfo->pObjectName};
+            for (const auto &plane : tensorARM->getPlanes()) {
+                newNameInfo.objectHandle = reinterpret_cast<uint64_t>(plane.buffer);
+                const VkResult result = handle->loader->vkSetDebugUtilsObjectNameEXT(device, &newNameInfo);
+                if (result != VK_SUCCESS) {
+                    return result;
+                }
+            }
         } break;
         case VK_OBJECT_TYPE_TENSOR_VIEW_ARM:
             break;
