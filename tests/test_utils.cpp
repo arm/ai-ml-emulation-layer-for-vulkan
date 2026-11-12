@@ -24,7 +24,7 @@ ScopedEnvironment::ScopedEnvironment(std::string_view _name, std::optional<std::
 
 ScopedEnvironment::~ScopedEnvironment() {
     if (oldValue.has_value()) {
-        set(oldValue.value());
+        set(*oldValue);
     } else {
         unset();
     }

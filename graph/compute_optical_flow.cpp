@@ -754,7 +754,7 @@ void BlockMatch::bindAndDispatch(VkCommandBuffer cmdBuf) {
         setOutputStorage(cmdBuf, batch, Bindings::dstCost, dstCost_);
     }
 
-    const int searchIndexLimit = (searchRangeLimit_ * 2 + 1) * (searchRangeLimit_ * 2 + 1);
+    const int searchIndexLimit = ((searchRangeLimit_ * 2) + 1) * ((searchRangeLimit_ * 2) + 1);
     const PushConstants pushConstants{searchIndexLimit};
     setPushConstants(cmdBuf, pushConstants);
 

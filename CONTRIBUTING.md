@@ -25,3 +25,8 @@ Signed-off-by: Foo Bar foo.bar@example.org
 
 The contributions will be code reviewed by Arm® before they can be accepted
 into the repository.
+
+## C++ linting
+
+Tests use a focused check set in `tests/.clang-tidy`, inheriting the shared
+warning policy and check options.
