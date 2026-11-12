@@ -889,6 +889,9 @@ layout(push_constant) uniform Parameters { uint start; uint outer; } params;
     }
 }
 
+#ifndef EXPERIMENTAL_MOLTEN_VK_SUPPORT
+// FIXME: Re-enable on Darwin once MoltenVK compiles spvArrayCopyFromConstantToStack
+// calls with spvUnsafeArray arguments from direct tensor lowering.
 TEST_F(TensorLoweringForVulkan, DirectMatmulArrayLhsScalarRhsAndTail) {
     const ScopedEnvironment environment("VMEL_EXPERIMENTAL_TENSOR_LOWERING_MODE", "1");
     ensureDevice();
@@ -953,6 +956,7 @@ TEST_F(TensorLoweringForVulkan, DirectTableInterpolatesTwoElementReads) {
     pipeline.dispatch(descriptors, &specialization);
     expectTensorValues<int32_t>(*output, outputShape, {-32768, -32767, -1, 0, 32640, 32767});
 }
+#endif
 
 } // namespace
 } // namespace mlsdk::el::tests
