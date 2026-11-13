@@ -229,7 +229,7 @@ void lowerAccesses(AccessState &state, const TensorModule &tensors) {
             }
             const auto valueType =
                 write ? definition(context, inst->GetSingleWordInOperand(2)).type_id() : inst->type_id();
-            AccessValueInfo access{valueType, 1};
+            uint32_t elementCount = 1;
             if (valueType != tensor.elementType) {
                 const auto &valueArray = definition(context, valueType);
                 if (valueArray.opcode() != spv::Op::OpTypeArray ||
@@ -244,18 +244,39 @@ void lowerAccesses(AccessState &state, const TensorModule &tensors) {
                 if (*length == 0 || *length > std::numeric_limits<uint8_t>::max()) {
                     throw std::runtime_error("TensorARM access array length exceeds the supported limit");
                 }
-                access.elementCount = static_cast<uint32_t>(*length);
+                elementCount = static_cast<uint32_t>(*length);
             }
-            std::vector<uint32_t> arguments{descriptor, coordinates};
-            uint32_t helper;
-            if (write) {
-                arguments.push_back(inst->GetSingleWordInOperand(2));
-                helper = getOrCreateWriteHelper(state, tensor, coordinatesType, access);
+            const bool scalar = valueType == tensor.elementType;
+            if (scalar) {
+                std::vector<uint32_t> arguments{descriptor, coordinates};
+                if (write) {
+                    arguments.push_back(inst->GetSingleWordInOperand(2));
+                    const auto helper = getOrCreateWriteHelper(state, tensor, coordinatesType, elementCount);
+                    result = builder.AddFunctionCall(context.get_type_mgr()->GetVoidTypeId(), helper, arguments)
+                                 ->result_id();
+                } else {
+                    const auto helper = getOrCreateReadHelper(state, tensor, coordinatesType, elementCount);
+                    result = builder.AddFunctionCall(tensor.elementType, helper, arguments)->result_id();
+                }
+            } else if (write) {
+                const auto value = inst->GetSingleWordInOperand(2);
+                for (uint32_t element = 0; element < elementCount; ++element) {
+                    const auto elementValue =
+                        builder.AddCompositeExtract(tensor.elementType, value, {element})->result_id();
+                    const auto helper = getOrCreateWriteHelper(state, tensor, coordinatesType, elementCount, element);
+                    builder.AddFunctionCall(context.get_type_mgr()->GetVoidTypeId(), helper,
+                                            {descriptor, coordinates, elementValue});
+                }
+                result = 0;
             } else {
-                helper = getOrCreateReadHelper(state, tensor, coordinatesType, access);
+                std::vector<uint32_t> elements;
+                for (uint32_t element = 0; element < elementCount; ++element) {
+                    const auto helper = getOrCreateReadHelper(state, tensor, coordinatesType, elementCount, element);
+                    elements.push_back(
+                        builder.AddFunctionCall(tensor.elementType, helper, {descriptor, coordinates})->result_id());
+                }
+                result = builder.AddCompositeConstruct(inst->type_id(), elements)->result_id();
             }
-            const auto resultType = write ? context.get_type_mgr()->GetVoidTypeId() : inst->type_id();
-            result = builder.AddFunctionCall(resultType, helper, arguments)->result_id();
         }
         if (inst->result_id() != 0) {
             context.ReplaceAllUsesWith(inst->result_id(), result);

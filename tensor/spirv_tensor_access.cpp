@@ -457,14 +457,21 @@ struct FunctionParameter {
     uint32_t id;
 };
 
-AccessFunction createAccessFunction(IRContext &context, uint32_t returnType,
+AccessFunction createAccessFunction(AccessState &state, uint32_t returnType,
                                     std::initializer_list<FunctionParameter> parameters) {
+    auto &context = state.context;
+    std::vector<uint32_t> signatureTypes{returnType};
     Instruction::OperandList signature{idOperand(returnType)};
     for (const FunctionParameter &parameter : parameters) {
+        signatureTypes.push_back(parameter.type);
         signature.push_back(idOperand(parameter.type));
     }
-    const auto functionType = context.TakeNextId();
-    context.AddType(makeInstruction(context, spv::Op::OpTypeFunction, 0, functionType, signature));
+    auto [typeIt, inserted] = state.functionTypes.emplace(signatureTypes, 0);
+    if (inserted) {
+        typeIt->second = context.TakeNextId();
+        context.AddType(makeInstruction(context, spv::Op::OpTypeFunction, 0, typeIt->second, signature));
+    }
+    const auto functionType = typeIt->second;
     const auto functionId = context.TakeNextId();
     AccessFunction helper;
     helper.function = std::make_unique<spvtools::opt::Function>(
@@ -544,19 +551,21 @@ AccessState::AccessState(IRContext &ir) : context(ir) {
     return values;
 
 */
-// C++ emits each lane separately, without a shader loop. Scalar reads return the
-// sole element; an array of length one still returns an array. load is a typed
-// memory instruction inside the valid branch.
+// C++ emits one scalar helper per lane, without a shader loop. Keeping tensor
+// accesses scalar at function boundaries is important for MSL: array-valued
+// SPIR-V function returns become spvUnsafeArray values, which older MoltenVK
+// shader translation cannot copy into a native Metal array.
 uint32_t getOrCreateReadHelper(AccessState &state, const TensorType &tensor, uint32_t coordinatesType,
-                               const AccessValueInfo &access) {
-    const AccessFunctionKey key{spv::Op::OpTensorReadARM, access.valueType, coordinatesType, tensor.rankId};
+                               uint32_t elementCount, uint32_t element) {
+    const AccessFunctionKey key{
+        spv::Op::OpTensorReadARM, tensor.elementType, coordinatesType, tensor.rankId, elementCount, element};
     if (const auto it = state.helpers.find(key); it != state.helpers.end()) {
         return it->second;
     }
     auto &context = state.context;
     const auto descriptor = context.TakeNextId();
     const auto coordinates = context.TakeNextId();
-    auto helper = createAccessFunction(context, access.valueType,
+    auto helper = createAccessFunction(state, tensor.elementType,
                                        {{state.descriptorType, descriptor}, {coordinatesType, coordinates}});
     InstructionBuilder builder(&context, helper.entry.get());
     const auto zero = nullConstant(context, state.uint64Type);
@@ -576,47 +585,38 @@ uint32_t getOrCreateReadHelper(AccessState &state, const TensorType &tensor, uin
     const auto *sizeConstant = context.get_constant_mgr()->GetConstant(signedType, {elementSize, 0});
     const auto size = context.get_constant_mgr()->GetDefiningInstruction(sizeConstant)->result_id();
     const auto bounds = emitBoundsAndByteOffset(state, helper, builder, tensor, descriptor, coordinates,
-                                                coordinatesType, access.elementCount, emitOffset);
+                                                coordinatesType, elementCount, emitOffset);
     auto block = bounds.block;
-    std::vector<uint32_t> elements;
-    for (uint32_t element = 0; element < access.elementCount; ++element) {
-        const auto elementBounds = emitElementBounds(state, builder, bounds, element, block);
-        auto load = createBlock(context);
-        auto merge = createBlock(context);
-        const auto signedOffset =
-            builder.AddUnaryOp(signedTypeId, spv::Op::OpBitcast, elementBounds.byteOffset)->result_id();
-        const auto elementOffset = builder.AddBinaryOp(signedTypeId, spv::Op::OpSDiv, signedOffset, size)->result_id();
-        builder.AddConditionalBranch(elementBounds.inBounds, load->id(), merge->id(), merge->id());
+    const auto elementBounds = emitElementBounds(state, builder, bounds, element, block);
+    auto load = createBlock(context);
+    auto merge = createBlock(context);
+    const auto signedOffset =
+        builder.AddUnaryOp(signedTypeId, spv::Op::OpBitcast, elementBounds.byteOffset)->result_id();
+    const auto elementOffset = builder.AddBinaryOp(signedTypeId, spv::Op::OpSDiv, signedOffset, size)->result_id();
+    builder.AddConditionalBranch(elementBounds.inBounds, load->id(), merge->id(), merge->id());
 
-        builder.SetInsertPoint(load.get());
-        const auto pointer = emitReadElementPointer(state, builder, tensor, descriptor, elementOffset);
-        auto value = builder.AddLoad(pointer.storageType, pointer.id, pointer.alignment)->result_id();
-        if (context.get_type_mgr()->GetType(tensor.elementType)->AsBool()) {
-            // Widen before comparing so byte storage does not require Int8 arithmetic.
-            // Every nonzero byte represents true.
-            const auto integerType = context.get_type_mgr()->GetSIntTypeId();
-            value = builder.AddUnaryOp(integerType, spv::Op::OpSConvert, value)->result_id();
-            value =
-                builder
-                    .AddBinaryOp(tensor.elementType, spv::Op::OpINotEqual, value, nullConstant(context, integerType))
-                    ->result_id();
-        }
-        builder.AddBranch(merge->id());
-
-        builder.SetInsertPoint(merge.get());
-        elements.push_back(builder
-                               .AddPhi(tensor.elementType, {nullConstant(context, tensor.elementType),
-                                                            elementBounds.block, value, load->id()})
-                               ->result_id());
-        block = merge->id();
-        helper.blocks.push_back(std::move(load));
-        helper.blocks.push_back(std::move(merge));
+    builder.SetInsertPoint(load.get());
+    const auto pointer = emitReadElementPointer(state, builder, tensor, descriptor, elementOffset);
+    auto value = builder.AddLoad(pointer.storageType, pointer.id, pointer.alignment)->result_id();
+    if (context.get_type_mgr()->GetType(tensor.elementType)->AsBool()) {
+        // Widen before comparing so byte storage does not require Int8 arithmetic.
+        // Every nonzero byte represents true.
+        const auto integerType = context.get_type_mgr()->GetSIntTypeId();
+        value = builder.AddUnaryOp(integerType, spv::Op::OpSConvert, value)->result_id();
+        value =
+            builder.AddBinaryOp(tensor.elementType, spv::Op::OpINotEqual, value, nullConstant(context, integerType))
+                ->result_id();
     }
-    // Even an array of length one keeps its composite type at the call site.
-    const auto result = access.valueType == tensor.elementType
-                            ? elements.front()
-                            : builder.AddCompositeConstruct(access.valueType, elements)->result_id();
+    builder.AddBranch(merge->id());
+
+    builder.SetInsertPoint(merge.get());
+    const auto result = builder
+                            .AddPhi(tensor.elementType,
+                                    {nullConstant(context, tensor.elementType), elementBounds.block, value, load->id()})
+                            ->result_id();
     builder.AddUnaryOp(0, spv::Op::OpReturnValue, result);
+    helper.blocks.push_back(std::move(load));
+    helper.blocks.push_back(std::move(merge));
     const auto functionId = finishAccessFunction(context, std::move(helper));
     state.helpers.emplace(key, functionId);
     return functionId;
@@ -637,12 +637,12 @@ uint32_t getOrCreateReadHelper(AccessState &state, const TensorType &tensor, uin
     }
 
 */
-// C++ emits each lane separately, without a shader loop. Scalar writes use the
-// scalar argument directly. store is a typed memory instruction; bool selection
-// uses 32-bit integers before narrowing.
+// C++ emits one scalar helper per lane, without a shader loop. Scalar function
+// parameters avoid array argument copies in the generated MSL.
 uint32_t getOrCreateWriteHelper(AccessState &state, const TensorType &tensor, uint32_t coordinatesType,
-                                const AccessValueInfo &access) {
-    const AccessFunctionKey key{spv::Op::OpTensorWriteARM, access.valueType, coordinatesType, tensor.rankId};
+                                uint32_t elementCount, uint32_t element) {
+    const AccessFunctionKey key{
+        spv::Op::OpTensorWriteARM, tensor.elementType, coordinatesType, tensor.rankId, elementCount, element};
     if (const auto it = state.helpers.find(key); it != state.helpers.end()) {
         return it->second;
     }
@@ -651,52 +651,45 @@ uint32_t getOrCreateWriteHelper(AccessState &state, const TensorType &tensor, ui
     const auto coordinates = context.TakeNextId();
     const auto elements = context.TakeNextId();
     auto helper = createAccessFunction(
-        context, context.get_type_mgr()->GetVoidTypeId(),
-        {{state.descriptorType, descriptor}, {coordinatesType, coordinates}, {access.valueType, elements}});
+        state, context.get_type_mgr()->GetVoidTypeId(),
+        {{state.descriptorType, descriptor}, {coordinatesType, coordinates}, {tensor.elementType, elements}});
     InstructionBuilder builder(&context, helper.entry.get());
     // Accumulate the full offset; the final bounds check controls whether the store executes.
     const auto emitOffset = [&](uint32_t offset, uint32_t, uint32_t contribution, uint32_t resultId) {
         return builder.AddNaryOp(state.uint64Type, spv::Op::OpIAdd, {offset, contribution}, resultId)->result_id();
     };
     const auto bounds = emitBoundsAndByteOffset(state, helper, builder, tensor, descriptor, coordinates,
-                                                coordinatesType, access.elementCount, emitOffset);
+                                                coordinatesType, elementCount, emitOffset);
     auto block = bounds.block;
-    for (uint32_t element = 0; element < access.elementCount; ++element) {
-        const auto elementBounds = emitElementBounds(state, builder, bounds, element, block);
-        auto store = createBlock(context);
-        auto merge = createBlock(context);
-        builder.AddConditionalBranch(elementBounds.inBounds, store->id(), merge->id(), merge->id());
+    const auto elementBounds = emitElementBounds(state, builder, bounds, element, block);
+    auto store = createBlock(context);
+    auto merge = createBlock(context);
+    builder.AddConditionalBranch(elementBounds.inBounds, store->id(), merge->id(), merge->id());
 
-        builder.SetInsertPoint(store.get());
-        const auto pointer = emitElementPointer(state, builder, tensor, descriptor, elementBounds.byteOffset);
-        auto storedValue = access.valueType == tensor.elementType
-                               ? elements
-                               : builder.AddCompositeExtract(tensor.elementType, elements, {element})->result_id();
-        if (context.get_type_mgr()->GetType(tensor.elementType)->AsBool()) {
-            const auto integerType = context.get_type_mgr()->GetSIntTypeId();
-            auto *constants = context.get_constant_mgr();
-            const auto one =
-                constants
-                    ->GetDefiningInstruction(constants->GetConstant(context.get_type_mgr()->GetType(integerType), {1}))
-                    ->result_id();
-            // Select canonical 0/1 in 32 bits, then narrow only for the byte store.
-            storedValue =
-                builder.AddSelect(integerType, storedValue, one, nullConstant(context, integerType))->result_id();
-            storedValue = builder.AddUnaryOp(pointer.storageType, spv::Op::OpSConvert, storedValue)->result_id();
-        }
-        builder.AddInstruction(
-            makeInstruction(context, spv::Op::OpStore, 0, 0,
-                            {idOperand(pointer.id),
-                             idOperand(storedValue),
-                             {SPV_OPERAND_TYPE_MEMORY_ACCESS, {static_cast<uint32_t>(spv::MemoryAccessMask::Aligned)}},
-                             {SPV_OPERAND_TYPE_LITERAL_INTEGER, {pointer.alignment}}}));
-        builder.AddBranch(merge->id());
-
-        builder.SetInsertPoint(merge.get());
-        block = merge->id();
-        helper.blocks.push_back(std::move(store));
-        helper.blocks.push_back(std::move(merge));
+    builder.SetInsertPoint(store.get());
+    const auto pointer = emitElementPointer(state, builder, tensor, descriptor, elementBounds.byteOffset);
+    auto storedValue = elements;
+    if (context.get_type_mgr()->GetType(tensor.elementType)->AsBool()) {
+        const auto integerType = context.get_type_mgr()->GetSIntTypeId();
+        auto *constants = context.get_constant_mgr();
+        const auto one =
+            constants->GetDefiningInstruction(constants->GetConstant(context.get_type_mgr()->GetType(integerType), {1}))
+                ->result_id();
+        // Select canonical 0/1 in 32 bits, then narrow only for the byte store.
+        storedValue = builder.AddSelect(integerType, storedValue, one, nullConstant(context, integerType))->result_id();
+        storedValue = builder.AddUnaryOp(pointer.storageType, spv::Op::OpSConvert, storedValue)->result_id();
     }
+    builder.AddInstruction(
+        makeInstruction(context, spv::Op::OpStore, 0, 0,
+                        {idOperand(pointer.id),
+                         idOperand(storedValue),
+                         {SPV_OPERAND_TYPE_MEMORY_ACCESS, {static_cast<uint32_t>(spv::MemoryAccessMask::Aligned)}},
+                         {SPV_OPERAND_TYPE_LITERAL_INTEGER, {pointer.alignment}}}));
+    builder.AddBranch(merge->id());
+
+    builder.SetInsertPoint(merge.get());
+    helper.blocks.push_back(std::move(store));
+    helper.blocks.push_back(std::move(merge));
     builder.AddNullaryOp(0, spv::Op::OpReturn);
     const auto functionId = finishAccessFunction(context, std::move(helper));
     state.helpers.emplace(key, functionId);
