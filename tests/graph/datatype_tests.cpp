@@ -17,6 +17,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace mlsdk::el::tests {
@@ -32,7 +33,8 @@ std::vector<uint32_t> runDatatypeGraph(std::shared_ptr<Device> &device, const da
                                        const std::vector<uint32_t> &inputWords, const datatype_test::Type &outputType,
                                        bool outputUint, const std::vector<int64_t> &outputShape,
                                        const std::string &operation, const std::string &constants = "",
-                                       const std::vector<uint32_t> *secondWords = nullptr, bool secondUint = false) {
+                                       const std::vector<uint32_t> *secondWords = nullptr, bool secondUint = false,
+                                       const std::string &importName = "TOSA.001000.1") {
     auto input =
         storageTestTensor(device, inputType.format(inputUint), inputShape, datatype_test::pack(inputWords, inputType));
     auto output = std::make_shared<Tensor>(device, Shape{outputType.format(outputUint), outputShape});
@@ -42,9 +44,9 @@ std::vector<uint32_t> runDatatypeGraph(std::shared_ptr<Device> &device, const da
                                                datatype_test::pack(*secondWords, inputType))};
     }
     descriptors[0][secondWords ? 2 : 1] = {output};
-    const auto spirv =
-        makeStorageConversionGraph(inputType.spirv, outputType.spirv, uint32_t(inputShape.size()),
-                                   uint32_t(outputShape.size()), secondWords != nullptr, operation, constants);
+    const auto spirv = makeStorageConversionGraph(inputType.spirv, outputType.spirv, uint32_t(inputShape.size()),
+                                                  uint32_t(outputShape.size()), secondWords != nullptr, operation,
+                                                  constants, importName);
     GraphPipeline pipeline(device, descriptors, GraphConstants{}, spirv);
     pipeline.dispatchSubmit();
     // Avoid a separate uncached device-memory read for each decoded value.
@@ -53,18 +55,18 @@ std::vector<uint32_t> runDatatypeGraph(std::shared_ptr<Device> &device, const da
     return datatype_test::unpack(bytes.data(), bytes.size() / outputType.bytes(), outputType);
 }
 
-template <typename Case> using GeneratedDatatypeTest = GraphTestWithParam<Case>;
+template <typename Case> using GeneratedDatatypeTest = GraphTestWithParam<std::tuple<Case, const char *>>;
 
 using GeneratedDatatypeCast = GeneratedDatatypeTest<datatype_test::CastCase>;
 
 TEST_P(GeneratedDatatypeCast, NumericResults) {
-    const auto &test = GetParam();
+    const auto &[test, importName] = GetParam();
     SCOPED_TRACE(datatype_test::name(test));
     const auto input = datatype_test::castSamples(test);
     ASSERT_FALSE(input.empty());
     const std::vector<int64_t> shape{int64_t(input.size())};
     const auto actual = runDatatypeGraph(device, test.input, test.inputUint, shape, input, test.output, test.outputUint,
-                                         shape, "CAST %a");
+                                         shape, "CAST %a", "", nullptr, false, importName);
     ASSERT_EQ(actual.size(), input.size());
     for (size_t i = 0; i < input.size(); ++i) {
         ASSERT_TRUE(datatype_test::castMatches(actual[i], input[i], test))
@@ -74,8 +76,13 @@ TEST_P(GeneratedDatatypeCast, NumericResults) {
     }
 }
 
-INSTANTIATE_TEST_SUITE_P(DatatypeCoverage, GeneratedDatatypeCast, testing::ValuesIn(datatype_test::castCases()),
-                         [](const auto &info) { return datatype_test::name(info.param); });
+INSTANTIATE_TEST_SUITE_P(DatatypeCoverage, GeneratedDatatypeCast,
+                         testing::Combine(testing::ValuesIn(datatype_test::castCases()),
+                                          testing::ValuesIn(tosaTestImports)),
+                         [](const auto &info) {
+                             return datatype_test::name(std::get<0>(info.param)) +
+                                    (std::string(std::get<1>(info.param)) == "TOSA.1x.1" ? "_Tosa1x" : "");
+                         });
 
 TEST_F(MLEmulationLayerGraphForVulkan, TosaCastFloat16Overflow) {
     // Check both sides of the rounding boundary, as well as values that must
@@ -108,7 +115,7 @@ TEST_F(MLEmulationLayerGraphForVulkan, TosaCastFloat16Overflow) {
 using GeneratedDatatypeRescale = GeneratedDatatypeTest<datatype_test::RescaleCase>;
 
 TEST_P(GeneratedDatatypeRescale, SignednessAndSaturation) {
-    const auto &test = GetParam();
+    const auto &[test, importName] = GetParam();
     SCOPED_TRACE(datatype_test::name(test));
     const auto &in = test.types.input;
     const auto &out = test.types.output;
@@ -144,21 +151,26 @@ TEST_P(GeneratedDatatypeRescale, SignednessAndSaturation) {
                                   " %a %test_mul %test_shift %test_izp %test_ozp";
     const std::vector<int64_t> shape{int64_t(input.size())};
     const auto actual = runDatatypeGraph(device, in, test.types.inputUint, shape, input, out, test.types.outputUint,
-                                         shape, operation, constants.str());
+                                         shape, operation, constants.str(), nullptr, false, importName);
     ASSERT_EQ(actual.size(), expected.size());
     for (size_t i = 0; i < input.size(); ++i) {
         ASSERT_EQ(actual[i], expected[i]) << "element=" << i << " input bits=" << input[i];
     }
 }
 
-INSTANTIATE_TEST_SUITE_P(DatatypeCoverage, GeneratedDatatypeRescale, testing::ValuesIn(datatype_test::rescaleCases()),
-                         [](const auto &info) { return datatype_test::name(info.param); });
+INSTANTIATE_TEST_SUITE_P(DatatypeCoverage, GeneratedDatatypeRescale,
+                         testing::Combine(testing::ValuesIn(datatype_test::rescaleCases()),
+                                          testing::ValuesIn(tosaTestImports)),
+                         [](const auto &info) {
+                             return datatype_test::name(std::get<0>(info.param)) +
+                                    (std::string(std::get<1>(info.param)) == "TOSA.1x.1" ? "_Tosa1x" : "");
+                         });
 
 using GeneratedDatatypeLayout = GeneratedDatatypeTest<datatype_test::LayoutCase>;
 
 TEST_P(GeneratedDatatypeLayout, PreservesEncodedValues) {
     using datatype_test::LayoutOp;
-    const auto &test = GetParam();
+    const auto &[test, importName] = GetParam();
     SCOPED_TRACE(datatype_test::name(test));
     auto input = datatype_test::samples(test.type, test.type.width <= 16);
     while (input.size() < 4) {
@@ -179,16 +191,18 @@ TEST_P(GeneratedDatatypeLayout, PreservesEncodedValues) {
         std::reverse(expected.begin(), expected.end());
         break;
     case LayoutOp::Slice:
-        operation = "SLICE %a %shape1 %test_size";
+        operation = "SLICE %a %test_start %test_size";
         outputShape = {count - 2};
         expected = std::vector<uint32_t>(input.begin() + 1, input.end() - 1);
         constants = "%test_size_scalar = OpConstant %i32 " + std::to_string(count - 2) +
                     "\n"
-                    "%test_size = OpConstantComposite %shape_array %test_size_scalar\n";
+                    "%test_start = OpConstantComposite %const_i32 %u1\n"
+                    "%test_size = OpConstantComposite %const_i32 %test_size_scalar\n";
         break;
     case LayoutOp::Tile:
     case LayoutOp::Concat:
-        operation = test.operation == LayoutOp::Tile ? "TILE %a %shape2" : "CONCAT %u0 %a %a";
+        operation = test.operation == LayoutOp::Tile ? "TILE %a %test_multiples" : "CONCAT %u0 %a %a";
+        constants = "%test_multiples = OpConstantComposite %const_i32 %u2\n";
         outputShape = {count * 2};
         expected.insert(expected.end(), input.begin(), input.end());
         break;
@@ -207,12 +221,12 @@ TEST_P(GeneratedDatatypeLayout, PreservesEncodedValues) {
         operation = "RESHAPE %a %test_shape";
         constants = "%test_half = OpConstant %i32 " + std::to_string(count / 2) +
                     "\n"
-                    "%test_shape_type = OpTypeArray %i32 %u2\n"
-                    "%test_shape = OpConstantComposite %test_shape_type %u2 %test_half\n";
+                    "%test_shape = OpConstantComposite %const_pair %u2 %test_half\n";
         break;
     }
-    const auto actual = runDatatypeGraph(device, test.type, test.inputUint, inputShape, input, test.type,
-                                         test.outputUint, outputShape, operation, constants);
+    const auto actual =
+        runDatatypeGraph(device, test.type, test.inputUint, inputShape, input, test.type, test.outputUint, outputShape,
+                         operation, constants, nullptr, false, importName);
     ASSERT_EQ(actual.size(), expected.size());
     for (size_t i = 0; i < expected.size(); ++i) {
         // TOSA's floating-point reference checker accepts any NaN encoding.
@@ -224,14 +238,19 @@ TEST_P(GeneratedDatatypeLayout, PreservesEncodedValues) {
     }
 }
 
-INSTANTIATE_TEST_SUITE_P(DatatypeCoverage, GeneratedDatatypeLayout, testing::ValuesIn(datatype_test::layoutCases()),
-                         [](const auto &info) { return datatype_test::name(info.param); });
+INSTANTIATE_TEST_SUITE_P(DatatypeCoverage, GeneratedDatatypeLayout,
+                         testing::Combine(testing::ValuesIn(datatype_test::layoutCases()),
+                                          testing::ValuesIn(tosaTestImports)),
+                         [](const auto &info) {
+                             return datatype_test::name(std::get<0>(info.param)) +
+                                    (std::string(std::get<1>(info.param)) == "TOSA.1x.1" ? "_Tosa1x" : "");
+                         });
 
 using GeneratedDatatypeInteger = GeneratedDatatypeTest<datatype_test::IntegerCase>;
 
 TEST_P(GeneratedDatatypeInteger, WidthBoundariesOnUnsignedStorage) {
     using datatype_test::IntegerOp;
-    const auto &test = GetParam();
+    const auto &[test, importName] = GetParam();
     SCOPED_TRACE(datatype_test::name(test));
     const auto &type = test.type;
     const auto &op = test.operation;
@@ -294,7 +313,7 @@ TEST_P(GeneratedDatatypeInteger, WidthBoundariesOnUnsignedStorage) {
     }
     const std::vector<int64_t> shape{int64_t(input.size())};
     const auto actual = runDatatypeGraph(device, type, test.inputUint, shape, input, outputType, test.outputUint, shape,
-                                         operation, "", test.unary() ? nullptr : &second, test.secondUint);
+                                         operation, "", test.unary() ? nullptr : &second, test.secondUint, importName);
     ASSERT_EQ(actual.size(), expected.size());
     for (size_t i = 0; i < input.size(); ++i) {
         ASSERT_EQ(actual[i], expected[i])
@@ -302,8 +321,13 @@ TEST_P(GeneratedDatatypeInteger, WidthBoundariesOnUnsignedStorage) {
     }
 }
 
-INSTANTIATE_TEST_SUITE_P(DatatypeCoverage, GeneratedDatatypeInteger, testing::ValuesIn(datatype_test::integerCases()),
-                         [](const auto &info) { return datatype_test::name(info.param); });
+INSTANTIATE_TEST_SUITE_P(DatatypeCoverage, GeneratedDatatypeInteger,
+                         testing::Combine(testing::ValuesIn(datatype_test::integerCases()),
+                                          testing::ValuesIn(tosaTestImports)),
+                         [](const auto &info) {
+                             return datatype_test::name(std::get<0>(info.param)) +
+                                    (std::string(std::get<1>(info.param)) == "TOSA.1x.1" ? "_Tosa1x" : "");
+                         });
 
 } // namespace
 } // namespace mlsdk::el::tests

@@ -486,7 +486,7 @@ TEST_F(MLEmulationLayerGraphForVulkan, Maximum) {
     ASSERT_TRUE(outputTensor->compare(&ref[0][0][0][0], sizeof(ref))) << "Output mismatch";
 }
 
-TEST_F(MLEmulationLayerGraphForVulkan, FFT2D) {
+TEST_P(TosaGraphTest, FFT2D) {
 
     auto inputTensor0 =
         std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{1, 4, 4096}});
@@ -517,7 +517,9 @@ TEST_F(MLEmulationLayerGraphForVulkan, FFT2D) {
             },
         },
     };
-    const auto spirv = assembleSpirv(fileToString("fft2d.spvasm"));
+    auto source = fileToString("fft2d.spvasm");
+    utils::replaceAll(source, "TOSA.001000.1", GetParam());
+    const auto spirv = assembleSpirv(source);
     auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, GraphConstants{}, spirv);
 
     graphPipeline->dispatchSubmit();
@@ -582,13 +584,15 @@ TEST_F(MLEmulationLayerGraphForVulkan, SIN) {
     ASSERT_LE(output, refMax);
 }
 
-TEST_F(MLEmulationLayerGraphForVulkan, TosaSinInfinityReturnsNaN) {
+TEST_P(TosaGraphTest, TosaSinInfinityReturnsNaN) {
     const std::vector<float> values{std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::infinity()};
     auto input = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{2}});
     auto output = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{2}});
     std::memcpy(input->data(), values.data(), input->size());
     const GraphPipeline::DescriptorMap descriptors = {{{0, {input}}, {1, {output}}}};
-    const auto spirv = assembleSpirv(fileToString("sin.spvasm"));
+    auto source = fileToString("sin.spvasm");
+    utils::replaceAll(source, "TOSA.001000.1", GetParam());
+    const auto spirv = assembleSpirv(source);
     GraphPipeline pipeline(device, descriptors, GraphConstants{}, spirv);
     pipeline.dispatchSubmit();
 
@@ -599,13 +603,15 @@ TEST_F(MLEmulationLayerGraphForVulkan, TosaSinInfinityReturnsNaN) {
     }
 }
 
-TEST_F(MLEmulationLayerGraphForVulkan, TosaCosInfinityReturnsNaN) {
+TEST_P(TosaGraphTest, TosaCosInfinityReturnsNaN) {
     const std::vector<float> values{std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::infinity()};
     auto input = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{2}});
     auto output = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{2}});
     std::memcpy(input->data(), values.data(), input->size());
     const GraphPipeline::DescriptorMap descriptors = {{{0, {input}}, {1, {output}}}};
-    const auto spirv = assembleSpirv(fileToString("cos.spvasm"));
+    auto source = fileToString("cos.spvasm");
+    utils::replaceAll(source, "TOSA.001000.1", GetParam());
+    const auto spirv = assembleSpirv(source);
     GraphPipeline pipeline(device, descriptors, GraphConstants{}, spirv);
     pipeline.dispatchSubmit();
 

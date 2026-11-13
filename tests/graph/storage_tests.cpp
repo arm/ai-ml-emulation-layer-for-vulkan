@@ -18,6 +18,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -36,7 +37,7 @@ template <typename T>
 void runUnsignedShaderCase(std::shared_ptr<Device> &device, const std::string &instruction,
                            const std::string &constants, std::vector<std::shared_ptr<Tensor>> inputs,
                            vk::Format outputFormat, const std::vector<int64_t> &outputDimensions,
-                           const std::vector<T> &expected) {
+                           const std::vector<T> &expected, const std::string &importName = "TOSA.001000.1") {
     SCOPED_TRACE(instruction);
     auto output = std::make_shared<Tensor>(device, Shape{outputFormat, outputDimensions});
     const size_t inputCount = inputs.size();
@@ -107,7 +108,7 @@ void runUnsignedShaderCase(std::shared_ptr<Device> &device, const std::string &i
         }
         descriptors[0][static_cast<uint32_t>(i)] = {value};
     }
-    const auto source = R"(
+    auto source = R"(
 OpCapability Shader
 OpCapability VulkanMemoryModel
 OpCapability Int8
@@ -120,9 +121,10 @@ OpExtension "SPV_ARM_graph"
 %tosa = OpExtInstImport "TOSA.001000.1"
 OpMemoryModel Logical Vulkan
 )" + annotations + declarations +
-                        constants + "\n%graphType" + graphTypes + "\nOpGraphEntryPointARM %graph \"unsigned\"" +
-                        interfaces + "\n%graph = OpGraphARM %graphType\n" + graphInputs + "%result = OpExtInst " +
-                        outputType + " %tosa " + instruction + "\nOpGraphSetOutputARM %result %c0\nOpGraphEndARM\n";
+                  constants + "\n%graphType" + graphTypes + "\nOpGraphEntryPointARM %graph \"unsigned\"" + interfaces +
+                  "\n%graph = OpGraphARM %graphType\n" + graphInputs + "%result = OpExtInst " + outputType + " %tosa " +
+                  instruction + "\nOpGraphSetOutputARM %result %c0\nOpGraphEndARM\n";
+    utils::replaceAll(source, "TOSA.001000.1", importName);
     const auto spirv = assembleSpirv(source);
     const GraphConstants graphConstants;
     GraphPipeline pipeline{device, descriptors, graphConstants, spirv};
@@ -168,12 +170,13 @@ TEST_F(MLEmulationLayerGraphForVulkan, UnsignedStorageNegate) {
                           std::vector<uint32_t>{0, 0xffffffffu, 0xfeffffffu, 0x7fffffffu, 1});
 }
 
-TEST_F(MLEmulationLayerGraphForVulkan, UnsignedStoragePadConstant) {
+TEST_P(TosaGraphTest, UnsignedStoragePadConstant) {
     const auto input = uint32BoundaryInput(device);
     runUnsignedShaderCase(device, "PAD %in0 %ones2 %padValue",
                           "%padBits = OpConstant %u32 4275878552\n%padValue = OpConstantComposite %ct1 %padBits",
                           {input}, vk::Format::eR32Uint, {7},
-                          std::vector<uint32_t>{0xfedcba98u, 0, 1, 0x01000001u, 0x80000001u, 0xffffffffu, 0xfedcba98u});
+                          std::vector<uint32_t>{0xfedcba98u, 0, 1, 0x01000001u, 0x80000001u, 0xffffffffu, 0xfedcba98u},
+                          GetParam());
 }
 
 TEST_F(MLEmulationLayerGraphForVulkan, UnsignedStorageAveragePool) {
@@ -183,11 +186,11 @@ TEST_F(MLEmulationLayerGraphForVulkan, UnsignedStorageAveragePool) {
                           vk::Format::eR16Uint, {1, 1, 1, 1}, std::vector<uint16_t>{65535});
 }
 
-TEST_F(MLEmulationLayerGraphForVulkan, UnsignedStorageResizeSignExtension) {
+TEST_P(TosaGraphTest, UnsignedStorageResizeSignExtension) {
     const auto poolInput =
         storageTestTensor(device, vk::Format::eR16Uint, {1, 2, 2, 1}, std::vector<uint16_t>(4, 65535));
     runUnsignedShaderCase(device, "RESIZE %c1 %in0 %ones4 %zero2 %zero2", "", {poolInput}, vk::Format::eR64Uint,
-                          {1, 2, 2, 1}, std::vector<uint64_t>(4, 0xffffffffffffffffULL));
+                          {1, 2, 2, 1}, std::vector<uint64_t>(4, 0xffffffffffffffffULL), GetParam());
 }
 
 TEST_F(MLEmulationLayerGraphForVulkan, UnsignedStorageMatmul) {
@@ -440,9 +443,10 @@ TEST_P(TosaFp8Storage, EncodeEveryFiniteValue) {
 INSTANTIATE_TEST_SUITE_P(TosaConversions, TosaFp8Storage, testing::ValuesIn(fp8Formats),
                          [](const auto &info) { return info.param.name; });
 
-class TosaPoolingStorage : public GraphTestWithParam<bool> {
+class TosaPoolingStorage : public GraphTestWithParam<std::tuple<bool, const char *>> {
   protected:
-    bool wide() const { return GetParam(); }
+    bool wide() const { return std::get<0>(GetParam()); }
+    const char *importName() const { return std::get<1>(GetParam()); }
     std::string type() const { return wide() ? "%i16" : "%i8"; }
     vk::Format format() const { return wide() ? vk::Format::eR16Uint : vk::Format::eR8Uint; }
     std::string zeroPoints() const { return wide() ? "%zp16 %zp16" : "%zp8 %zp8"; }
@@ -454,8 +458,8 @@ class TosaPoolingStorage : public GraphTestWithParam<bool> {
 
 TEST_P(TosaPoolingStorage, MaxPool) {
     const auto source = input({1, 1, 2, 1});
-    const auto graph =
-        makeStorageConversionGraph(type(), type(), 4, 4, false, "MAX_POOL2D %kernel %stride %pad %u1 %a");
+    const auto graph = makeStorageConversionGraph(type(), type(), 4, 4, false, "MAX_POOL2D %kernel %stride %pad %u1 %a",
+                                                  "", importName());
     if (wide()) {
         expectStorageOperation(device, {source}, format(), {1, 1, 1, 1}, graph, std::vector<int16_t>{2});
     } else {
@@ -465,8 +469,8 @@ TEST_P(TosaPoolingStorage, MaxPool) {
 
 TEST_P(TosaPoolingStorage, AveragePool) {
     const auto source = input({1, 1, 2, 1});
-    const auto graph = makeStorageConversionGraph(type(), type(), 4, 4, false,
-                                                  "AVG_POOL2D %kernel %stride %pad %u1 %a " + zeroPoints());
+    const auto graph = makeStorageConversionGraph(
+        type(), type(), 4, 4, false, "AVG_POOL2D %kernel %stride %pad %u1 %a " + zeroPoints(), "", importName());
     if (wide()) {
         expectStorageOperation(device, {source}, format(), {1, 1, 1, 1}, graph, std::vector<int16_t>{-149});
     } else {
@@ -475,17 +479,18 @@ TEST_P(TosaPoolingStorage, AveragePool) {
 }
 
 TEST_P(TosaPoolingStorage, Argmax) {
-    expectStorageOperation(device, {input({1, 1, 2, 1})}, vk::Format::eR32Uint, {1, 1, 1},
-                           makeStorageConversionGraph(type(), "%i32", 4, 3, false, "ARGMAX %u2 %u1 %a"),
-                           std::vector<int32_t>{1});
+    expectStorageOperation(
+        device, {input({1, 1, 2, 1})}, vk::Format::eR32Uint, {1, 1, 1},
+        makeStorageConversionGraph(type(), "%i32", 4, 3, false, "ARGMAX %u2 %u1 %a", "", importName()),
+        std::vector<int32_t>{1});
 }
 
 TEST_P(TosaPoolingStorage, Matmul) {
     const auto left = input({1, 1, 2});
     const auto right = wide() ? storageTestTensor(device, vk::Format::eR16Sint, {1, 2, 1}, std::vector<int16_t>{1, -1})
                               : storageTestTensor(device, vk::Format::eR8Sint, {1, 2, 1}, std::vector<int8_t>{1, -1});
-    const auto graph =
-        makeStorageConversionGraph(type(), wide() ? "%i64" : "%i32", 3, 3, true, "MATMUL %a %b " + zeroPoints());
+    const auto graph = makeStorageConversionGraph(type(), wide() ? "%i64" : "%i32", 3, 3, true,
+                                                  "MATMUL %a %b " + zeroPoints(), "", importName());
     if (wide()) {
         expectStorageOperation(device, {left, right}, vk::Format::eR64Uint, {1, 1, 1}, graph,
                                std::vector<int64_t>{-302});
@@ -495,28 +500,34 @@ TEST_P(TosaPoolingStorage, Matmul) {
     }
 }
 
-INSTANTIATE_TEST_SUITE_P(TosaConversions, TosaPoolingStorage, testing::Bool(),
-                         [](const auto &info) { return info.param ? "I16" : "I8"; });
+INSTANTIATE_TEST_SUITE_P(TosaConversions, TosaPoolingStorage,
+                         testing::Combine(testing::Bool(), testing::ValuesIn(tosaTestImports)), [](const auto &info) {
+                             return std::string(std::get<0>(info.param) ? "I16" : "I8") +
+                                    (std::string(std::get<1>(info.param)) == "TOSA.1x.1" ? "_Tosa1x" : "");
+                         });
 
-TEST_F(MLEmulationLayerGraphForVulkan, TosaIntegerStorageReduceMin) {
+TEST_P(TosaGraphTest, TosaIntegerStorageReduceMin) {
     auto input = storageTestTensor(device, vk::Format::eR32Uint, {4}, std::vector<int32_t>{-128, -2, -1, 127});
-    expectStorageOperation(device, {input}, vk::Format::eR32Uint, {1},
-                           makeStorageConversionGraph("%i32", "%i32", 1, 1, false, "REDUCE_MIN %u0 %u1 %a"),
-                           std::vector<int32_t>{-128});
+    expectStorageOperation(
+        device, {input}, vk::Format::eR32Uint, {1},
+        makeStorageConversionGraph("%i32", "%i32", 1, 1, false, "REDUCE_MIN %u0 %u1 %a", "", GetParam()),
+        std::vector<int32_t>{-128});
 }
 
-TEST_F(MLEmulationLayerGraphForVulkan, TosaIntegerStorageReduceMax) {
+TEST_P(TosaGraphTest, TosaIntegerStorageReduceMax) {
     auto input = storageTestTensor(device, vk::Format::eR32Uint, {4}, std::vector<int32_t>{-128, -2, -1, 127});
-    expectStorageOperation(device, {input}, vk::Format::eR32Uint, {1},
-                           makeStorageConversionGraph("%i32", "%i32", 1, 1, false, "REDUCE_MAX %u0 %u1 %a"),
-                           std::vector<int32_t>{127});
+    expectStorageOperation(
+        device, {input}, vk::Format::eR32Uint, {1},
+        makeStorageConversionGraph("%i32", "%i32", 1, 1, false, "REDUCE_MAX %u0 %u1 %a", "", GetParam()),
+        std::vector<int32_t>{127});
 }
 
-TEST_F(MLEmulationLayerGraphForVulkan, TosaIntegerStorageNegate) {
+TEST_P(TosaGraphTest, TosaIntegerStorageNegate) {
     auto input = storageTestTensor(device, vk::Format::eR32Uint, {4}, std::vector<int32_t>{-128, -2, -1, 127});
-    expectStorageOperation(device, {input}, vk::Format::eR32Uint, {4},
-                           makeStorageConversionGraph("%i32", "%i32", 1, 1, false, "NEGATE %a %zp32 %zp32"),
-                           std::vector<int32_t>{128, 2, 1, -127});
+    expectStorageOperation(
+        device, {input}, vk::Format::eR32Uint, {4},
+        makeStorageConversionGraph("%i32", "%i32", 1, 1, false, "NEGATE %a %zp32 %zp32", "", GetParam()),
+        std::vector<int32_t>{128, 2, 1, -127});
 }
 
 struct Fp8PadCase {
@@ -607,6 +618,16 @@ TEST_F(MLEmulationLayerGraphForVulkan, TosaFloat16ConstantStoragePreservesSubnor
         makeStorageConversionGraph("%f16", "%f16", 1, 1, false, "CONCAT %u0 %a %half_constant", constants),
         std::vector<uint16_t>{0, 1, 0});
 }
+
+#if VMEL_ENABLE_TOSA_1X
+TEST_F(MLEmulationLayerGraphForVulkan, Tosa1xMixedOperations) {
+    const auto left = storageTestTensor(device, vk::Format::eR32Sfloat, {6}, std::vector<float>{-10, -2, 1, 4, 9, 100});
+    const auto right = storageTestTensor(device, vk::Format::eR32Sfloat, {6}, std::vector<float>{-5, 3, 2, -1, 4, 0});
+    expectStorageOperation(device, {left, right}, vk::Format::eR8Sint, {6},
+                           assembleSpirv(fileToString("tosa_1x_mixed.spvasm")),
+                           std::vector<int8_t>{-8, 6, 4, 8, 10, 10});
+}
+#endif
 
 } // namespace
 } // namespace mlsdk::el::tests

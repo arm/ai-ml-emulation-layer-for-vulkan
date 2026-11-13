@@ -375,7 +375,8 @@ TEST_F(MLEmulationLayerGraphForVulkan, Conv3DLargeStridePadRegression) {
 }
 
 void expectConv3DInlineEncodedConstantPipelineCreates(std::shared_ptr<Device> &device, const std::string &shaderFile,
-                                                      vk::Format format, vk::Format outputFormat) {
+                                                      vk::Format format, vk::Format outputFormat,
+                                                      const std::string &importName = "TOSA.001000.1") {
 
     auto inputTensor = std::make_shared<Tensor>(device, Shape{format, std::vector<int64_t>{1, 1, 1, 1, 1}});
     auto outputTensor = std::make_shared<Tensor>(device, Shape{outputFormat, std::vector<int64_t>{1, 1, 1, 1, 1}});
@@ -392,7 +393,9 @@ void expectConv3DInlineEncodedConstantPipelineCreates(std::shared_ptr<Device> &d
         {1, {outputTensor}},
     }};
 
-    const auto spirv = assembleSpirv(fileToString(shaderFile));
+    auto source = fileToString(shaderFile);
+    utils::replaceAll(source, "TOSA.001000.1", importName);
+    const auto spirv = assembleSpirv(source);
     auto graphPipeline = std::make_shared<GraphPipeline>(device, descriptorMap, GraphConstants{}, spirv);
     ASSERT_NE(graphPipeline, nullptr);
     ASSERT_NO_THROW(graphPipeline->dispatchSubmit());
@@ -402,10 +405,10 @@ void expectConv3DInlineEncodedConstantPipelineCreates(std::shared_ptr<Device> &d
     EXPECT_EQ(actual, expected); // 1 * 1 + 1 = 2, exact in FP16 and BF16.
 }
 
-TEST_F(MLEmulationLayerGraphForVulkan, Conv3DInlineBFloat16ConstantRegression) {
+TEST_P(TosaGraphTest, Conv3DInlineBFloat16ConstantRegression) {
     expectConv3DInlineEncodedConstantPipelineCreates(device, "conv3d_inline_bf16_constant.spvasm",
                                                      vk::Format::eR16SfloatFpencodingBfloat16ARM,
-                                                     vk::Format::eR16SfloatFpencodingBfloat16ARM);
+                                                     vk::Format::eR16SfloatFpencodingBfloat16ARM, GetParam());
 }
 
 TEST_F(MLEmulationLayerGraphForVulkan, Conv3DInlineFloat8E5M2ConstantRegression) {
