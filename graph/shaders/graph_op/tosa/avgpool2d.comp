@@ -60,9 +60,12 @@ void main() {
 #if IS_FLOAT(TYPE_IN_OUT) || IS_REDUCED_FLOAT(TYPE_IN_OUT)
     acc /= ACC_T(count);
 #else
-    // Divide and round
-    ACC_T round = acc < 0 ? -ACC_T(count >> 1) : ACC_T(count >> 1);
-    acc = (acc + round) / ACC_T(count);
+    // Divide and round with TOSA reciprocal_scale(count) and apply_scale_32(acc, multiplier, shift, false). The
+    // multiplier slightly overestimates 1 / count, so exact division rounds differently for large windows.
+    const int k = findMSB(count - 1u) + 1; // 32 - count_leading_zeros(count - 1)
+    const int64_t multiplier = (((int64_t(1) << 30) + 1) << k) / int64_t(count);
+    const int shift = 30 + k;
+    acc = ACC_T((int64_t(acc) * multiplier + (int64_t(1) << (shift - 1))) >> shift);
 
     // Add output zero point
     acc += ACC_T(pushConstants.outputZeroPoint);
