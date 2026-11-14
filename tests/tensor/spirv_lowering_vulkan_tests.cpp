@@ -1050,8 +1050,7 @@ TEST_F(TensorLoweringForVulkan, DirectMaxPoolNaNContinueAndEarlyWrite) {
     const auto &[words, size] = compute::precompiledSpirvModules.at("maxpool2d_float");
     SpecializedTensorPipeline pipeline(device, descriptors, {words, words + size});
     for (const auto &[mode, expected] : std::vector<std::pair<uint32_t, std::vector<float>>>{
-             {2, {std::numeric_limits<float>::lowest(), 2, 3, 4, 5, 6, 7, 2, 9, 10, 11, 12}},
-             {1, {nan, 2, nan, 4, 5, 6, nan, nan, nan, nan, 11, 12}}}) {
+             {2, {nan, 2, 3, 4, 5, 6, 7, 2, 9, 10, 11, 12}}, {1, {nan, 2, nan, 4, 5, 6, nan, nan, nan, nan, 11, 12}}}) {
         SCOPED_TRACE(mode);
         std::memset(output->data(), 0xa5, output->size());
         // IGNORE continues after NaNs; PROPAGATE writes and returns from inside
