@@ -84,6 +84,7 @@ endfunction()
 
 set(MLEL_CPU_TEST_SOURCES
     common/common_tests.cpp
+    graph/block_scaled_constant_tests.cpp
     graph/datatype_reference_tests.cpp
     graph/graph_ext_inst_context_tests.cpp
     graph/interval_memory_planner_tests.cpp

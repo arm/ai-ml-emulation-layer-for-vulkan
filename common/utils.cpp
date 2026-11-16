@@ -19,6 +19,7 @@
 
 #include <glslang/Include/glslang_c_interface.h>
 #include <glslang/Public/resource_limits_c.h>
+#include <vulkan/vulkan_format_traits.hpp>
 
 using namespace mlsdk::el::log;
 
@@ -40,6 +41,28 @@ size_t getElementCount(const std::vector<int64_t> &dimensions) {
         throw std::runtime_error("Tensor element count became negative: " + std::to_string(result));
     }
     return static_cast<size_t>(result);
+}
+
+void deriveBlockScaledStrides(const VkTensorDescriptionARM &values, const VkTensorDescriptionARM &scales,
+                              std::vector<int64_t> &valueStrides, std::vector<int64_t> &scaleStrides) {
+    const auto valueSize = static_cast<int64_t>(vk::blockSize(vk::Format(values.format)));
+    const auto strideRatio = 32 * valueSize;
+    if (values.pStrides && !scales.pStrides) {
+        scaleStrides.resize(scales.dimensionCount);
+        scaleStrides.back() = 1;
+        for (uint32_t i = 0; i + 1 < scales.dimensionCount; ++i) {
+            scaleStrides[i] = values.pStrides[i] / strideRatio;
+        }
+    } else if (!values.pStrides && scales.pStrides) {
+        valueStrides.resize(values.dimensionCount);
+        valueStrides.back() = valueSize;
+        for (uint32_t i = 0; i + 1 < values.dimensionCount; ++i) {
+            if (scales.pStrides[i] > std::numeric_limits<int64_t>::max() / strideRatio) {
+                throw std::invalid_argument("Block-scaled tensor stride is too large.");
+            }
+            valueStrides[i] = scales.pStrides[i] * strideRatio;
+        }
+    }
 }
 
 std::vector<uint32_t> glslToSpirv(const std::string &glsl) {

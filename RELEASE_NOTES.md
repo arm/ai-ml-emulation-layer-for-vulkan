@@ -25,6 +25,8 @@
 - Prepared tensor-view descriptor metadata to include every backing plane's
   address, dimensions, and strides. The graph layer is responsible for lowering
   block-scaled accesses to formats supported by the tensor shaders.
+- Added initialization of FP8/E8M0 graph constants from a value-and-scale
+  payload into both planes of one block-scaled tensor.
 
 ### Build, Packaging & Dependencies
 

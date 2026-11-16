@@ -81,10 +81,9 @@ TensorDescriptor::TensorDescriptor(const std::shared_ptr<VULKAN_HPP_NAMESPACE::d
       strides{createStrides(_tensorDescription)} {}
 
 std::shared_ptr<Tensor> TensorDescriptor::makeTensor(const std::shared_ptr<TensorDescriptor> &_this) {
-    const auto tensorDescription = _this->getTensorDescription();
-    auto *tensorARM = _this->createTensorARM(tensorDescription);
+    const auto description = _this->getTensorDescription();
+    auto *tensorARM = _this->createTensorARM(description);
     auto *tensorViewARM = _this->createTensorViewARM(tensorARM, _this->format);
-
     auto tensor = std::make_shared<Tensor>(_this->loader, _this->device, _this, tensorARM, tensorViewARM);
 
     graphLog(Severity::Debug) << "Create tensor. tensor=" << tensor << ' ' << *tensor << std::endl;
@@ -92,95 +91,18 @@ std::shared_ptr<Tensor> TensorDescriptor::makeTensor(const std::shared_ptr<Tenso
     return tensor;
 }
 
-VkDeviceMemory TensorDescriptor::createInitializeDeviceMemory(const void *data) {
-    if (data == nullptr) {
-        return VK_NULL_HANDLE;
-    }
+#ifdef VK_ARM_tensors2
+std::shared_ptr<Tensor> TensorDescriptor::makeTensor(const std::shared_ptr<TensorDescriptor> &_this,
+                                                     const VkBlockScaledTensorDescriptionARM &description) {
+    auto *tensorARM = _this->createTensorARM(description);
+    auto *tensorViewARM = _this->createTensorViewARM(tensorARM, _this->format);
+    auto tensor = std::make_shared<Tensor>(_this->loader, _this->device, _this, tensorARM, tensorViewARM);
 
-    const auto requirements = getMemoryRequirements();
-    auto *deviceMemory = allocateDeviceMemory(requirements.size, requirements.memoryTypeBits);
+    graphLog(Severity::Debug) << "Create tensor. tensor=" << tensor << ' ' << *tensor << std::endl;
 
-    void *dst;
-    auto ret = loader->vkMapMemory(device, deviceMemory, 0, VK_WHOLE_SIZE, {}, &dst);
-    if (ret != VK_SUCCESS) {
-        throw std::runtime_error("Failed to memory map memory for constant tensor");
-    }
-
-    std::copy(static_cast<const char *>(data), static_cast<const char *>(data) + getSize(), static_cast<char *>(dst));
-
-    loader->vkUnmapMemory(device, deviceMemory);
-
-    return deviceMemory;
+    return tensor;
 }
-
-VkDeviceMemory TensorDescriptor::allocateDeviceMemory(const size_t size, const uint32_t memoryTypeBits) const {
-    const auto memoryTypeIndices = getMemoryTypeIndices(
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, memoryTypeBits);
-    for (const auto memoryTypeIndex : memoryTypeIndices) {
-        const VkMemoryAllocateInfo memoryAllocateInfo{
-            VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, // type
-            nullptr,                                // next
-            size,                                   // size
-            memoryTypeIndex,                        // memory type index
-        };
-
-        VkDeviceMemory deviceMemory;
-        auto ret = loader->vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &deviceMemory);
-        if (ret == VK_SUCCESS) {
-            return deviceMemory;
-        }
-    }
-
-    throw std::runtime_error("Failed to allocate memory for constant tensor");
-}
-
-std::vector<uint32_t> TensorDescriptor::getMemoryTypeIndices(const VkMemoryPropertyFlags memoryPropertyFlags,
-                                                             const uint32_t memoryTypeBits) const {
-    VkPhysicalDeviceMemoryProperties memoryProperties;
-    loader->vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memoryProperties);
-
-    std::vector<uint32_t> memoryTypeIndices;
-
-    // Compile a list of memory allocation infos
-    for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
-        // Exclude memory types that are not part of mask
-        if (((memoryTypeBits >> i) & 1) == 0) {
-            continue;
-        }
-
-        const auto &memoryType = memoryProperties.memoryTypes[i];
-
-        // Check that all required memory properties are supported
-        if ((memoryType.propertyFlags & memoryPropertyFlags) != memoryPropertyFlags) {
-            continue;
-        }
-
-        // Add memory type
-        memoryTypeIndices.emplace_back(i);
-    }
-
-    // Sort infos in priority order
-    std::sort(memoryTypeIndices.begin(), memoryTypeIndices.end(),
-              [&memoryProperties](const auto &leftIndex, const auto &rightIndex) {
-                  const auto &leftMemoryType = memoryProperties.memoryTypes[leftIndex];
-                  const auto &rightMemoryType = memoryProperties.memoryTypes[rightIndex];
-
-                  const auto &leftHeap = memoryProperties.memoryHeaps[leftMemoryType.heapIndex];
-                  const auto &rightHeap = memoryProperties.memoryHeaps[rightMemoryType.heapIndex];
-
-                  // Prioritize device local memory, it is likely faster
-                  const auto leftDeviceLocal = leftMemoryType.propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-                  const auto rightDeviceLocal = rightMemoryType.propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-                  if (leftDeviceLocal != rightDeviceLocal) {
-                      return leftDeviceLocal > rightDeviceLocal;
-                  }
-
-                  // Select the larger heap
-                  return leftHeap.size > rightHeap.size;
-              });
-
-    return memoryTypeIndices;
-}
+#endif
 
 VkFormat TensorDescriptor::getFormat() const { return format; }
 
@@ -288,26 +210,43 @@ uint32_t TensorDescriptor::getComputeFamilyIndex() const {
     throw std::runtime_error("Failed to find queue family index");
 }
 
-VkTensorARM TensorDescriptor::createTensorARM(const VkTensorDescriptionARM &tensorDescription) const {
+VkTensorARM TensorDescriptor::createTensorARM(const VkTensorDescriptionARM &description) const {
     auto queueFamilyIndex = getComputeFamilyIndex();
-
-    const VkTensorCreateInfoARM tensorCreateInfo = {
+    const VkTensorCreateInfoARM createInfo = {
         VK_STRUCTURE_TYPE_TENSOR_CREATE_INFO_ARM, // type
         nullptr,                                  // next
         0,                                        // flags
-        &tensorDescription,                       // tensor description
+        &description,                             // tensor description
         VK_SHARING_MODE_EXCLUSIVE,                // sharing mode
         1,                                        // queue family index count
         &queueFamilyIndex,                        // queue family indices
     };
-
     VkTensorARM tensor;
-    if (loader->vkCreateTensorARM(device, &tensorCreateInfo, nullptr, &tensor) != VK_SUCCESS) {
+    if (loader->vkCreateTensorARM(device, &createInfo, nullptr, &tensor) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create tensor.");
     }
-
     return tensor;
 }
+
+#ifdef VK_ARM_tensors2
+VkTensorARM TensorDescriptor::createTensorARM(const VkBlockScaledTensorDescriptionARM &description) const {
+    auto queueFamilyIndex = getComputeFamilyIndex();
+    const VkTensorCreateInfoARM createInfo = {
+        VK_STRUCTURE_TYPE_TENSOR_CREATE_INFO_ARM, // type
+        &description,                             // next
+        0,                                        // flags
+        nullptr,                                  // tensor description
+        VK_SHARING_MODE_EXCLUSIVE,                // sharing mode
+        1,                                        // queue family index count
+        &queueFamilyIndex,                        // queue family indices
+    };
+    VkTensorARM tensor;
+    if (loader->vkCreateTensorARM(device, &createInfo, nullptr, &tensor) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create tensor.");
+    }
+    return tensor;
+}
+#endif
 
 VkTensorViewARM TensorDescriptor::createTensorViewARM(const VkTensorARM tensor, const VkFormat _format) const {
     const VkTensorViewCreateInfoARM tensorViewCreateInfo = {
