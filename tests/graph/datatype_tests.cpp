@@ -129,7 +129,12 @@ TEST_P(GeneratedDatatypeRescale, SignednessAndSaturation) {
         const auto value = test.inputUnsigned ? int64_t(bits) : int64_t(datatype_test::decode(bits, in));
         // Scale by exactly 1/4 with single-round semantics. This uses division
         // rather than reproducing the implementation's multiply/shift sequence.
-        const auto rounded = datatype_test::floorDivide(value - inputZp + 2, 4) + outputZp;
+        // Keep negative floor division explicit. The quotient/remainder form in
+        // floorDivide is equivalent, but MSVC /O2 gave off-by-one expected
+        // values for this loop (for example, input bits 131).
+        const int64_t numerator = value - inputZp + 2;
+        const auto scaled = numerator >= 0 ? numerator / 4 : -((-numerator + 3) / 4);
+        const auto rounded = scaled + outputZp;
         expected.push_back(uint32_t(uint64_t(std::clamp(rounded, minimum, maximum))) & out.mask());
     }
     const std::string mulType = test.scale32 ? "%i32" : "%i16";
