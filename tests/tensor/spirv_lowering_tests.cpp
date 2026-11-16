@@ -4,6 +4,7 @@
  *
  */
 
+#include "mlel/utils.hpp"
 #include "shaders/precompiled_shaders.hpp"
 #include "spirv_tensor_lowering.hpp"
 #include "tensor_processor.hpp"
@@ -152,6 +153,43 @@ TEST(TensorSpirvLowering, RemovesUnusedTensorDeclarations) {
         shader.insert(shader.find("OpMemoryModel"), capability + "OpExtension \"SPV_ARM_tensors\"\n");
         auto spirv = assemble(shader);
         ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+    }
+}
+
+TEST(TensorSpirvLowering, LowersDirectScalarTypesAndRanksWithStorageBuffer) {
+    for (const std::string element : {"int8_t", "uint8_t", "int16_t", "uint16_t", "int", "uint", "int64_t", "uint64_t",
+                                      "float16_t", "float", "bool"}) {
+        for (uint32_t rank = 1; rank <= 6; ++rank) {
+            SCOPED_TRACE(element + " rank " + std::to_string(rank));
+            std::string shader = R"(
+#version 460
+#extension GL_ARM_tensors : require
+#extension GL_EXT_shader_explicit_arithmetic_types : require
+layout(local_size_x = 1) in;
+)";
+            shader +=
+                "layout(set = 0, binding = 0) uniform tensorARM<" + element + ", " + std::to_string(rank) + "> data;\n";
+            shader += R"(
+layout(set = 0, binding = 1, std430) buffer Results { uint values[]; } results;
+void main() {
+)";
+            shader += "uint coords[" + std::to_string(rank) + "];\n";
+            for (uint32_t axis = 0; axis < rank; ++axis) {
+                const auto index = std::to_string(axis);
+                shader.append("results.values[")
+                    .append(index)
+                    .append("] = tensorSizeARM(data, ")
+                    .append(index)
+                    .append(");\n");
+                shader.append("coords[").append(index).append("] = results.values[").append(index).append("] - 1;\n");
+            }
+            shader += element + " value;\ntensorReadARM(data, coords, value);\n";
+            shader += "tensorWriteARM(data, coords, value);\n}\n";
+            const auto input = utils::glslToSpirv(shader);
+            ASSERT_TRUE(spvtools::SpirvTools(SPV_ENV_VULKAN_1_3).Validate(input));
+            auto spirv = input;
+            ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
+        }
     }
 }
 

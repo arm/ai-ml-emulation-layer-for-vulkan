@@ -33,6 +33,7 @@ struct TensorShaderBinding {
     std::string rank;
     uint32_t set;
     uint32_t binding;
+    std::string memoryQualifiers = {};
 };
 
 struct TensorShaderSource {
@@ -49,7 +50,8 @@ inline std::vector<uint32_t> compileTensorShader(const TensorShaderSource &shade
                          "\nlayout(local_size_x = 1) in;\n" + shader.declarations + "\n";
     for (const auto &tensor : shader.tensors) {
         source += "layout(set = " + std::to_string(tensor.set) + ", binding = " + std::to_string(tensor.binding) +
-                  ") uniform tensorARM<" + tensor.elementType + ", " + tensor.rank + "> " + tensor.name + ";\n";
+                  ") " + tensor.memoryQualifiers + " uniform tensorARM<" + tensor.elementType + ", " + tensor.rank +
+                  "> " + tensor.name + ";\n";
     }
     return compileGlsl(source + "\nvoid main() {\n" + shader.body + "\n}\n");
 }
