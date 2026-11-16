@@ -89,6 +89,7 @@ set(MLEL_CPU_TEST_SOURCES
     graph/interval_memory_planner_tests.cpp
     graph/pipeline_cache_tests.cpp
     tensor/descriptor_binding_tests.cpp
+    tensor/temporary_shader_modules_tests.cpp
     tensor/spirv_lowering_tests.cpp
     tensor/tensor_arm_tests.cpp
     tensor/shape_tests.cpp)

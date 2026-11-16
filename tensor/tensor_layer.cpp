@@ -12,6 +12,7 @@
 
 #include "descriptor_binding.hpp"
 #include "memory_aliasing.hpp"
+#include "temporary_shader_modules.hpp"
 #include "tensor_arm.hpp"
 #include "tensor_log.hpp"
 #include "tensor_processor.hpp"
@@ -457,10 +458,14 @@ class TensorLayer : public VulkanLayerImpl {
                                                         VkPipeline *pPipelines) {
         auto handle = VulkanLayerImpl::getHandle(device);
 
+        for (uint32_t i = 0; i < createInfoCount; ++i) {
+            pPipelines[i] = VK_NULL_HANDLE;
+        }
+
         std::vector<VkComputePipelineCreateInfo> createInfosNew;
         const auto mode = handle->loweringMode;
-        std::map<const VkShaderModuleCreateInfo *, VkShaderModule>
-            shaderCache; // avoid creating multiple shader modules for the same shader
+        TemporaryShaderModules shaderCache(device, pAllocator, handle->loader->vkCreateShaderModule,
+                                           handle->loader->vkDestroyShaderModule);
 
         // Inspect all VkComputePipelineCreateInfo for VkShaderModuleCreateInfo to find uses tensorARM in shaders
         for (uint32_t i = 0; i < createInfoCount; i++) {
@@ -485,8 +490,8 @@ class TensorLayer : public VulkanLayerImpl {
             }
             // If a shaderModule has already been created for this shaderModuleCreateInfo, it can be reused for this
             // pipeline
-            if (auto it = shaderCache.find(pShaderCreateInfo); it != shaderCache.end()) {
-                createInfosNew[i].stage.module = it->second;
+            if (const VkShaderModule module = shaderCache.find(pShaderCreateInfo); module != VK_NULL_HANDLE) {
+                createInfosNew[i].stage.module = module;
                 continue;
             }
             // Check if the shader uses tensors
@@ -530,17 +535,16 @@ class TensorLayer : public VulkanLayerImpl {
             // one, we would have to copy all structs in the chain to work around pNext being immutable. Instead, we
             // explicitly call vkCreateShaderModule and set ".module" in the copied VkPipelineShaderStageCreateInfo,
             // as it will take preference over the VkShaderModuleCreateInfo in the pNext chain.
-            VkShaderModule shaderModule;
-            handle->loader->vkCreateShaderModule(device, &shaderModuleCreateInfo, pAllocator, &shaderModule);
-            shaderCache[pShaderCreateInfo] = shaderModule;
+            VkShaderModule shaderModule = VK_NULL_HANDLE;
+            const auto result = shaderCache.create(pShaderCreateInfo, shaderModuleCreateInfo, shaderModule);
+            if (result != VK_SUCCESS) {
+                return result;
+            }
             shaderStageCreateInfoNew.module = shaderModule;
         }
         const auto *pCreateInfosNew = createInfosNew.empty() ? pCreateInfos : createInfosNew.data();
         VkResult res = handle->loader->vkCreateComputePipelines(device, pipelineCache, createInfoCount, pCreateInfosNew,
                                                                 pAllocator, pPipelines);
-        for (auto it : shaderCache) {
-            handle->loader->vkDestroyShaderModule(device, it.second, pAllocator);
-        }
         return res;
     }
 
