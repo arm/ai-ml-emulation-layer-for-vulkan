@@ -12,6 +12,7 @@ namespace mlsdk::el::layer {
 VkResult TensorDescriptor::create(const Device &dev, const VkTensorViewCreateInfoARM *createInfo,
                                   const VkAllocationCallbacks *allocator) {
     VkResult result;
+    const auto &planes = reinterpret_cast<const TensorARM *>(createInfo->tensor)->getPlanes();
     // create buffer
     const auto *pCaptureDescriptorInfo = findType<VkOpaqueCaptureDescriptorDataCreateInfoEXT>(
         createInfo->pNext, VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT);
@@ -22,7 +23,7 @@ VkResult TensorDescriptor::create(const Device &dev, const VkTensorViewCreateInf
         VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         pCaptureDescriptorInfo,
         flags,
-        sizeof(DescriptorBuffer),
+        sizeof(DescriptorBuffer) * planes.size(),
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_SHARING_MODE_EXCLUSIVE,
         0,
@@ -55,8 +56,7 @@ VkResult TensorDescriptor::create(const Device &dev, const VkTensorViewCreateInf
 }
 
 VkBuffer TensorDescriptor::getTensorDescriptorBuffer(const Device &dev, VkTensorARM tensorHandle) {
-    auto *tensor = reinterpret_cast<TensorARM *>(tensorHandle);
-    const auto &info = tensor->getTensorInfo();
+    const auto &planes = reinterpret_cast<const TensorARM *>(tensorHandle)->getPlanes();
 
     DescriptorBuffer *descriptor;
     VkResult result =
@@ -65,15 +65,21 @@ VkBuffer TensorDescriptor::getTensorDescriptorBuffer(const Device &dev, VkTensor
         return VK_NULL_HANDLE;
     }
 
-    const VkBufferDeviceAddressInfo addressInfo = {
+    VkBufferDeviceAddressInfo addressInfo = {
         VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
         nullptr,
-        tensor->getTensorBuffer(),
+        VK_NULL_HANDLE,
     };
+    for (size_t i = 0; i < planes.size(); ++i) {
+        const auto &plane = planes[i];
+        auto &record = descriptor[i];
 
-    descriptor->address = dev.loader->vkGetBufferDeviceAddress(dev.device, &addressInfo);
-    std::copy(info.dimensions.begin(), info.dimensions.end(), &descriptor->dimensions[0]);
-    std::copy(info.strides.begin(), info.strides.end(), &descriptor->strides[0]);
+        addressInfo.buffer = plane.buffer;
+        record = {};
+        record.address = dev.loader->vkGetBufferDeviceAddress(dev.device, &addressInfo);
+        std::copy(plane.layout.dimensions.begin(), plane.layout.dimensions.end(), std::begin(record.dimensions));
+        std::copy(plane.layout.strides.begin(), plane.layout.strides.end(), std::begin(record.strides));
+    }
 
     dev.loader->vkUnmapMemory(dev.device, m_memory);
 

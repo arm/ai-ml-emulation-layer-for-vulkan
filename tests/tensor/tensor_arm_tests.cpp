@@ -15,6 +15,41 @@
 
 namespace {
 
+#ifdef VK_ARM_tensors2
+TEST(TensorARM, BlockScaledLayoutsDeriveOmittedStrides) {
+    const int64_t dimensions[][3] = {{2, 3, 64}, {2, 3, 2}};
+    const int64_t strides[][3] = {{1024, 256, 1}, {32, 8, 1}};
+    const VkTensorPlaneARM types[] = {VK_TENSOR_PLANE_VALUES_ARM, VK_TENSOR_PLANE_SCALES_ARM};
+    VkTensorDescriptionARM planes[] = {
+        {VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM, nullptr, VK_TENSOR_TILING_LINEAR_ARM,
+         VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM, 3, dimensions[0], nullptr,
+         VK_TENSOR_USAGE_TRANSFER_SRC_BIT_ARM},
+        {VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM, nullptr, VK_TENSOR_TILING_LINEAR_ARM,
+         VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM, 3, dimensions[1], nullptr,
+         VK_TENSOR_USAGE_TRANSFER_SRC_BIT_ARM},
+    };
+    const VkBlockScaledTensorDescriptionARM scaled{VK_STRUCTURE_TYPE_BLOCK_SCALED_TENSOR_DESCRIPTION_ARM,
+                                                   nullptr,
+                                                   VK_TENSOR_BLOCK_SCALING_SCHEME_PLANAR_OCP_MICROSCALING_ARM,
+                                                   2,
+                                                   types,
+                                                   planes};
+    const VkTensorCreateInfoARM create{
+        VK_STRUCTURE_TYPE_TENSOR_CREATE_INFO_ARM, &scaled, 0, nullptr, VK_SHARING_MODE_EXCLUSIVE, 0, nullptr};
+    for (uint32_t supplied = 0; supplied < 2; ++supplied) {
+        SCOPED_TRACE(supplied);
+        planes[0].pStrides = supplied == 0 ? strides[0] : nullptr;
+        planes[1].pStrides = supplied == 1 ? strides[1] : nullptr;
+        const mlsdk::el::layer::TensorStorage storage(create);
+        ASSERT_EQ(storage.planes.size(), 2u);
+        EXPECT_EQ(storage.planes[0].layout.strides, (std::vector<int64_t>{1024, 256, 1}));
+        EXPECT_EQ(storage.planes[1].layout.strides, (std::vector<int64_t>{32, 8, 1}));
+        EXPECT_EQ(storage.planes[0].layout.size, 2048u);
+        EXPECT_EQ(storage.planes[1].layout.size, 64u);
+    }
+}
+#endif
+
 TEST(TensorARM, LinearImageAliasingUsesImageRowPitch) {
     const std::vector<int64_t> dimensions{4, 8, 1};
     std::vector<int64_t> strides{8, 1, 1};
