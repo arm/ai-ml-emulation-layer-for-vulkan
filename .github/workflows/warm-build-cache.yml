@@ -1,0 +1,22 @@
+#
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+#
+name: Warm build cache
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  # Populate the compiler cache on main so the first run of each PR can restore compiled objects.
+  # GitHub Actions caches are repository-scoped and cannot be shared between PRs.
+  warm:
+    uses: arm/ai-ml-sdk-for-vulkan/.github/workflows/build-with-manifest.yml@main
+    with:
+      changed_repo: ${{ github.repository }}
+      changed_sha: ${{ github.sha }}
