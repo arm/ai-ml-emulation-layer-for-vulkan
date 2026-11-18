@@ -60,6 +60,7 @@ class TensorLoweringForVulkan : public testing::Test {
             }
         }
         vk::PhysicalDeviceFeatures2 features{};
+        features.features.robustBufferAccess = VK_TRUE;
         features.features.shaderInt64 = VK_TRUE;
         vk::PhysicalDeviceTensorFeaturesARM tensors{};
         tensors.tensors = VK_TRUE;

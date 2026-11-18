@@ -22,6 +22,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <new>
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -49,6 +50,12 @@ class TensorDevice : public Device {
 
     const TensorLoweringMode loweringMode;
     bool uniformBufferUpdateAfterBindEnabled = false;
+    std::map<VkDeviceMemory, VkDeviceSize> allocationSizes;
+
+    VkDeviceSize availableSize(VkDeviceMemory memory, VkDeviceSize offset) const {
+        const auto it = allocationSizes.find(memory);
+        return it != allocationSizes.end() && offset < it->second ? it->second - offset : 0;
+    }
 };
 
 /*******************************************************************************
@@ -287,36 +294,43 @@ class TensorLayer : public VulkanLayerImpl {
     static VkResult VKAPI_CALL vkBindTensorMemoryARM(VkDevice device, uint32_t bindInfoCount,
                                                      const VkBindTensorMemoryInfoARM *bindInfos) {
         auto handle = VulkanLayerImpl::getHandle(device);
-        for (uint32_t i = 0; i < bindInfoCount; i++) {
-            auto *tensor = reinterpret_cast<TensorARM *>(bindInfos[i].tensor);
-            if (!tensor) {
-                return VK_ERROR_VALIDATION_FAILED;
-            }
-            std::optional<uint32_t> planeIndex;
+        try {
+            for (uint32_t i = 0; i < bindInfoCount; ++i) {
+                const auto &bind = bindInfos[i];
+                auto *tensor = reinterpret_cast<TensorARM *>(bind.tensor);
+                if (!tensor) {
+                    return VK_ERROR_VALIDATION_FAILED;
+                }
+                std::optional<uint32_t> planeIndex;
 #ifdef VK_ARM_tensors2
-            if (const auto *plane =
-                    findType<VkTensorPlaneInfoARM>(bindInfos[i].pNext, VK_STRUCTURE_TYPE_TENSOR_PLANE_INFO_ARM)) {
-                planeIndex = plane->planeIndex;
-            }
+                if (const auto *plane =
+                        findType<VkTensorPlaneInfoARM>(bind.pNext, VK_STRUCTURE_TYPE_TENSOR_PLANE_INFO_ARM)) {
+                    planeIndex = plane->planeIndex;
+                }
 #endif
-            const auto result =
-                tensor->bindTensorMemory(*handle, bindInfos[i].memory, bindInfos[i].memoryOffset, planeIndex);
-            if (result != VK_SUCCESS) {
-                return result;
-            }
-            if (!planeIndex) {
-                // Implementation limit: image aliasing tracking handles only ordinary tensors.
-                // The draft does not specify image aliasing for block-scaled planes.
-                scopedMutex l(globalMutex);
-                memoryAliasing.addAliasingResource(bindInfos[i].memory, bindInfos[i].memoryOffset, bindInfos[i].tensor);
-                auto images =
-                    memoryAliasing.getAliasingResources<VkImage>(bindInfos[i].memory, bindInfos[i].memoryOffset);
-                if (!images.empty()) {
-                    tensor->updateAliasedTensorInfo(*handle, images[0]);
+                const auto result = tensor->bindTensorMemory(*handle, bind.memory, bind.memoryOffset, planeIndex);
+                if (result != VK_SUCCESS) {
+                    return result;
+                }
+                if (!planeIndex) {
+                    // Image aliasing tracking handles only ordinary tensors.
+                    scopedMutex l(globalMutex);
+                    memoryAliasing.addAliasingResource(bind.memory, bind.memoryOffset, bind.tensor);
+                    const auto images = memoryAliasing.getAliasingResources<VkImage>(bind.memory, bind.memoryOffset);
+                    if (!images.empty()) {
+                        const auto aliasResult =
+                            tensor->updateAliasedTensorInfo(*handle, images[0], bind.memory, bind.memoryOffset,
+                                                            handle->availableSize(bind.memory, bind.memoryOffset));
+                        if (aliasResult != VK_SUCCESS) {
+                            return aliasResult;
+                        }
+                    }
                 }
             }
+            return VK_SUCCESS;
+        } catch (const std::bad_alloc &) {
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
         }
-        return VK_SUCCESS;
     }
 
     static void VKAPI_CALL vkGetDeviceTensorMemoryRequirementsARM(VkDevice device,
@@ -747,39 +761,38 @@ class TensorLayer : public VulkanLayerImpl {
 
     static VkResult VKAPI_CALL vkBindImageMemory(VkDevice device, VkImage image, VkDeviceMemory memory,
                                                  VkDeviceSize memoryOffset) {
-        auto handle = VulkanLayerImpl::getHandle(device);
-        auto result = handle->loader->vkBindImageMemory(device, image, memory, memoryOffset);
-        if (result == VK_SUCCESS) {
-            scopedMutex l(globalMutex);
-            memoryAliasing.addAliasingResource(memory, memoryOffset, image);
-            auto tensors = memoryAliasing.getAliasingResources<VkTensorARM>(memory, memoryOffset);
-            for (auto &&tensor : tensors) {
-                auto *underlyingTensor = reinterpret_cast<TensorARM *>(tensor);
-                underlyingTensor->updateAliasedTensorInfo(*handle, image);
-            }
-        }
-        return result;
+        const VkBindImageMemoryInfo bind{VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO, nullptr, image, memory,
+                                         memoryOffset};
+        return vkBindImageMemory2(device, 1, &bind);
     }
 
     static VkResult VKAPI_CALL vkBindImageMemory2(VkDevice device, uint32_t bindInfoCount,
                                                   const VkBindImageMemoryInfo *pBindInfos) {
         auto handle = VulkanLayerImpl::getHandle(device);
-        auto result = handle->loader->vkBindImageMemory2(device, bindInfoCount, pBindInfos);
-        if (result == VK_SUCCESS) {
-            for (uint32_t i = 0; i < bindInfoCount; i++) {
-                scopedMutex l(globalMutex);
-                memoryAliasing.addAliasingResource(pBindInfos[i].memory, pBindInfos[i].memoryOffset,
-                                                   pBindInfos[i].image);
-                auto tensors =
-                    memoryAliasing.getAliasingResources<VkTensorARM>(pBindInfos[i].memory, pBindInfos[i].memoryOffset);
-                for (auto &&tensor : tensors) {
+        const auto result = handle->loader->vkBindImageMemory2(device, bindInfoCount, pBindInfos);
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+        scopedMutex l(globalMutex);
+        try {
+            for (uint32_t i = 0; i < bindInfoCount; ++i) {
+                const auto &bind = pBindInfos[i];
+                memoryAliasing.addAliasingResource(bind.memory, bind.memoryOffset, bind.image);
+                const auto tensors = memoryAliasing.getAliasingResources<VkTensorARM>(bind.memory, bind.memoryOffset);
+                for (const VkTensorARM tensor : tensors) {
                     auto *underlyingTensor = reinterpret_cast<TensorARM *>(tensor);
-                    underlyingTensor->updateAliasedTensorInfo(*handle, pBindInfos[i].image);
+                    const auto aliasResult = underlyingTensor->updateAliasedTensorInfo(
+                        *handle, bind.image, bind.memory, bind.memoryOffset,
+                        handle->availableSize(bind.memory, bind.memoryOffset));
+                    if (aliasResult != VK_SUCCESS) {
+                        return aliasResult;
+                    }
                 }
             }
+            return VK_SUCCESS;
+        } catch (const std::bad_alloc &) {
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
         }
-
-        return result;
     }
 
     static void VKAPI_CALL vkDestroyImage(VkDevice device, VkImage image, const VkAllocationCallbacks *pAllocator) {
@@ -813,16 +826,27 @@ class TensorLayer : public VulkanLayerImpl {
         const auto result = handle->loader->vkAllocateMemory(device, &newAllocateInfo, pAllocator, pMemory);
 
         loadVkStructureList(const_cast<VkMemoryAllocateInfo *>(pAllocateInfo), originalAllocateChain);
+        if (result == VK_SUCCESS) {
+            scopedMutex l(globalMutex);
+            try {
+                handle->allocationSizes[*pMemory] = pAllocateInfo->allocationSize;
+            } catch (const std::bad_alloc &) {
+                handle->loader->vkFreeMemory(device, *pMemory, pAllocator);
+                *pMemory = VK_NULL_HANDLE;
+                return VK_ERROR_OUT_OF_HOST_MEMORY;
+            }
+        }
         return result;
     }
 
     static void VKAPI_CALL vkFreeMemory(VkDevice device, VkDeviceMemory memory,
                                         const VkAllocationCallbacks *pAllocator) {
+        auto handle = VulkanLayerImpl::getHandle(device);
         {
             scopedMutex l(globalMutex);
+            handle->allocationSizes.erase(memory);
             memoryAliasing.removeAliasingMemory(memory);
         }
-        auto handle = VulkanLayerImpl::getHandle(device);
         handle->loader->vkFreeMemory(device, memory, pAllocator);
     }
 

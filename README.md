@@ -586,8 +586,11 @@ analysis lacks support for those declarations.
 
 ## Known Limitations
 
-- Resources created with `VK_IMAGE_TILING_OPTIMAL` and
-  `VK_TENSOR_TILING_OPTIMAL_ARM` flags cannot be used with memory aliasing.
+- Optimal image/tensor aliasing is emulated using linear images. All images and
+  tensors sharing an aliased memory range must be bound before initializing tensor
+  contents, writing tensor descriptors, or recording commands that use the tensor.
+  Binding additional aliases after this point is unsupported.
+- Descriptor capture/replay is unsupported for image-aliased tensors.
 - Data graph pipeline creation without a shader module is not supported.
 - Accuracy of MATMUL computation might be incorrect for mixed reduce float types
   such as fp8e5m2xfp8e4m3 and fp8e4m3xfp8e5m2.
