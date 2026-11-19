@@ -17,8 +17,6 @@
 #include <numeric>
 #include <string_view>
 
-#include <vulkan/vulkan_format_traits.hpp>
-
 using namespace mlsdk::el::log;
 using namespace mlsdk::el::utils;
 
@@ -61,20 +59,6 @@ ScalarType accScalarType(uint32_t accType) {
         throw std::runtime_error("Unsupported acc type " + std::to_string(accType));
     }
 }
-
-#ifdef VK_ARM_tensors2
-size_t getBlockScaledPlanePayloadSize(const VkTensorDescriptionARM &description) {
-    if (description.pStrides != nullptr) {
-        if (description.pStrides[0] < 0) {
-            throw std::runtime_error("Strides must be greater than zero.");
-        }
-        return static_cast<size_t>(description.pDimensions[0] * description.pStrides[0]);
-    }
-    const std::vector<int64_t> dimensions(description.pDimensions,
-                                          description.pDimensions + description.dimensionCount);
-    return utils::getElementCount(dimensions) * vk::blockSize(vk::Format(description.format));
-}
-#endif
 
 } // namespace
 
@@ -2136,7 +2120,7 @@ void GraphPipeline::makeBlockScaledConstTensor(const VkDataGraphPipelineConstant
     for (uint32_t i = 0; i < description.planeCount; ++i) {
         auto planeDescription = description.pPlaneDescriptions[i];
         planeDescription.pStrides = strides[i].empty() ? planeDescription.pStrides : strides[i].data();
-        const auto dataSize = getBlockScaledPlanePayloadSize(planeDescription);
+        const auto dataSize = utils::getTensorSize(planeDescription);
         const VkTensorPlaneInfoARM planeInfo{VK_STRUCTURE_TYPE_TENSOR_PLANE_INFO_ARM, nullptr, i};
         const VkTensorMemoryRequirementsInfoARM info{VK_STRUCTURE_TYPE_TENSOR_MEMORY_REQUIREMENTS_INFO_ARM, &planeInfo,
                                                      tensor->getVkTensorARM()};
