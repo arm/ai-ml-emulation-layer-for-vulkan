@@ -42,21 +42,6 @@ void validateBlockScaledDescription(const VkTensorDescriptionARM &values, const 
     }
 }
 
-void deriveBlockScaledStrides(const VkTensorDescriptionARM &values, const VkTensorDescriptionARM &scales,
-                              TensorLayout &valueLayout, TensorLayout &scaleLayout, int64_t strideRatio) {
-    const auto last = valueLayout.dimensions.size() - 1;
-    for (size_t i = 0; i < last; ++i) {
-        if (values.pStrides && !scales.pStrides) {
-            scaleLayout.strides[i] = valueLayout.strides[i] / strideRatio;
-        } else if (!values.pStrides && scales.pStrides) {
-            if (scaleLayout.strides[i] > std::numeric_limits<int64_t>::max() / strideRatio) {
-                throw std::invalid_argument("Block-scaled tensor stride is too large.");
-            }
-            valueLayout.strides[i] = scaleLayout.strides[i] * strideRatio;
-        }
-    }
-}
-
 void validateBlockScaledStrides(const TensorLayout &valueLayout, const TensorLayout &scaleLayout, int64_t strideRatio) {
     const auto last = valueLayout.dimensions.size() - 1;
     for (size_t i = 0; i < last; ++i) {
@@ -85,7 +70,7 @@ void updateBlockScaledLayouts(const VkTensorDescriptionARM &values, const VkTens
     auto &scaleLayout = planes[1].layout;
     // OCP microscaling couples each outer value stride to the scale stride by the bytes in 32 values.
     const auto strideRatio = static_cast<int64_t>(32 * valueLayout.elementSize);
-    deriveBlockScaledStrides(values, scales, valueLayout, scaleLayout, strideRatio);
+    deriveBlockScaledStrides(values, scales, valueLayout.strides, scaleLayout.strides);
     validateBlockScaledStrides(valueLayout, scaleLayout, strideRatio);
     for (auto &plane : planes) {
         auto derived = plane.planeIndex == 0 ? values : scales;

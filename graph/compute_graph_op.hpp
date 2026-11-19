@@ -1189,7 +1189,7 @@ class GraphPipeline {
     ComputePipelineBase &getOutputs() { return outputs; }
 
     // Constant tensors owned by the pipeline
-    void makeConstTensor(uint32_t id, const VkTensorDescriptionARM &tensorDescription, const void *data);
+    void makeConstTensor(const VkDataGraphPipelineConstantARM &constant);
     std::shared_ptr<TensorDescriptor> getConstTensor(uint32_t id) const;
     std::shared_ptr<TensorDescriptor> makeConstCompositeTensor(VkFormat format, std::vector<int64_t> dimensions,
                                                                const void *data);
@@ -1484,6 +1484,17 @@ class GraphPipeline {
                     const std::vector<uint32_t> &padding, const std::string &debugName);
 
   private:
+#ifdef VK_ARM_tensors2
+    void makeBlockScaledConstTensor(const VkDataGraphPipelineConstantARM &constant,
+                                    const VkBlockScaledTensorDescriptionARM &description);
+#endif
+
+    VkDeviceMemory uploadConstantData(const void *data, size_t dataSize,
+                                      const VkMemoryRequirements &requirements) const;
+    VkDeviceMemory allocateDeviceMemory(size_t size, uint32_t memoryTypeBits) const;
+    std::vector<uint32_t> getMemoryTypeIndices(VkMemoryPropertyFlags memoryPropertyFlags,
+                                               uint32_t memoryTypeBits) const;
+
     template <typename PipelineT, typename... Args> void makePipeline(Args &&...args) {
         auto pipeline = std::make_shared<PipelineT>(loader, device, pipelineCache, std::forward<Args>(args)...);
         pipelines.emplace_back(std::move(pipeline));

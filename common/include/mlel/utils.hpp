@@ -46,6 +46,10 @@ bool hasExtension(const std::vector<vk::ExtensionProperties> &extensionPropertie
 /// Gets the total number of elements in a tensor given its dimensions, throws if result is negative.
 size_t getElementCount(const std::vector<int64_t> &dimensions);
 
+// Fill a plane's omitted strides from the other plane's explicit strides.
+void deriveBlockScaledStrides(const VkTensorDescriptionARM &values, const VkTensorDescriptionARM &scales,
+                              std::vector<int64_t> &valueStrides, std::vector<int64_t> &scaleStrides);
+
 std::vector<uint32_t> glslToSpirv(const std::string &glsl);
 
 // Decode FP8, FP16, and BF16 payloads, including subnormals and special values.

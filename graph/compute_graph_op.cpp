@@ -10,11 +10,14 @@
 
 #include "compute_graph_op.hpp"
 #include "graph_log.hpp"
+#include "mlel/vulkan_layer.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <numeric>
 #include <string_view>
+
+#include <vulkan/vulkan_format_traits.hpp>
 
 using namespace mlsdk::el::log;
 using namespace mlsdk::el::utils;
@@ -58,6 +61,20 @@ ScalarType accScalarType(uint32_t accType) {
         throw std::runtime_error("Unsupported acc type " + std::to_string(accType));
     }
 }
+
+#ifdef VK_ARM_tensors2
+size_t getBlockScaledPlanePayloadSize(const VkTensorDescriptionARM &description) {
+    if (description.pStrides != nullptr) {
+        if (description.pStrides[0] < 0) {
+            throw std::runtime_error("Strides must be greater than zero.");
+        }
+        return static_cast<size_t>(description.pDimensions[0] * description.pStrides[0]);
+    }
+    const std::vector<int64_t> dimensions(description.pDimensions,
+                                          description.pDimensions + description.dimensionCount);
+    return utils::getElementCount(dimensions) * vk::blockSize(vk::Format(description.format));
+}
+#endif
 
 } // namespace
 
@@ -2066,15 +2083,169 @@ GraphPipeline::~GraphPipeline() {
     }
 }
 
-void GraphPipeline::makeConstTensor(const uint32_t id, const VkTensorDescriptionARM &tensorDescription,
-                                    const void *data) {
-    const auto tensorDescriptor = std::make_shared<TensorDescriptor>(loader, physicalDevice, device, tensorDescription);
+void GraphPipeline::makeConstTensor(const VkDataGraphPipelineConstantARM &constant) {
+    if (constant.pConstantData == nullptr) {
+        throw std::runtime_error("Graph constant data is null");
+    }
+
+#ifdef VK_ARM_tensors2
+    if (const auto *scaled = layer::findType<VkBlockScaledTensorDescriptionARM>(
+            constant.pNext, VK_STRUCTURE_TYPE_BLOCK_SCALED_TENSOR_DESCRIPTION_ARM)) {
+        makeBlockScaledConstTensor(constant, *scaled);
+        return;
+    }
+#endif
+
+    const auto *description =
+        layer::findType<VkTensorDescriptionARM>(constant.pNext, VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM);
+    if (!description) {
+        throw std::runtime_error("Missing const tensor description");
+    }
+    const auto tensorDescriptor = std::make_shared<TensorDescriptor>(loader, physicalDevice, device, *description);
     auto tensor = TensorDescriptor::makeTensor(tensorDescriptor);
-    auto *const deviceMemory = tensorDescriptor->createInitializeDeviceMemory(data);
+    auto *const deviceMemory = uploadConstantData(constant.pConstantData, tensorDescriptor->getSize(),
+                                                  tensorDescriptor->getMemoryRequirements());
 
     (void)tensor->bindTensorMemory(deviceMemory, 0);
     constantsDeviceMemory.push_back(deviceMemory);
-    constTensorMap[id] = std::move(tensor);
+    constTensorMap[constant.id] = std::move(tensor);
+}
+
+#ifdef VK_ARM_tensors2
+void GraphPipeline::makeBlockScaledConstTensor(const VkDataGraphPipelineConstantARM &constant,
+                                               const VkBlockScaledTensorDescriptionARM &description) {
+    if (description.planeCount != 2 || !description.pPlaneDescriptions) {
+        throw std::runtime_error("Unsupported block-scaled constant description");
+    }
+    for (uint32_t i = 0; i < description.planeCount; ++i) {
+        const auto &plane = description.pPlaneDescriptions[i];
+        if (plane.dimensionCount == 0 || !plane.pDimensions || plane.tiling != VK_TENSOR_TILING_LINEAR_ARM ||
+            !(plane.usage & VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM)) {
+            throw std::runtime_error("Block-scaled constant planes require a linear data graph tensor description");
+        }
+    }
+    const auto tensorDescriptor =
+        std::make_shared<TensorDescriptor>(loader, physicalDevice, device, description.pPlaneDescriptions[0]);
+    auto tensor = TensorDescriptor::makeTensor(tensorDescriptor, description);
+    constantsDeviceMemory.reserve(constantsDeviceMemory.size() + description.planeCount);
+    const auto *data = static_cast<const uint8_t *>(constant.pConstantData);
+    std::array<std::vector<int64_t>, 2> strides;
+    // Resolve omitted strides only to locate the planes in the host payload.
+    utils::deriveBlockScaledStrides(description.pPlaneDescriptions[0], description.pPlaneDescriptions[1], strides[0],
+                                    strides[1]);
+    for (uint32_t i = 0; i < description.planeCount; ++i) {
+        auto planeDescription = description.pPlaneDescriptions[i];
+        planeDescription.pStrides = strides[i].empty() ? planeDescription.pStrides : strides[i].data();
+        const auto dataSize = getBlockScaledPlanePayloadSize(planeDescription);
+        const VkTensorPlaneInfoARM planeInfo{VK_STRUCTURE_TYPE_TENSOR_PLANE_INFO_ARM, nullptr, i};
+        const VkTensorMemoryRequirementsInfoARM info{VK_STRUCTURE_TYPE_TENSOR_MEMORY_REQUIREMENTS_INFO_ARM, &planeInfo,
+                                                     tensor->getVkTensorARM()};
+        VkMemoryRequirements2 requirements{};
+        requirements.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
+        loader->vkGetTensorMemoryRequirementsARM(device, &info, &requirements);
+        auto *const memory = uploadConstantData(data, dataSize, requirements.memoryRequirements);
+        constantsDeviceMemory.push_back(memory);
+
+        const VkBindTensorMemoryInfoARM bindInfo{VK_STRUCTURE_TYPE_BIND_TENSOR_MEMORY_INFO_ARM, &planeInfo,
+                                                 tensor->getVkTensorARM(), memory, 0};
+        if (loader->vkBindTensorMemoryARM(device, 1, &bindInfo) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to bind constant tensor to memory");
+        }
+        // Advance by payload size, excluding device allocation padding.
+        data += dataSize;
+    }
+    constTensorMap[constant.id] = std::move(tensor);
+}
+#endif
+
+VkDeviceMemory GraphPipeline::uploadConstantData(const void *data, const size_t dataSize,
+                                                 const VkMemoryRequirements &requirements) const {
+    if (data == nullptr) {
+        return VK_NULL_HANDLE;
+    }
+
+    auto *deviceMemory = allocateDeviceMemory(requirements.size, requirements.memoryTypeBits);
+
+    void *dst;
+    auto ret = loader->vkMapMemory(device, deviceMemory, 0, VK_WHOLE_SIZE, {}, &dst);
+    if (ret != VK_SUCCESS) {
+        throw std::runtime_error("Failed to memory map memory for constant tensor");
+    }
+
+    std::copy(static_cast<const char *>(data), static_cast<const char *>(data) + dataSize, static_cast<char *>(dst));
+
+    loader->vkUnmapMemory(device, deviceMemory);
+
+    return deviceMemory;
+}
+
+VkDeviceMemory GraphPipeline::allocateDeviceMemory(const size_t size, const uint32_t memoryTypeBits) const {
+    const auto memoryTypeIndices = getMemoryTypeIndices(
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, memoryTypeBits);
+    for (const auto memoryTypeIndex : memoryTypeIndices) {
+        const VkMemoryAllocateInfo memoryAllocateInfo{
+            VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, // type
+            nullptr,                                // next
+            size,                                   // size
+            memoryTypeIndex,                        // memory type index
+        };
+
+        VkDeviceMemory deviceMemory;
+        auto ret = loader->vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &deviceMemory);
+        if (ret == VK_SUCCESS) {
+            return deviceMemory;
+        }
+    }
+
+    throw std::runtime_error("Failed to allocate memory for constant tensor");
+}
+
+std::vector<uint32_t> GraphPipeline::getMemoryTypeIndices(const VkMemoryPropertyFlags memoryPropertyFlags,
+                                                          const uint32_t memoryTypeBits) const {
+    VkPhysicalDeviceMemoryProperties memoryProperties;
+    loader->vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memoryProperties);
+
+    std::vector<uint32_t> memoryTypeIndices;
+
+    // Compile a list of memory allocation infos
+    for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
+        // Exclude memory types that are not part of mask
+        if (((memoryTypeBits >> i) & 1) == 0) {
+            continue;
+        }
+
+        const auto &memoryType = memoryProperties.memoryTypes[i];
+
+        // Check that all required memory properties are supported
+        if ((memoryType.propertyFlags & memoryPropertyFlags) != memoryPropertyFlags) {
+            continue;
+        }
+
+        // Add memory type
+        memoryTypeIndices.emplace_back(i);
+    }
+
+    // Sort infos in priority order
+    std::sort(memoryTypeIndices.begin(), memoryTypeIndices.end(),
+              [&memoryProperties](const auto &leftIndex, const auto &rightIndex) {
+                  const auto &leftMemoryType = memoryProperties.memoryTypes[leftIndex];
+                  const auto &rightMemoryType = memoryProperties.memoryTypes[rightIndex];
+
+                  const auto &leftHeap = memoryProperties.memoryHeaps[leftMemoryType.heapIndex];
+                  const auto &rightHeap = memoryProperties.memoryHeaps[rightMemoryType.heapIndex];
+
+                  // Prioritize device local memory, it is likely faster
+                  const auto leftDeviceLocal = leftMemoryType.propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+                  const auto rightDeviceLocal = rightMemoryType.propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+                  if (leftDeviceLocal != rightDeviceLocal) {
+                      return leftDeviceLocal > rightDeviceLocal;
+                  }
+
+                  // Select the larger heap
+                  return leftHeap.size > rightHeap.size;
+              });
+
+    return memoryTypeIndices;
 }
 
 std::shared_ptr<TensorDescriptor> GraphPipeline::getConstTensor(const uint32_t id) const {
@@ -2086,7 +2257,8 @@ GraphPipeline::makeConstCompositeTensor(const VkFormat format, std::vector<int64
     auto tensorDescriptor =
         std::make_shared<TensorDescriptor>(loader, physicalDevice, device, format, std::move(dimensions));
     auto tensor = TensorDescriptor::makeTensor(tensorDescriptor);
-    auto *const deviceMemory = tensorDescriptor->createInitializeDeviceMemory(data);
+    auto *const deviceMemory =
+        uploadConstantData(data, tensorDescriptor->getSize(), tensorDescriptor->getMemoryRequirements());
 
     (void)tensor->bindTensorMemory(deviceMemory, 0);
     constantsDeviceMemory.push_back(deviceMemory);

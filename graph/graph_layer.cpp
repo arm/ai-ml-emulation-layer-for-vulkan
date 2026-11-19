@@ -871,16 +871,7 @@ class GraphLayer : public VulkanLayerImpl {
                 // Constants
                 for (uint32_t j = 0; j < dataGraphPipelineShaderModuleCreateInfo->constantCount; j++) {
                     const auto &constant = dataGraphPipelineShaderModuleCreateInfo->pConstants[j];
-
-                    const auto *graphPipelineConstantTensor =
-                        findType<VkTensorDescriptionARM>(constant.pNext, VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM);
-
-                    if (graphPipelineConstantTensor == nullptr) {
-                        graphLog(Severity::Error) << "Missing const tensor description" << std::endl;
-                        return VK_ERROR_UNKNOWN;
-                    }
-
-                    graphPipeline->makeConstTensor(constant.id, *graphPipelineConstantTensor, constant.pConstantData);
+                    graphPipeline->makeConstTensor(constant);
                 }
                 const uint32_t *spirvCode = nullptr;
                 size_t spirvSize = 0;

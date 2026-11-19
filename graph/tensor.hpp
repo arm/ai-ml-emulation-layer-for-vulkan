@@ -69,11 +69,11 @@ class TensorDescriptor {
     TensorDescriptor(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader,
                      VkPhysicalDevice _physicalDevice, VkDevice _device,
                      const VkTensorDescriptionARM &_tensorDescription);
-
-    // Function is static because the created tensor takes ownership of the supplied tensor description.
     static std::shared_ptr<Tensor> makeTensor(const std::shared_ptr<TensorDescriptor> &_this);
-    VkDeviceMemory createInitializeDeviceMemory(const void *data);
-
+#ifdef VK_ARM_tensors2
+    static std::shared_ptr<Tensor> makeTensor(const std::shared_ptr<TensorDescriptor> &_this,
+                                              const VkBlockScaledTensorDescriptionARM &description);
+#endif
     VkFormat getFormat() const;
     const std::vector<int64_t> &getDimensions() const;
     uint32_t getRank() const;
@@ -92,13 +92,12 @@ class TensorDescriptor {
   private:
     std::vector<int64_t> createStrides(const VkTensorDescriptionARM &tensorDescription) const;
     VkTensorARM createTensorARM(const VkTensorDescriptionARM &tensorDescription) const;
+#ifdef VK_ARM_tensors2
+    VkTensorARM createTensorARM(const VkBlockScaledTensorDescriptionARM &description) const;
+#endif
     VkTensorViewARM createTensorViewARM(VkTensorARM tensor, VkFormat _format) const;
     std::vector<VkQueueFamilyProperties> enumerateQueueFamilyProperties() const;
     uint32_t getComputeFamilyIndex() const;
-
-    VkDeviceMemory allocateDeviceMemory(size_t size, uint32_t memoryTypeBits) const;
-    std::vector<uint32_t> getMemoryTypeIndices(VkMemoryPropertyFlags memoryPropertyFlags,
-                                               uint32_t memoryTypeBits) const;
 
     std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> loader;
     VkPhysicalDevice physicalDevice;
