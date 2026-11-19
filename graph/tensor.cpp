@@ -15,8 +15,6 @@
 
 #include <exception>
 #include <numeric>
-#include <vulkan/vulkan_format_traits.hpp>
-
 using namespace mlsdk::el::log;
 
 namespace mlsdk::el::compute {
@@ -112,13 +110,7 @@ uint32_t TensorDescriptor::getRank() const { return static_cast<uint32_t>(dimens
 
 size_t TensorDescriptor::getShapeSize() const { return utils::getElementCount(dimensions); }
 
-size_t TensorDescriptor::getSize() const {
-    if (strides.data() != nullptr && strides[0] < 0) {
-        throw std::runtime_error("Strides must be greater than zero.");
-    }
-    return strides.data() != nullptr ? static_cast<size_t>(dimensions[0U] * strides[0])
-                                     : getShapeSize() * vk::blockSize(vk::Format(format));
-}
+size_t TensorDescriptor::getSize() const { return utils::getTensorSize(getTensorDescription()); }
 
 uint64_t TensorDescriptor::getReferenceCounter() const { return referenceCounter; }
 

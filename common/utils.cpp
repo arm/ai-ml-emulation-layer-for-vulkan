@@ -35,12 +35,23 @@ bool hasExtension(const std::vector<vk::ExtensionProperties> &extensionPropertie
     });
 }
 
-size_t getElementCount(const std::vector<int64_t> &dimensions) {
+size_t getElementCount(vk::ArrayProxy<const int64_t> dimensions) {
     auto result = std::accumulate(dimensions.begin(), dimensions.end(), int64_t(1), std::multiplies<>());
     if (result < 0) {
         throw std::runtime_error("Tensor element count became negative: " + std::to_string(result));
     }
     return static_cast<size_t>(result);
+}
+
+size_t getTensorSize(const VkTensorDescriptionARM &description) {
+    if (description.pStrides != nullptr) {
+        if (description.pStrides[0] < 0) {
+            throw std::runtime_error("Strides must be greater than zero.");
+        }
+        return static_cast<size_t>(description.pDimensions[0] * description.pStrides[0]);
+    }
+    return getElementCount({description.dimensionCount, description.pDimensions}) *
+           vk::blockSize(vk::Format(description.format));
 }
 
 void deriveBlockScaledStrides(const VkTensorDescriptionARM &values, const VkTensorDescriptionARM &scales,
