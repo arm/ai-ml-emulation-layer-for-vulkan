@@ -24,7 +24,13 @@ void main() {
     uint[4] index;
     getIndex4(outputData, index);
 
+#if IS_FLOAT(TYPE_IN_OUT) || IS_REDUCED_FLOAT(TYPE_IN_OUT)
+    // Start from NaN when ignoring NaN and from -infinity otherwise, as TOSA does. The lowest finite value would
+    // replace a window of -infinity values, or of NaN values when ignoring NaN.
+    COMP_T acc = COMP_T((pushConstants.nanMode == NAN_MODE_IGNORE) ? NAN : -INF);
+#else
     COMP_T acc = COMP_T(%in_out_t_lowest%);
+#endif
     uint on = index[0];
     uint oy = index[1];
     uint ox = index[2];
@@ -62,8 +68,12 @@ void main() {
                         return;
                     }
                 }
-#endif
+
+                // acc is NaN until the first non-NaN value when ignoring NaN
+                acc = isnan(acc) ? value : max(acc, value);
+#else
                 acc = max(acc, value);
+#endif
             }
         }
     }

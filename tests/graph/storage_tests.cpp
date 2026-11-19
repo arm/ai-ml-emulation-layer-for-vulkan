@@ -522,6 +522,72 @@ TEST_P(TosaGraphTest, TosaIntegerStorageReduceMax) {
         std::vector<int32_t>{127});
 }
 
+// TOSA starts floating-point maximum and minimum searches from the infinities, or from NaN when ignoring NaN, so
+// infinite inputs must not be replaced by the finite limits of the type.
+TEST_P(TosaGraphTest, TosaFloatMaxPoolNegativeInfinity) {
+    constexpr float inf = std::numeric_limits<float>::infinity();
+    auto input = storageTestTensor(device, vk::Format::eR32Sfloat, {1, 1, 2, 1}, std::vector<float>{-inf, -inf});
+    expectStorageOperation(device, {input}, vk::Format::eR32Sfloat, {1, 1, 1, 1},
+                           makeStorageConversionGraph("%f32", "%f32", 4, 4, false,
+                                                      "MAX_POOL2D %kernel %stride %pad %u1 %a", "", GetParam()),
+                           std::vector<float>{-inf});
+}
+
+TEST_P(TosaGraphTest, TosaFloat16MaxPoolNegativeInfinity) {
+    const auto format = vk::Format::eR16Sfloat;
+    auto input = storageTestTensor(device, format, {1, 1, 2, 1}, std::vector<uint16_t>{0xfc00, 0xfc00});
+    expectStorageOperation(device, {input}, format, {1, 1, 1, 1},
+                           makeStorageConversionGraph("%f16", "%f16", 4, 4, false,
+                                                      "MAX_POOL2D %kernel %stride %pad %u1 %a", "", GetParam()),
+                           std::vector<uint16_t>{0xfc00});
+}
+
+TEST_P(TosaGraphTest, TosaFloatMaxPoolIgnoringNaNReturnsNaNForAllNaNWindow) {
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    auto input = storageTestTensor(device, vk::Format::eR32Sfloat, {1, 1, 2, 1}, std::vector<float>{nan, nan});
+    auto output = std::make_shared<Tensor>(device, Shape{vk::Format::eR32Sfloat, std::vector<int64_t>{1, 1, 1, 1}});
+    GraphPipeline::DescriptorMap descriptors(1);
+    descriptors[0][0] = {input};
+    descriptors[0][1] = {output};
+    const GraphConstants constants;
+    GraphPipeline pipeline(device, descriptors, constants,
+                           makeStorageConversionGraph("%f32", "%f32", 4, 4, false,
+                                                      "MAX_POOL2D %kernel %stride %pad %u2 %a", "", GetParam()));
+    pipeline.dispatchSubmit();
+
+    float actual;
+    std::memcpy(&actual, output->data(), sizeof(actual));
+    EXPECT_TRUE(std::isnan(actual)) << "actual=" << actual;
+}
+
+TEST_P(TosaGraphTest, TosaFloatReduceMaxMinInfinity) {
+    constexpr float inf = std::numeric_limits<float>::infinity();
+    auto negative = storageTestTensor(device, vk::Format::eR32Sfloat, {4}, std::vector<float>(4, -inf));
+    expectStorageOperation(
+        device, {negative}, vk::Format::eR32Sfloat, {1},
+        makeStorageConversionGraph("%f32", "%f32", 1, 1, false, "REDUCE_MAX %u0 %u1 %a", "", GetParam()),
+        std::vector<float>{-inf});
+    auto positive = storageTestTensor(device, vk::Format::eR32Sfloat, {4}, std::vector<float>(4, inf));
+    expectStorageOperation(
+        device, {positive}, vk::Format::eR32Sfloat, {1},
+        makeStorageConversionGraph("%f32", "%f32", 1, 1, false, "REDUCE_MIN %u0 %u1 %a", "", GetParam()),
+        std::vector<float>{inf});
+}
+
+TEST_P(TosaGraphTest, TosaFloatArgmaxNegativeInfinity) {
+    constexpr float inf = std::numeric_limits<float>::infinity();
+    auto input = storageTestTensor(device, vk::Format::eR32Sfloat, {1, 1, 2, 1},
+                                   std::vector<float>{-inf, std::numeric_limits<float>::lowest()});
+    expectStorageOperation(device, {input}, vk::Format::eR32Sint, {1, 1, 1},
+                           makeStorageConversionGraph("%f32", "%i32", 4, 3, false, "ARGMAX %u2 %u1 %a", "", GetParam()),
+                           std::vector<int32_t>{1});
+    auto ignored = storageTestTensor(device, vk::Format::eR32Sfloat, {1, 1, 2, 1},
+                                     std::vector<float>{std::numeric_limits<float>::quiet_NaN(), -inf});
+    expectStorageOperation(device, {ignored}, vk::Format::eR32Sint, {1, 1, 1},
+                           makeStorageConversionGraph("%f32", "%i32", 4, 3, false, "ARGMAX %u2 %u2 %a", "", GetParam()),
+                           std::vector<int32_t>{1});
+}
+
 TEST_P(TosaGraphTest, TosaIntegerStorageNegate) {
     auto input = storageTestTensor(device, vk::Format::eR32Uint, {4}, std::vector<int32_t>{-128, -2, -1, 127});
     expectStorageOperation(
