@@ -268,6 +268,17 @@ endif()
 
 include(tosa_shader_variants.cmake)
 
+# 64 invocations and 1 KiB of shared storage fit the required Vulkan compute limits.
+set(COOPERATIVE_CONV "${CMAKE_CURRENT_BINARY_DIR}/conv2d_cooperative.spv")
+mlel_generate_glsl(
+    INPUT "${CMAKE_CURRENT_BINARY_DIR}/conv2d.comp"
+    OUTPUT "${COOPERATIVE_CONV}"
+    DEFINE COOPERATIVE_WEIGHTS=1 "WEIGHT_TILE_SIZE=${COOPERATIVE_CONV_TILE_SIZE}"
+    REPLACE "warpX=${COOPERATIVE_CONV_LOCAL_SIZE}"
+        "warpY=${COOPERATIVE_CONV_LOCAL_SIZE}" "warpZ=${COOPERATIVE_CONV_LOCAL_SIZE}"
+            "in_t=float" "weight_t=float" "out_t=float" "acc_t=float")
+list(APPEND SPV_FILES "${COOPERATIVE_CONV}")
+
 # Block Match
 macro(mlel_spv_block_match OPERATION SEARCH_TYPE COST_TYPE)
     set(INPUT "${CMAKE_CURRENT_BINARY_DIR}/${OPERATION}.comp")
