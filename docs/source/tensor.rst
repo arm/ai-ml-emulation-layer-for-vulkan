@@ -92,7 +92,7 @@ address, dimensions, and strides. The tensor elements remain in storage buffers.
 When an application enables ``shaderStorageTensorArrayDynamicIndexing``, the layer
 enables ``shaderUniformBufferArrayDynamicIndexing`` on the underlying device.
 Likewise, ``shaderStorageTensorArrayNonUniformIndexing`` enables
-``shaderUniformBufferArrayNonUniformIndexing``, using either the Vulkan 1.2 feature
+``shaderUniformBufferArrayNonUniformIndexing``, using either the Vulkan® 1.2 feature
 structure or the separate descriptor-indexing feature structure.
 
 The tensor property query currently reports:

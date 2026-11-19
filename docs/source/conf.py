@@ -45,3 +45,7 @@ html_theme = "sphinx_rtd_theme"
 
 # Stand-alone builds need to include some base docs (Security and Contributor guide)
 tags.add("WITH_BASE_MD")
+
+# Contain long API declarations and wrap inline identifiers.
+html_static_path = ["_static"]
+html_css_files = ["css/api-reference.css"]

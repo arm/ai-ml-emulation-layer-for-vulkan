@@ -60,7 +60,7 @@ repo sync --no-clone-bundle
 
 To ensure nested submodules do not exceed the maximum long path length, you must
 enable long paths on Windows®, and you must clone close to the root directory
-or use a symlink. Make sure to use Git for Windows.
+or use a symlink. Make sure to use Git for Windows®.
 
 Using **PowerShell**:
 
