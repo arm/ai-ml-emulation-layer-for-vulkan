@@ -855,17 +855,7 @@ class GraphLayer : public VulkanLayerImpl {
                 auto &graphPipeline = pipeline->graphPipeline;
                 // Copy tensor resources to pipeline
                 for (uint32_t j = 0; j < createInfo.resourceInfoCount; j++) {
-                    const auto &resourceInfo = createInfo.pResourceInfos[j];
-                    const auto *tensorDescription =
-                        findType<VkTensorDescriptionARM>(resourceInfo.pNext, VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM);
-
-                    if (tensorDescription == nullptr) {
-                        graphLog(Severity::Error) << "Missing tensor description" << std::endl;
-                        return VK_ERROR_UNKNOWN;
-                    }
-
-                    graphPipeline->makeDescriptorSetBinding(resourceInfo.descriptorSet, resourceInfo.binding,
-                                                            resourceInfo.arrayElement, *tensorDescription);
+                    graphPipeline->makeDescriptorSetBinding(createInfo.pResourceInfos[j]);
                 }
 
                 // Constants

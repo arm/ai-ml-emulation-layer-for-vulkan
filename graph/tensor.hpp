@@ -62,6 +62,11 @@ using ComputePipelineBase = graph_op::ComputePipelineBase;
 
 class TensorDescriptor {
   public:
+    struct BlockScaling {
+        VkFormat scaleFormat = VK_FORMAT_UNDEFINED;
+        std::vector<uint32_t> blockShape;
+    };
+
     TensorDescriptor(const std::shared_ptr<VULKAN_HPP_NAMESPACE::detail::DispatchLoaderDynamic> &_loader,
                      VkPhysicalDevice _physicalDevice, VkDevice _device, VkFormat _format,
                      std::vector<int64_t> _dimensions = {}, std::vector<int64_t> _strides = {});
@@ -75,6 +80,8 @@ class TensorDescriptor {
                                               const VkBlockScaledTensorDescriptionARM &description);
 #endif
     VkFormat getFormat() const;
+    const std::optional<BlockScaling> &getBlockScaling() const;
+    void setBlockScaling(BlockScaling scaling);
     const std::vector<int64_t> &getDimensions() const;
     uint32_t getRank() const;
     size_t getShapeSize() const;
@@ -104,6 +111,7 @@ class TensorDescriptor {
     VkDevice device;
 
     VkFormat format;
+    std::optional<BlockScaling> blockScaling;
     std::vector<int64_t> dimensions;
     std::vector<int64_t> strides;
 

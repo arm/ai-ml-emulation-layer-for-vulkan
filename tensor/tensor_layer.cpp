@@ -831,9 +831,6 @@ class TensorLayer : public VulkanLayerImpl {
         auto handle = VulkanLayerImpl::getHandle(physicalDevice);
         auto *pTensorFormatProp = findTypeMutable<VkTensorFormatPropertiesARM>(
             pFormatProperties->pNext, VK_STRUCTURE_TYPE_TENSOR_FORMAT_PROPERTIES_ARM);
-#ifdef VK_ARM_tensors2
-        // Assumption: downstream drivers accept draft E8M0 format queries, as they do for existing FP8 formats.
-#endif
         handle->loader->vkGetPhysicalDeviceFormatProperties2(physicalDevice, format, pFormatProperties);
         if (pTensorFormatProp) {
 #ifdef VK_ARM_tensors2

@@ -60,6 +60,23 @@ ScalarType accScalarType(uint32_t accType) {
     }
 }
 
+#ifdef VK_ARM_tensors2
+// Planar OCP microscaling assigns one scale to every 32 values.
+constexpr uint32_t ocpMicroscalingBlockSize = 32;
+
+void checkBlockScaledPlaneDescriptions(const VkBlockScaledTensorDescriptionARM &description) {
+    if (description.planeCount != 2 || description.pPlaneDescriptions == nullptr) {
+        throw std::invalid_argument("Block-scaled graph tensor requires two plane descriptions with dimensions");
+    }
+    for (uint32_t i = 0; i < description.planeCount; ++i) {
+        const auto &plane = description.pPlaneDescriptions[i];
+        if (plane.dimensionCount == 0 || plane.pDimensions == nullptr) {
+            throw std::invalid_argument("Block-scaled graph tensor requires two plane descriptions with dimensions");
+        }
+    }
+}
+#endif
+
 } // namespace
 
 namespace graph_op {
@@ -2098,18 +2115,16 @@ void GraphPipeline::makeConstTensor(const VkDataGraphPipelineConstantARM &consta
 #ifdef VK_ARM_tensors2
 void GraphPipeline::makeBlockScaledConstTensor(const VkDataGraphPipelineConstantARM &constant,
                                                const VkBlockScaledTensorDescriptionARM &description) {
-    if (description.planeCount != 2 || !description.pPlaneDescriptions) {
-        throw std::runtime_error("Unsupported block-scaled constant description");
-    }
+    checkBlockScaledPlaneDescriptions(description);
     for (uint32_t i = 0; i < description.planeCount; ++i) {
         const auto &plane = description.pPlaneDescriptions[i];
-        if (plane.dimensionCount == 0 || !plane.pDimensions || plane.tiling != VK_TENSOR_TILING_LINEAR_ARM ||
-            !(plane.usage & VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM)) {
+        if (plane.tiling != VK_TENSOR_TILING_LINEAR_ARM || !(plane.usage & VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM)) {
             throw std::runtime_error("Block-scaled constant planes require a linear data graph tensor description");
         }
     }
     const auto tensorDescriptor =
         std::make_shared<TensorDescriptor>(loader, physicalDevice, device, description.pPlaneDescriptions[0]);
+    tensorDescriptor->setBlockScaling({description.pPlaneDescriptions[1].format, {ocpMicroscalingBlockSize}});
     auto tensor = TensorDescriptor::makeTensor(tensorDescriptor, description);
     constantsDeviceMemory.reserve(constantsDeviceMemory.size() + description.planeCount);
     const auto *data = static_cast<const uint8_t *>(constant.pConstantData);
@@ -2265,15 +2280,19 @@ ComputeDescriptorSetMap GraphPipeline::makeConstantsDescriptorSets() const {
     return getComputeDescriptorSetMap(filter);
 }
 
-void GraphPipeline::makeDescriptorSetBinding(const uint32_t set, const uint32_t binding, const uint32_t arrayIndex,
-                                             const VkTensorDescriptionARM &tensorDescription) {
-    auto tensorDescriptor = std::make_shared<TensorDescriptor>(loader, physicalDevice, device, tensorDescription);
+void GraphPipeline::makeDescriptorSetBinding(const VkDataGraphPipelineResourceInfoARM &resourceInfo) {
+    const auto *description =
+        layer::findType<VkTensorDescriptionARM>(resourceInfo.pNext, VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM);
+    if (description == nullptr) {
+        throw std::invalid_argument("Missing graph resource tensor description");
+    }
+    auto tensorDescriptor = std::make_shared<TensorDescriptor>(loader, physicalDevice, device, *description);
 
-    auto &vec = tensorMap[set][binding];
-    vec.resize(std::max(vec.size(), size_t(arrayIndex + 1)));
-    vec[arrayIndex] = tensorDescriptor;
+    auto &vec = tensorMap[resourceInfo.descriptorSet][resourceInfo.binding];
+    vec.resize(std::max(vec.size(), size_t(resourceInfo.arrayElement + 1)));
+    vec[resourceInfo.arrayElement] = tensorDescriptor;
 
-    tensorDescriptorMap[set][tensorDescriptor] = TensorDescriptor::makeTensor(tensorDescriptor);
+    tensorDescriptorMap[resourceInfo.descriptorSet][tensorDescriptor] = TensorDescriptor::makeTensor(tensorDescriptor);
 }
 
 std::shared_ptr<TensorDescriptor> GraphPipeline::getTensor(const uint32_t set, const uint32_t binding,
