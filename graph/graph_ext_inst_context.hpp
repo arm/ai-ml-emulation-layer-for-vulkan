@@ -80,6 +80,9 @@ class GraphExtInstContext {
     }
 
     template <typename T> T getConstScalar(const analysis::Constant *constant) const {
+        if (constant == nullptr) {
+            throw std::runtime_error("Missing SPIR-V constant");
+        }
         if (constant->AsNullConstant()) {
             return T(0);
         }
@@ -198,10 +201,10 @@ class GraphExtInstContext {
                 const auto elemCount = getElementCount(tensor->shape_id());
                 kernel.resize(elemCount, 0);
             } else {
-                assert(false);
+                throw std::runtime_error("Expected a tensor null constant for id: " + std::to_string(id));
             }
         } else {
-            assert(false);
+            throw std::runtime_error("Expected a composite constant for id: " + std::to_string(id));
         }
 
         return kernel;
