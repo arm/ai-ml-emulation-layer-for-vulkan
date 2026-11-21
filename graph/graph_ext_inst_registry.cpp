@@ -66,13 +66,6 @@ GraphModuleInfo analyzeGraphModule(const uint32_t *code, size_t wordCount) {
     if (module.graphs().empty()) {
         throw std::runtime_error("Module contains no graph");
     }
-    // Tools cannot analyze scaled tensor types yet, including unused ones.
-    for (const auto &inst : module.types_values()) {
-        if (std::string_view(spvOpcodeString(static_cast<uint32_t>(inst.opcode()))) == "TypeTensorScaledBlockARM") {
-            throw std::runtime_error(
-                "OpTypeTensorScaledBlockARM is unsupported; rejected before optimizer type analysis");
-        }
-    }
     GraphModuleInfo info;
     for (const auto &inst : module.ext_inst_imports()) {
         const auto name = inst.GetInOperand(0).AsString();

@@ -4,13 +4,16 @@
  */
 
 #include "compute_graph_op.hpp"
+#include "graph_pass_ext_inst.hpp"
 #include "tensor.hpp"
 
+#include "source/opt/build_module.h"
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <array>
 #include <memory>
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -212,6 +215,114 @@ TEST_F(BlockScaledConstants, InitializesBothPlanesFromOnePayload) {
     }
 }
 
+TEST_F(BlockScaledConstants, RejectsInvalidScaledConstantMetadata) {
+    const std::array<int64_t, 2> valueShape{2, 32};
+    const std::array<int64_t, 2> scaleShape{2, 1};
+    const std::array planeTypes{VK_TENSOR_PLANE_VALUES_ARM, VK_TENSOR_PLANE_SCALES_ARM};
+    const std::array<VkTensorDescriptionARM, 2> planes{{
+        {VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM, nullptr, VK_TENSOR_TILING_LINEAR_ARM,
+         VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM, 2, valueShape.data(), nullptr,
+         VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM},
+        {VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM, nullptr, VK_TENSOR_TILING_LINEAR_ARM,
+         VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM, 2, scaleShape.data(), nullptr,
+         VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM},
+    }};
+    const VkBlockScaledTensorDescriptionARM description{VK_STRUCTURE_TYPE_BLOCK_SCALED_TENSOR_DESCRIPTION_ARM,
+                                                        nullptr,
+                                                        VK_TENSOR_BLOCK_SCALING_SCHEME_PLANAR_OCP_MICROSCALING_ARM,
+                                                        2,
+                                                        planeTypes.data(),
+                                                        planes.data()};
+    graph_op::GraphPipeline pipeline(loader, reinterpret_cast<VkPhysicalDevice>(this), reinterpret_cast<VkDevice>(this),
+                                     nullptr);
+    const uint8_t payload = 0;
+    VkDataGraphPipelineConstantARM constant{VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CONSTANT_ARM, &description, 17,
+                                            &payload};
+
+    auto unsupportedDescription = description;
+    unsupportedDescription.blockScalingScheme = static_cast<VkTensorBlockScalingSchemeARM>(0);
+    constant.pNext = &unsupportedDescription;
+    EXPECT_THROW(pipeline.makeConstTensor(constant), std::invalid_argument);
+
+    auto unsupportedPlanes = planes;
+    unsupportedDescription = description;
+    unsupportedDescription.pPlaneDescriptions = unsupportedPlanes.data();
+    unsupportedPlanes[1].format = VK_FORMAT_R8_UINT;
+    EXPECT_THROW(pipeline.makeConstTensor(constant), std::invalid_argument);
+    EXPECT_EQ(allocationCount, 0u);
+    EXPECT_EQ(createdTensorCount, 0u);
+}
+
+TEST_F(BlockScaledConstants, RejectsConstantThatDisagreesWithSpirvType) {
+    const std::string spirv = R"(
+OpCapability Shader
+OpCapability GraphARM
+OpCapability TensorsARM
+OpCapability TensorsBlockScaledARM
+OpCapability Float8EXT
+OpCapability Float8UnsignedE8M0EXT
+OpExtension "SPV_ARM_graph"
+OpExtension "SPV_ARM_tensors"
+OpExtension "SPV_ARM_tensors_block_scaled"
+OpExtension "SPV_EXT_float8"
+OpExtension "SPV_EXT_ocp_microscaling_types"
+OpMemoryModel Logical GLSL450
+%1 = OpTypeFloat 8 Float8E5M2EXT
+%2 = OpTypeFloat 8 Float8UnsignedE8M0EXT
+%3 = OpTypeInt 32 0
+%4 = OpConstant %3 1
+%5 = OpConstant %3 32
+%6 = OpTypeArray %3 %4
+%7 = OpConstantComposite %6 %5
+%8 = OpTypeTensorScaledBlockARM %1 %2 %7
+%9 = OpConstant %3 64
+%10 = OpConstantComposite %6 %9
+%11 = OpTypeTensorARM %8 %4 %10
+%12 = OpGraphConstantARM %11 17
+%13 = OpConstant %3 0
+%14 = OpTypeGraphARM 0 %11
+%16 = OpTypePointer UniformConstant %11
+%17 = OpVariable %16 UniformConstant
+OpGraphEntryPointARM %15 "main" %17
+%15 = OpGraphARM %14
+OpGraphSetOutputARM %12 %13
+OpGraphEndARM
+)";
+    auto ir = spvtools::BuildModule(
+        SPV_ENV_UNIVERSAL_1_6,
+        [](spv_message_level_t, const char *, const spv_position_t &, const char *message) {
+            ADD_FAILURE() << message;
+        },
+        spirv, SPV_TEXT_TO_BINARY_OPTION_PRESERVE_NUMERIC_IDS);
+    ASSERT_NE(ir, nullptr);
+
+    const std::array<int64_t, 2> valueShape{2, 32};
+    const std::array<int64_t, 2> scaleShape{2, 1};
+    const std::array planeTypes{VK_TENSOR_PLANE_VALUES_ARM, VK_TENSOR_PLANE_SCALES_ARM};
+    const std::array<VkTensorDescriptionARM, 2> planes{{
+        {VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM, nullptr, VK_TENSOR_TILING_LINEAR_ARM,
+         VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM, 2, valueShape.data(), nullptr,
+         VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM},
+        {VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM, nullptr, VK_TENSOR_TILING_LINEAR_ARM,
+         VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM, 2, scaleShape.data(), nullptr,
+         VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM},
+    }};
+    const VkBlockScaledTensorDescriptionARM description{VK_STRUCTURE_TYPE_BLOCK_SCALED_TENSOR_DESCRIPTION_ARM,
+                                                        nullptr,
+                                                        VK_TENSOR_BLOCK_SCALING_SCHEME_PLANAR_OCP_MICROSCALING_ARM,
+                                                        2,
+                                                        planeTypes.data(),
+                                                        planes.data()};
+    const std::array<uint8_t, 66> payload{};
+    const VkDataGraphPipelineConstantARM constant{VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CONSTANT_ARM, &description, 17,
+                                                  payload.data()};
+    graph_op::GraphPipeline pipeline(loader, reinterpret_cast<VkPhysicalDevice>(this), reinterpret_cast<VkDevice>(this),
+                                     nullptr);
+    pipeline.makeConstTensor(constant);
+
+    spvtools::opt::GraphPassExtInst pass(pipeline, {});
+    EXPECT_THROW(pass.Run(ir.get()), std::invalid_argument);
+}
 #endif
 
 } // namespace

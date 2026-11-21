@@ -37,6 +37,43 @@ bool isFloat8E4M3(const spvtools::opt::analysis::Float *type) {
     return isFloatEncoding<uint8_t, spv::FPEncoding::Float8E4M3EXT>(type);
 }
 
+#ifdef VK_ARM_tensors2
+VkFormat getBlockScaledValueFormat(const spvtools::opt::analysis::Type *type) {
+    const auto *floatType = type == nullptr ? nullptr : type->AsFloat();
+    if (floatType != nullptr) {
+        switch (floatType->width()) {
+        case 4:
+            if (floatType->encoding() == spv::FPEncoding::Float4E2M1EXT) {
+                return VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT4E2M1_ARM;
+            }
+            break;
+        case 6:
+            if (floatType->encoding() == spv::FPEncoding::Float6E2M3EXT) {
+                return VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT6E2M3_ARM;
+            }
+            if (floatType->encoding() == spv::FPEncoding::Float6E3M2EXT) {
+                return VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT6E3M2_ARM;
+            }
+            break;
+        case 8:
+            if (isFloat8E4M3(floatType)) {
+                return VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM;
+            }
+            if (isFloat8E5M2(floatType)) {
+                return VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM;
+            }
+            if (floatType->encoding() == spv::FPEncoding::MXInt8EXT) {
+                return VK_FORMAT_R8_SFLOAT_FPENCODING_MXINT8_ARM;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    throw std::runtime_error("Unsupported block-scaled graph value type");
+}
+#endif
+
 template <typename T, spv::FPEncoding encoding>
 void flattenFloatComposite(const spvtools::opt::analysis::CompositeConstant *composite, std::vector<T> &values) {
     const auto &components = composite->GetComponents();
@@ -80,8 +117,10 @@ void GraphExtInstContext::handleGraphConstants() {
             const auto constantId = static_cast<uint32_t>(instruction.GetOperand(2).AsLiteralUint64());
 
             if (tensorMap.find(resultId) == tensorMap.end()) {
+                auto tensor = graphPipeline.getConstTensor(constantId);
+                checkTensorDescription(*tensor, getTensorType(resultId));
                 auto &tensors = tensorMap[resultId];
-                tensors[0] = graphPipeline.getConstTensor(constantId);
+                tensors[0] = std::move(tensor);
                 graphLog(Severity::Info) << '%' << resultId << ": constId=" << constantId << ", tensor=" << tensors[0]
                                          << ", " << *tensors[0] << std::endl;
             }
@@ -112,6 +151,7 @@ void GraphExtInstContext::handleInputsAndOutputs(const Instruction &opGraphEntry
         const uint32_t arrayIndex =
             opGraphInputARM->NumOperands() > 3 ? getConstScalar<uint32_t>(opGraphInputARM->GetOperand(3)) : 0;
         auto inputTensor = getTensor(inputs[inputIndex], arrayIndex);
+        checkTensorDescription(*inputTensor, getTensorType(resultId));
 
         // Seed OpGraphInputARM in the local cache before visiting graph ops.
         // Unlike OpVariable and OpGraphConstantARM, graph inputs do not have a GraphPipeline lookup path.
@@ -134,6 +174,9 @@ void GraphExtInstContext::handleInputsAndOutputs(const Instruction &opGraphEntry
         const uint32_t arrayIndex =
             opGraphSetOutputARM->NumOperands() > 2 ? getConstScalar<uint32_t>(opGraphSetOutputARM->GetOperand(2)) : 0;
         auto outputTensor = getTensor(outputs[outputIndex], arrayIndex);
+        if (const auto *type = getTensorType(instruction->type_id())) {
+            checkTensorDescription(*outputTensor, type);
+        }
 
         graphPipeline.makeOutput(outputTensor);
 
@@ -312,10 +355,51 @@ std::shared_ptr<TensorDescriptor> GraphExtInstContext::makeTensor(const analysis
     if (tensor == nullptr || tensor->element_type() == nullptr) {
         throw std::runtime_error("Missing SPIR-V graph tensor element type");
     }
-    const VkFormat format = getVkFormat(tensor->element_type());
     auto dimensions = tensor->is_shaped() ? getConstVector<int64_t>(tensor->shape_id()) : std::vector<int64_t>{};
 
-    return graphPipeline.makeTensor(format, std::move(dimensions));
+#ifdef VK_ARM_tensors2
+    if (const auto *scaled = tensor->element_type()->AsTensorScaledBlockARM()) {
+        const auto scaleFormat = getVkFormat(scaled->scale_type());
+        if (scaleFormat != VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM) {
+            throw std::invalid_argument("Graph scaled tensor requires an E8M0 scale type");
+        }
+        auto description =
+            graphPipeline.makeTensor(getBlockScaledValueFormat(scaled->value_type()), std::move(dimensions));
+        description->setBlockScaling({scaleFormat, getConstVector<uint32_t>(scaled->block_shape_id())});
+        return description;
+    }
+#endif
+    return graphPipeline.makeTensor(getVkFormat(tensor->element_type()), std::move(dimensions));
+}
+
+void GraphExtInstContext::checkTensorDescription(const TensorDescriptor &description,
+                                                 const analysis::TensorARM *type) const {
+    if (type == nullptr || type->element_type() == nullptr) {
+        throw std::invalid_argument("Missing SPIR-V graph tensor type");
+    }
+#ifdef VK_ARM_tensors2
+    if (const auto *scaled = type->element_type()->AsTensorScaledBlockARM()) {
+        if (!type->is_shaped()) {
+            throw std::invalid_argument("Block-scaled graph tensor type requires a shape");
+        }
+        const auto shape = getConstVector<int64_t>(type->shape_id());
+        const auto rank = getConstScalar<int64_t>(findConstant(type->rank_id()));
+        if (rank <= 0 || static_cast<size_t>(rank) != shape.size()) {
+            throw std::invalid_argument("Block-scaled graph tensor rank and shape disagree");
+        }
+        const auto &blockScaling = description.getBlockScaling();
+        if (!blockScaling || description.getFormat() != getBlockScaledValueFormat(scaled->value_type()) ||
+            blockScaling->scaleFormat != getVkFormat(scaled->scale_type()) ||
+            blockScaling->blockShape != getConstVector<uint32_t>(scaled->block_shape_id()) ||
+            description.getDimensions() != shape) {
+            throw std::invalid_argument("Block-scaled graph resource does not match its SPIR-V tensor type");
+        }
+        return;
+    }
+#endif
+    if (description.getBlockScaling()) {
+        throw std::invalid_argument("Ordinary graph tensor cannot use a block-scaled resource description");
+    }
 }
 
 std::shared_ptr<TensorDescriptor> GraphExtInstContext::getOrMakeCompositeTensor(const uint32_t id) {
@@ -409,6 +493,11 @@ VkFormat GraphExtInstContext::getVkFormat(const analysis::Type *type) const {
 
     const auto *floatType = type->AsFloat();
     if (floatType) {
+#ifdef VK_ARM_tensors2
+        if (isFloatEncoding<uint8_t, spv::FPEncoding::Float8UnsignedE8M0EXT>(floatType)) {
+            return VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM;
+        }
+#endif
         if (isFloat8E5M2(floatType)) {
             return VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM;
         }

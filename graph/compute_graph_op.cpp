@@ -65,8 +65,11 @@ ScalarType accScalarType(uint32_t accType) {
 constexpr uint32_t ocpMicroscalingBlockSize = 32;
 
 void checkBlockScaledPlaneDescriptions(const VkBlockScaledTensorDescriptionARM &description) {
-    if (description.planeCount != 2 || description.pPlaneDescriptions == nullptr) {
-        throw std::invalid_argument("Block-scaled graph tensor requires two plane descriptions with dimensions");
+    if (description.blockScalingScheme != VK_TENSOR_BLOCK_SCALING_SCHEME_PLANAR_OCP_MICROSCALING_ARM ||
+        description.planeCount != 2 || description.pPlaneTypes == nullptr ||
+        description.pPlaneDescriptions == nullptr || description.pPlaneTypes[0] != VK_TENSOR_PLANE_VALUES_ARM ||
+        description.pPlaneTypes[1] != VK_TENSOR_PLANE_SCALES_ARM) {
+        throw std::invalid_argument("Block-scaled graph tensor requires OCP value and scale planes");
     }
     for (uint32_t i = 0; i < description.planeCount; ++i) {
         const auto &plane = description.pPlaneDescriptions[i];
@@ -2116,6 +2119,9 @@ void GraphPipeline::makeConstTensor(const VkDataGraphPipelineConstantARM &consta
 void GraphPipeline::makeBlockScaledConstTensor(const VkDataGraphPipelineConstantARM &constant,
                                                const VkBlockScaledTensorDescriptionARM &description) {
     checkBlockScaledPlaneDescriptions(description);
+    if (description.pPlaneDescriptions[1].format != VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM) {
+        throw std::invalid_argument("Unsupported block-scaled graph constant scale format");
+    }
     for (uint32_t i = 0; i < description.planeCount; ++i) {
         const auto &plane = description.pPlaneDescriptions[i];
         if (plane.tiling != VK_TENSOR_TILING_LINEAR_ARM || !(plane.usage & VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM)) {
@@ -2281,18 +2287,33 @@ ComputeDescriptorSetMap GraphPipeline::makeConstantsDescriptorSets() const {
 }
 
 void GraphPipeline::makeDescriptorSetBinding(const VkDataGraphPipelineResourceInfoARM &resourceInfo) {
-    const auto *description =
-        layer::findType<VkTensorDescriptionARM>(resourceInfo.pNext, VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM);
-    if (description == nullptr) {
-        throw std::invalid_argument("Missing graph resource tensor description");
+    std::shared_ptr<TensorDescriptor> tensorDescriptor;
+    std::shared_ptr<Tensor> tensor;
+#ifdef VK_ARM_tensors2
+    if (const auto *scaled = layer::findType<VkBlockScaledTensorDescriptionARM>(
+            resourceInfo.pNext, VK_STRUCTURE_TYPE_BLOCK_SCALED_TENSOR_DESCRIPTION_ARM)) {
+        checkBlockScaledPlaneDescriptions(*scaled);
+        tensorDescriptor =
+            std::make_shared<TensorDescriptor>(loader, physicalDevice, device, scaled->pPlaneDescriptions[0]);
+        tensorDescriptor->setBlockScaling({scaled->pPlaneDescriptions[1].format, {ocpMicroscalingBlockSize}});
+        tensor = TensorDescriptor::makeTensor(tensorDescriptor, *scaled);
+    } else
+#endif
+    {
+        const auto *description =
+            layer::findType<VkTensorDescriptionARM>(resourceInfo.pNext, VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM);
+        if (description == nullptr) {
+            throw std::invalid_argument("Missing graph resource tensor description");
+        }
+        tensorDescriptor = std::make_shared<TensorDescriptor>(loader, physicalDevice, device, *description);
+        tensor = TensorDescriptor::makeTensor(tensorDescriptor);
     }
-    auto tensorDescriptor = std::make_shared<TensorDescriptor>(loader, physicalDevice, device, *description);
 
     auto &vec = tensorMap[resourceInfo.descriptorSet][resourceInfo.binding];
     vec.resize(std::max(vec.size(), size_t(resourceInfo.arrayElement + 1)));
     vec[resourceInfo.arrayElement] = tensorDescriptor;
 
-    tensorDescriptorMap[resourceInfo.descriptorSet][tensorDescriptor] = TensorDescriptor::makeTensor(tensorDescriptor);
+    tensorDescriptorMap[resourceInfo.descriptorSet][tensorDescriptor] = std::move(tensor);
 }
 
 std::shared_ptr<TensorDescriptor> GraphPipeline::getTensor(const uint32_t set, const uint32_t binding,
