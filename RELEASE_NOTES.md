@@ -28,6 +28,10 @@
 - Added graph-layer handling for block-scaled SPIR-V™ tensor types, checking
   value and scale formats, block shapes, and dimensions against graph tensor
   resources.
+- Added packed FP4/FP6 and MXINT8 value-plane storage for block-scaled
+  tensors, including packed byte sizes and derived strides.
+- Fixed copies of packed FP4/FP6 and MXINT8 tensor planes between different
+  strides.
 
 ### Build, Packaging & Dependencies
 

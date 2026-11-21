@@ -16,6 +16,7 @@
 #include <functional>
 #include <limits>
 #include <numeric>
+#include <stdexcept>
 
 #include <glslang/Include/glslang_c_interface.h>
 #include <glslang/Public/resource_limits_c.h>
@@ -43,21 +44,52 @@ size_t getElementCount(vk::ArrayProxy<const int64_t> dimensions) {
     return static_cast<size_t>(result);
 }
 
+FormatStorageBlock getFormatStorageBlock(VkFormat format) {
+#ifdef VK_ARM_tensors2
+    // These experimental formats are absent from older Vulkan-Hpp format traits.
+    switch (format) {
+    case VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT4E2M1_ARM:
+        return {16, 32};
+    case VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT6E2M3_ARM:
+    case VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT6E3M2_ARM:
+        return {24, 32};
+    case VK_FORMAT_R8_SFLOAT_FPENCODING_MXINT8_ARM:
+    case VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM:
+        return {1, 1};
+    default:
+        break;
+    }
+#endif
+    const auto vkFormat = vk::Format(format);
+    const auto byteSize = vk::blockSize(vkFormat);
+    if (byteSize == 0) {
+        throw std::invalid_argument("Unsupported tensor format.");
+    }
+    return {byteSize, vk::blockExtent(vkFormat)[0]};
+}
+
 size_t getTensorSize(const VkTensorDescriptionARM &description) {
+    const auto block = getFormatStorageBlock(description.format);
+    if (description.dimensionCount == 0 || description.pDimensions == nullptr ||
+        description.pDimensions[description.dimensionCount - 1] % block.elementCount != 0) {
+        throw std::runtime_error("Invalid tensor dimensions for the value format.");
+    }
     if (description.pStrides != nullptr) {
         if (description.pStrides[0] < 0) {
             throw std::runtime_error("Strides must be greater than zero.");
         }
-        return static_cast<size_t>(description.pDimensions[0] * description.pStrides[0]);
+        const auto outerElements =
+            description.pDimensions[0] / (description.dimensionCount == 1 ? block.elementCount : 1);
+        return static_cast<size_t>(outerElements * description.pStrides[0]);
     }
-    return getElementCount({description.dimensionCount, description.pDimensions}) *
-           vk::blockSize(vk::Format(description.format));
+    return getElementCount({description.dimensionCount, description.pDimensions}) / block.elementCount * block.byteSize;
 }
 
 void deriveBlockScaledStrides(const VkTensorDescriptionARM &values, const VkTensorDescriptionARM &scales,
                               std::vector<int64_t> &valueStrides, std::vector<int64_t> &scaleStrides) {
-    const auto valueSize = static_cast<int64_t>(vk::blockSize(vk::Format(values.format)));
-    const auto strideRatio = 32 * valueSize;
+    const auto block = getFormatStorageBlock(values.format);
+    const auto valueSize = static_cast<int64_t>(block.byteSize);
+    const auto strideRatio = 32 * valueSize / block.elementCount;
     if (values.pStrides && !scales.pStrides) {
         scaleStrides.resize(scales.dimensionCount);
         scaleStrides.back() = 1;

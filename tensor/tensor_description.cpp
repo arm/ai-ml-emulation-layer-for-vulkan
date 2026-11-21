@@ -5,8 +5,9 @@
 
 #include "tensor_description.hpp"
 
+#include "mlel/utils.hpp"
+
 #include <stdexcept>
-#include <vulkan/vulkan_format_traits.hpp>
 
 namespace mlsdk::el::layer {
 void TensorLayout::updateAliasedImageLayout(const VkSubresourceLayout &imageLayout) {
@@ -84,17 +85,22 @@ TensorLayout::TensorLayout(const VkTensorDescriptionARM &desc, VkTensorCreateFla
 
     uint32_t dimensionCount = desc.dimensionCount;
     dimensions = std::vector<int64_t>{desc.pDimensions, desc.pDimensions + dimensionCount};
-    elementSize = vk::blockSize(vk::Format(desc.format));
+    const auto block = utils::getFormatStorageBlock(desc.format);
+    elementSize = block.byteSize;
+    if (dimensions.back() <= 0 || dimensions.back() % block.elementCount != 0) {
+        throw std::invalid_argument("Innermost tensor dimension does not contain whole format blocks");
+    }
     if (desc.pStrides == nullptr) {
         strides.resize(dimensionCount);
         strides.back() = static_cast<int64_t>(elementSize);
         for (size_t i = dimensionCount - 1; i > 0; --i) {
-            strides[i - 1] = strides[i] * static_cast<int64_t>(dimensions[i]);
+            strides[i - 1] =
+                strides[i] * (i + 1 == dimensionCount ? dimensions[i] / block.elementCount : dimensions[i]);
         }
     } else {
         strides = std::vector<int64_t>{desc.pStrides, desc.pStrides + dimensionCount};
     }
-    size = static_cast<size_t>(dimensions[0] * strides[0]);
+    size = static_cast<size_t>(dimensions[0] / (dimensionCount == 1 ? block.elementCount : 1) * strides[0]);
 }
 
 } // namespace mlsdk::el::layer

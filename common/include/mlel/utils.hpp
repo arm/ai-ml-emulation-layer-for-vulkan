@@ -46,6 +46,13 @@ bool hasExtension(const std::vector<vk::ExtensionProperties> &extensionPropertie
 /// Gets the total number of elements in a tensor given its dimensions, throws if result is negative.
 size_t getElementCount(vk::ArrayProxy<const int64_t> dimensions);
 
+struct FormatStorageBlock {
+    uint32_t byteSize;
+    uint32_t elementCount;
+};
+
+FormatStorageBlock getFormatStorageBlock(VkFormat format);
+
 /// Returns the tensor payload size in bytes.
 size_t getTensorSize(const VkTensorDescriptionARM &description);
 
