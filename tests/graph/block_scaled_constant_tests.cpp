@@ -20,17 +20,13 @@ namespace {
 #ifdef VK_ARM_tensors2
 class BlockScaledConstants : public testing::Test {
   protected:
-    struct Allocation {
-        std::vector<uint8_t> bytes;
-        bool freed = false;
-    };
-
     std::shared_ptr<vk::detail::DispatchLoaderDynamic> loader = std::make_shared<vk::detail::DispatchLoaderDynamic>();
-    std::vector<std::unique_ptr<Allocation>> allocations;
+    std::array<std::array<uint8_t, 256>, 2> memory{};
     std::array<VkDeviceMemory, 2> bindings{};
-    const VkBlockScaledTensorDescriptionARM *constantDescription = nullptr;
-    uint32_t tensorCount = 0;
-    uint32_t destroyedTensors = 0;
+    size_t allocationCount = 0;
+    size_t createdTensorCount = 0;
+    size_t destroyedTensorCount = 0;
+    std::array<size_t, 2> freedMemoryCounts{};
 
     static BlockScaledConstants &state(VkDevice device) { return *reinterpret_cast<BlockScaledConstants *>(device); }
 
@@ -52,25 +48,24 @@ class BlockScaledConstants : public testing::Test {
     }
     static VkResult VKAPI_CALL createTensor(VkDevice device, const VkTensorCreateInfoARM *info,
                                             const VkAllocationCallbacks *, VkTensorARM *tensor) {
-        auto &self = state(device);
-        EXPECT_EQ(info->pDescription, nullptr);
-        EXPECT_EQ(info->pNext, self.constantDescription);
-        const auto *scaled = static_cast<const VkBlockScaledTensorDescriptionARM *>(info->pNext);
-        if (!scaled) {
+        if (info->pDescription || !info->pNext) {
             return VK_ERROR_UNKNOWN;
         }
+        const auto *scaled = static_cast<const VkBlockScaledTensorDescriptionARM *>(info->pNext);
         EXPECT_EQ(scaled->sType, VK_STRUCTURE_TYPE_BLOCK_SCALED_TENSOR_DESCRIPTION_ARM);
         EXPECT_EQ(scaled->planeCount, 2u);
         EXPECT_EQ(scaled->pPlaneTypes[0], VK_TENSOR_PLANE_VALUES_ARM);
         EXPECT_EQ(scaled->pPlaneTypes[1], VK_TENSOR_PLANE_SCALES_ARM);
         EXPECT_EQ(scaled->pPlaneDescriptions[0].pDimensions[1], 32);
         EXPECT_EQ(scaled->pPlaneDescriptions[1].pDimensions[1], 1);
-        ++self.tensorCount;
+        EXPECT_EQ(scaled->pPlaneDescriptions[1].format, VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM);
         *tensor = reinterpret_cast<VkTensorARM>(device);
+        ++state(device).createdTensorCount;
         return VK_SUCCESS;
     }
-    static void VKAPI_CALL destroyTensor(VkDevice device, VkTensorARM, const VkAllocationCallbacks *) {
-        ++state(device).destroyedTensors;
+    static void VKAPI_CALL destroyTensor(VkDevice device, VkTensorARM tensor, const VkAllocationCallbacks *) {
+        EXPECT_EQ(tensor, reinterpret_cast<VkTensorARM>(device));
+        ++state(device).destroyedTensorCount;
     }
     static VkResult VKAPI_CALL createView(VkDevice, const VkTensorViewCreateInfoARM *info,
                                           const VkAllocationCallbacks *, VkTensorViewARM *view) {
@@ -89,22 +84,33 @@ class BlockScaledConstants : public testing::Test {
     }
     static VkResult VKAPI_CALL allocate(VkDevice device, const VkMemoryAllocateInfo *info,
                                         const VkAllocationCallbacks *, VkDeviceMemory *memory) {
-        auto &allocation = state(device).allocations.emplace_back(std::make_unique<Allocation>());
-        allocation->bytes.resize(static_cast<size_t>(info->allocationSize));
-        *memory = reinterpret_cast<VkDeviceMemory>(allocation.get());
+        auto &self = state(device);
+        if (self.allocationCount == self.memory.size() || info->allocationSize > self.memory[0].size()) {
+            return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+        }
+        *memory = reinterpret_cast<VkDeviceMemory>(self.memory[self.allocationCount++].data());
         return VK_SUCCESS;
     }
-    static void VKAPI_CALL free(VkDevice, VkDeviceMemory memory, const VkAllocationCallbacks *) {
-        reinterpret_cast<Allocation *>(memory)->freed = true;
+    static void VKAPI_CALL free(VkDevice device, VkDeviceMemory allocation, const VkAllocationCallbacks *) {
+        auto &self = state(device);
+        for (size_t index = 0; index < self.memory.size(); ++index) {
+            if (allocation == reinterpret_cast<VkDeviceMemory>(self.memory[index].data())) {
+                ++self.freedMemoryCounts[index];
+                return;
+            }
+        }
+        ADD_FAILURE() << "Unexpected device memory handle";
     }
     static VkResult VKAPI_CALL map(VkDevice, VkDeviceMemory memory, VkDeviceSize, VkDeviceSize, VkMemoryMapFlags,
                                    void **data) {
-        *data = reinterpret_cast<Allocation *>(memory)->bytes.data();
+        *data = reinterpret_cast<void *>(memory);
         return VK_SUCCESS;
     }
     static void VKAPI_CALL unmap(VkDevice, VkDeviceMemory) {}
     static VkResult VKAPI_CALL bind(VkDevice device, uint32_t count, const VkBindTensorMemoryInfoARM *infos) {
-        EXPECT_EQ(count, 1u);
+        if (count != 1) {
+            return VK_ERROR_UNKNOWN;
+        }
         const auto *plane = static_cast<const VkTensorPlaneInfoARM *>(infos[0].pNext);
         if (!plane || plane->planeIndex >= 2) {
             return VK_ERROR_UNKNOWN;
@@ -144,6 +150,18 @@ TEST_F(BlockScaledConstants, InitializesBothPlanesFromOnePayload) {
         SCOPED_TRACE(format);
         SCOPED_TRACE(valueRowStride);
         SCOPED_TRACE(scaleRowStride);
+        for (auto &allocation : memory) {
+            allocation.fill(0);
+        }
+        bindings.fill(VK_NULL_HANDLE);
+        allocationCount = 0;
+        createdTensorCount = 0;
+        destroyedTensorCount = 0;
+        freedMemoryCounts.fill(0);
+
+        const auto valueMemory = reinterpret_cast<VkDeviceMemory>(memory[0].data());
+        const auto scaleMemory = reinterpret_cast<VkDeviceMemory>(memory[1].data());
+
         const std::array<int64_t, 2> valueStrides{valueRowStride, 1};
         const std::array<int64_t, 2> scaleStrides{scaleRowStride, 1};
         const auto scaleStride =
@@ -151,8 +169,8 @@ TEST_F(BlockScaledConstants, InitializesBothPlanesFromOnePayload) {
         const auto valueSize = 64 * scaleStride;
         std::vector<uint8_t> payload(valueSize + 2 * scaleStride);
         std::fill_n(payload.begin(), valueSize, 0x38);
-        payload[valueSize] = 0x7f;               // E8M0 scale 1.
-        payload[valueSize + scaleStride] = 0x80; // E8M0 scale 2.
+        payload[valueSize] = 0x7f;
+        payload[valueSize + scaleStride] = 0x80;
         const std::array<VkTensorDescriptionARM, 2> planes{{
             {VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM, nullptr, VK_TENSOR_TILING_LINEAR_ARM, format, 2,
              valueShape.data(), valueRowStride ? valueStrides.data() : nullptr, VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM},
@@ -166,7 +184,6 @@ TEST_F(BlockScaledConstants, InitializesBothPlanesFromOnePayload) {
                                                             2,
                                                             planeTypes.data(),
                                                             planes.data()};
-        constantDescription = &description;
         {
             graph_op::GraphPipeline pipeline(loader, reinterpret_cast<VkPhysicalDevice>(this),
                                              reinterpret_cast<VkDevice>(this), nullptr);
@@ -176,25 +193,25 @@ TEST_F(BlockScaledConstants, InitializesBothPlanesFromOnePayload) {
             const auto descriptor = pipeline.getConstTensor(17);
             EXPECT_EQ(descriptor->getFormat(), format);
             EXPECT_EQ(descriptor->getDimensions(), (std::vector<int64_t>{2, 32}));
-            ASSERT_EQ(allocations.size(), 2u);
-            EXPECT_EQ(bindings[0], reinterpret_cast<VkDeviceMemory>(allocations[0].get()));
-            EXPECT_EQ(bindings[1], reinterpret_cast<VkDeviceMemory>(allocations[1].get()));
-            EXPECT_TRUE(std::equal(payload.data(), payload.data() + valueSize, allocations[0]->bytes.begin()));
-            EXPECT_EQ(allocations[0]->bytes[valueSize], 0);
-            EXPECT_EQ(allocations[1]->bytes[0], payload[valueSize]);
-            EXPECT_EQ(allocations[1]->bytes[scaleStride], payload[valueSize + scaleStride]);
-            EXPECT_EQ(allocations[1]->bytes[2 * scaleStride], 0);
-            EXPECT_EQ(tensorCount, 1u);
+            ASSERT_TRUE(descriptor->getBlockScaling());
+            EXPECT_EQ(descriptor->getBlockScaling()->blockShape, (std::vector<uint32_t>{32}));
+            EXPECT_EQ(descriptor->getBlockScaling()->scaleFormat, planes[1].format);
+            ASSERT_EQ(allocationCount, 2u);
+            EXPECT_EQ(bindings[0], valueMemory);
+            EXPECT_EQ(bindings[1], scaleMemory);
+            EXPECT_TRUE(std::equal(payload.data(), payload.data() + valueSize, memory[0].begin()));
+            EXPECT_EQ(memory[0][valueSize], 0);
+            EXPECT_EQ(memory[1][0], payload[valueSize]);
+            EXPECT_EQ(memory[1][scaleStride], payload[valueSize + scaleStride]);
+            EXPECT_EQ(memory[1][2 * scaleStride], 0);
         }
-        EXPECT_EQ(destroyedTensors, 1u);
-        for (const auto &allocation : allocations) {
-            EXPECT_TRUE(allocation->freed);
-        }
-        allocations.clear();
-        tensorCount = 0;
-        destroyedTensors = 0;
+        EXPECT_EQ(createdTensorCount, 1u);
+        EXPECT_EQ(destroyedTensorCount, 1u);
+        EXPECT_EQ(freedMemoryCounts[0], 1u);
+        EXPECT_EQ(freedMemoryCounts[1], 1u);
     }
 }
+
 #endif
 
 } // namespace

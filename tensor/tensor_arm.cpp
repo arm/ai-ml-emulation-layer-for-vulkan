@@ -113,13 +113,11 @@ VkResult TensorARM::create(const Device &dev, const VkTensorCreateInfoARM &creat
     m_storage = TensorStorage(createInfo);
     const auto *pCaptureDescriptorInfo = findType<VkOpaqueCaptureDescriptorDataCreateInfoEXT>(
         createInfo.pNext, VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT);
-#ifdef VK_ARM_tensors2
     if (!findPlane(std::nullopt) && pCaptureDescriptorInfo) {
         // Implementation limit: block-scaled descriptor capture is unsupported.
         // The draft does not specify how it applies to individual planes.
         return VK_ERROR_UNKNOWN;
     }
-#endif
     for (auto &plane : m_storage.planes) {
         const VkBufferCreateInfo bufferInfo = {
             VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,

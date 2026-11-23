@@ -1195,8 +1195,7 @@ class GraphPipeline {
                                                                const void *data);
 
     // External tensors owned by the application
-    void makeDescriptorSetBinding(uint32_t set, uint32_t binding, uint32_t arrayIndex,
-                                  const VkTensorDescriptionARM &tensorDescription);
+    void makeDescriptorSetBinding(const VkDataGraphPipelineResourceInfoARM &resourceInfo);
     std::shared_ptr<TensorDescriptor> getTensor(uint32_t set, uint32_t binding, uint32_t arrayIndex = 0) const;
 
     // Tensors allocated in session ram

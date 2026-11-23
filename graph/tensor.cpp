@@ -13,8 +13,10 @@
 #include "graph_log.hpp"
 #include "mlel/utils.hpp"
 
+#include <algorithm>
 #include <exception>
 #include <numeric>
+#include <stdexcept>
 using namespace mlsdk::el::log;
 
 namespace mlsdk::el::compute {
@@ -103,6 +105,16 @@ std::shared_ptr<Tensor> TensorDescriptor::makeTensor(const std::shared_ptr<Tenso
 #endif
 
 VkFormat TensorDescriptor::getFormat() const { return format; }
+
+const std::optional<TensorDescriptor::BlockScaling> &TensorDescriptor::getBlockScaling() const { return blockScaling; }
+
+void TensorDescriptor::setBlockScaling(TensorDescriptor::BlockScaling scaling) {
+    if (scaling.scaleFormat == VK_FORMAT_UNDEFINED || scaling.blockShape.empty() ||
+        std::any_of(scaling.blockShape.begin(), scaling.blockShape.end(), [](uint32_t size) { return size == 0; })) {
+        throw std::invalid_argument("Invalid graph tensor block scaling metadata");
+    }
+    blockScaling = std::move(scaling);
+}
 
 const std::vector<int64_t> &TensorDescriptor::getDimensions() const { return dimensions; }
 
