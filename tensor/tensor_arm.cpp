@@ -119,6 +119,18 @@ VkResult TensorARM::create(const Device &dev, const VkTensorCreateInfoARM &creat
         return VK_ERROR_UNKNOWN;
     }
     for (auto &plane : m_storage.planes) {
+        if (plane.layout.usesImageAliasing) {
+            m_imageAliasing.emplace(ImageAliasing{});
+            auto &alias = *m_imageAliasing;
+            alias.sharingMode = createInfo.sharingMode;
+            if (createInfo.sharingMode == VK_SHARING_MODE_CONCURRENT && createInfo.queueFamilyIndexCount) {
+                alias.queueFamilyIndices.assign(createInfo.pQueueFamilyIndices,
+                                                createInfo.pQueueFamilyIndices + createInfo.queueFamilyIndexCount);
+            }
+            if (allocator) {
+                alias.allocator = *allocator;
+            }
+        }
         const VkBufferCreateInfo bufferInfo = {
             VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
             pCaptureDescriptorInfo,
@@ -134,6 +146,9 @@ VkResult TensorARM::create(const Device &dev, const VkTensorCreateInfoARM &creat
             plane.buffer = VK_NULL_HANDLE;
             destroy(dev, allocator);
             return result;
+        }
+        if (plane.layout.usesImageAliasing) {
+            dev.loader->vkGetBufferMemoryRequirements(dev.device, plane.buffer, &m_imageAliasing->packedRequirements);
         }
     }
     return VK_SUCCESS;
@@ -164,7 +179,12 @@ bool TensorARM::getMemoryRequirements(const Device &dev, VkMemoryRequirements *r
     if (!plane) {
         return false;
     }
-    dev.loader->vkGetBufferMemoryRequirements(dev.device, plane->buffer, requirements);
+    if (m_imageAliasing) {
+        // Keep the original packed-buffer requirements even if an image alias resized the private buffer.
+        *requirements = m_imageAliasing->packedRequirements;
+    } else {
+        dev.loader->vkGetBufferMemoryRequirements(dev.device, plane->buffer, requirements);
+    }
     return true;
 }
 
@@ -209,27 +229,58 @@ VkResult TensorARM::bindTensorMemory(const Device &dev, VkDeviceMemory memory, V
     return dev.loader->vkBindBufferMemory(dev.device, plane->buffer, memory, offset);
 }
 
-void TensorARM::updateAliasedTensorInfo(const Device &dev, VkImage image) {
-    auto *plane = findPlane(std::nullopt);
-    if (!plane) {
-        throw std::runtime_error("Image aliasing requires an ordinary tensor.");
+VkResult TensorARM::updateAliasedTensorInfo(const Device &dev, VkImage image, VkDeviceMemory memory,
+                                            VkDeviceSize memoryOffset, VkDeviceSize availableSize) {
+    if (!m_imageAliasing) {
+        return VK_SUCCESS;
     }
-    auto &info = plane->layout;
-    auto rank = info.dimensions.size();
-    if (rank < 2 || rank > 4) {
-        throw std::runtime_error("Tensor rank should be 2, 3 or 4 to alias with image.");
-    }
+    auto &plane = *findPlane(std::nullopt);
+    auto layout = plane.layout;
+    const VkImageSubresource subresource{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0};
+    VkSubresourceLayout imageLayout{};
+    dev.loader->vkGetImageSubresourceLayout(dev.device, image, &subresource, &imageLayout);
+    layout.updateAliasedImageLayout(imageLayout);
 
-    if (info.usesImageAliasing) {
-        const VkImageSubresource imageSubresource = {
-            VK_IMAGE_ASPECT_COLOR_BIT,
-            0,
-            0,
+    // Never shrink an existing buffer when another image alias is discovered.
+    layout.size = std::max(layout.size, plane.layout.size);
+    if (layout.size > plane.layout.size) {
+        const auto &alias = *m_imageAliasing;
+        const auto *allocator = alias.allocator ? &*alias.allocator : nullptr;
+        const VkBufferCreateInfo createInfo{
+            VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            nullptr,
+            layout.flags,
+            layout.size,
+            layout.usage,
+            alias.sharingMode,
+            static_cast<uint32_t>(alias.queueFamilyIndices.size()),
+            alias.queueFamilyIndices.data(),
         };
-        VkSubresourceLayout imageSubresourceLayout{};
-        dev.loader->vkGetImageSubresourceLayout(dev.device, image, &imageSubresource, &imageSubresourceLayout);
-        tensor_description_detail::updateAliasedStrides(rank, info.strides, imageSubresourceLayout);
+        VkBuffer buffer = VK_NULL_HANDLE;
+        auto result = dev.loader->vkCreateBuffer(dev.device, &createInfo, allocator, &buffer);
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+        vk::UniqueHandle<vk::Buffer, vk::detail::DispatchLoaderDynamic> replacement(
+            buffer,
+            {vk::Device(dev.device), reinterpret_cast<const vk::AllocationCallbacks *>(allocator), *dev.loader});
+        // With unchanged flags, usage and external handle types, Vulkan guarantees the
+        // same alignment and memoryTypeBits; only the size requirement needs rechecking.
+        VkMemoryRequirements requirements{};
+        dev.loader->vkGetBufferMemoryRequirements(dev.device, buffer, &requirements);
+        if (requirements.size > availableSize) {
+            return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+        }
+        result = dev.loader->vkBindBufferMemory(dev.device, buffer, memory, memoryOffset);
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+        // All aliases must be bound before descriptors or recorded commands reference the tensor.
+        dev.loader->vkDestroyBuffer(dev.device, plane.buffer, allocator);
+        plane.buffer = static_cast<VkBuffer>(replacement.release());
     }
+    plane.layout = std::move(layout);
+    return VK_SUCCESS;
 }
 
 void TensorARM::copyToTensor(TensorCommandBuffer &cmd, const TensorARM &dstTensor, std::optional<uint32_t> planeIndex) {
@@ -243,7 +294,7 @@ void TensorARM::copyToTensor(TensorCommandBuffer &cmd, const TensorARM &dstTenso
         throw std::runtime_error("Src tensor and dst tensor should have same dimensions and element size.");
     }
     if (srcPlane->layout.strides == dstPlane->layout.strides) {
-        const VkBufferCopy copyInfo{0, 0, srcPlane->layout.size};
+        const VkBufferCopy copyInfo{0, 0, std::min(srcPlane->layout.size, dstPlane->layout.size)};
         cmd.loader->vkCmdCopyBuffer(cmd.commandBuffer, srcPlane->buffer, dstPlane->buffer, 1, &copyInfo);
     } else {
         auto regionCount = utils::getElementCount(srcPlane->layout.dimensions);

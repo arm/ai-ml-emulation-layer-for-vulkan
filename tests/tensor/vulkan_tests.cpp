@@ -43,6 +43,7 @@ vk::raii::Device createTensors2Device(const std::shared_ptr<Device> &device) {
     create.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     create.pNext = &features;
     VkPhysicalDeviceFeatures coreFeatures{};
+    coreFeatures.robustBufferAccess = VK_TRUE;
     coreFeatures.shaderInt64 = VK_TRUE;
     create.pEnabledFeatures = &coreFeatures;
     create.queueCreateInfoCount = 1;
@@ -560,7 +561,10 @@ TEST_F(MLEmulationLayerGraphForVulkan, CreateTensorComputePipeline) {
 }
 #endif
 
-TEST_F(MLEmulationLayerGraphForVulkan, LinearTensorImageAliasingUsesImageRowPitch) {
+using TensorImageAliasing = GraphTestWithParam<uint32_t>;
+
+TEST_P(TensorImageAliasing, OptimalTensorImageAliasingUsesImageRowPitch) {
+    const auto binding = GetParam();
     constexpr uint32_t width = 7;
     constexpr uint32_t height = 4;
     const std::vector<int64_t> dimensions{height, width, 1};
@@ -568,12 +572,13 @@ TEST_F(MLEmulationLayerGraphForVulkan, LinearTensorImageAliasingUsesImageRowPitc
     vk::raii::DeviceMemory aliasedMemory{nullptr};
 
     const vk::TensorDescriptionARM tensorDescription{
-        vk::TensorTilingARM::eLinear,
+        vk::TensorTilingARM::eOptimal,
         vk::Format::eR8Uint,
         static_cast<uint32_t>(dimensions.size()),
         dimensions.data(),
         nullptr,
-        vk::TensorUsageFlagBitsARM::eShader | vk::TensorUsageFlagBitsARM::eImageAliasing,
+        vk::TensorUsageFlagBitsARM::eShader | vk::TensorUsageFlagBitsARM::eImageAliasing |
+            vk::TensorUsageFlagBitsARM::eTransferSrc | vk::TensorUsageFlagBitsARM::eTransferDst,
     };
     const vk::TensorCreateInfoARM tensorCreateInfo{
         {}, &tensorDescription, vk::SharingMode::eExclusive, 0, nullptr,
@@ -587,7 +592,7 @@ TEST_F(MLEmulationLayerGraphForVulkan, LinearTensorImageAliasingUsesImageRowPitc
         .setMipLevels(1)
         .setArrayLayers(1)
         .setSamples(vk::SampleCountFlagBits::e1)
-        .setTiling(vk::ImageTiling::eLinear)
+        .setTiling(vk::ImageTiling::eOptimal)
         .setUsage(vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTensorAliasingARM)
         .setSharingMode(vk::SharingMode::eExclusive)
         .setInitialLayout(vk::ImageLayout::eUndefined);
@@ -602,15 +607,31 @@ TEST_F(MLEmulationLayerGraphForVulkan, LinearTensorImageAliasingUsesImageRowPitc
     ASSERT_FALSE(memoryTypeIndices.empty());
 
     const vk::MemoryAllocateFlagsInfo allocateFlags{vk::MemoryAllocateFlagBits::eDeviceAddress};
+    const auto memoryOffset = std::lcm(tensorRequirements.memoryRequirements.alignment, imageRequirements.alignment);
     const vk::MemoryAllocateInfo allocateInfo{
-        std::max(tensorRequirements.memoryRequirements.size, imageRequirements.size),
+        memoryOffset + std::max(tensorRequirements.memoryRequirements.size, imageRequirements.size),
         memoryTypeIndices.front(),
         &allocateFlags,
     };
     aliasedMemory = vk::raii::DeviceMemory{&(*device), allocateInfo};
-    image.bindMemory(*aliasedMemory, 0);
-    const vk::BindTensorMemoryInfoARM bindTensorInfo{*destinationTensor, *aliasedMemory, 0};
+    const auto bindImage = [&] {
+        if (binding & 2) {
+            (&(*device)).bindImageMemory2(vk::BindImageMemoryInfo{*image, *aliasedMemory, memoryOffset});
+        } else {
+            image.bindMemory(*aliasedMemory, memoryOffset);
+        }
+    };
+    if (binding & 1) {
+        bindImage();
+    }
+    const vk::BindTensorMemoryInfoARM bindTensorInfo{*destinationTensor, *aliasedMemory, memoryOffset};
     (&(*device)).bindTensorMemoryARM(bindTensorInfo);
+    if (!(binding & 1)) {
+        bindImage();
+    }
+
+    const auto afterBinding = (&(*device)).getTensorMemoryRequirementsARM(tensorRequirementsInfo);
+    EXPECT_EQ(afterBinding.memoryRequirements, tensorRequirements.memoryRequirements);
 
     const vk::ImageSubresource subresource{vk::ImageAspectFlagBits::eColor, 0, 0};
     const auto imageLayout = image.getSubresourceLayout(subresource);
@@ -621,6 +642,29 @@ TEST_F(MLEmulationLayerGraphForVulkan, LinearTensorImageAliasingUsesImageRowPitc
     auto *mappedMemory = static_cast<uint8_t *>(aliasedMemory.mapMemory(0, VK_WHOLE_SIZE));
     std::fill(mappedMemory, mappedMemory + allocateInfo.allocationSize, uint8_t{0});
     aliasedMemory.unmapMemory();
+
+    const auto queueFamily = device->getPhysicalDevice()->getComputeFamilyIndex();
+    vk::raii::CommandPool pool{&(*device), {vk::CommandPoolCreateFlagBits::eResetCommandBuffer, queueFamily}};
+    auto command =
+        std::move(vk::raii::CommandBuffers{&(*device), {*pool, vk::CommandBufferLevel::ePrimary, 1}}.front());
+    vk::raii::Queue queue{&(*device), queueFamily, 0};
+    const auto submit = [&] {
+        command.end();
+        queue.submit(vk::SubmitInfo{0, nullptr, nullptr, 1, &(*command)});
+        queue.waitIdle();
+    };
+    command.begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    const vk::ImageMemoryBarrier imageBarrier{{},
+                                              vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite,
+                                              vk::ImageLayout::eUndefined,
+                                              vk::ImageLayout::eTensorAliasingARM,
+                                              VK_QUEUE_FAMILY_IGNORED,
+                                              VK_QUEUE_FAMILY_IGNORED,
+                                              *image,
+                                              {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}};
+    command.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eComputeShader, {}, {},
+                            {}, imageBarrier);
+    submit();
 
     const vk::TensorViewCreateInfoARM tensorViewCreateInfo{
         {},
@@ -645,16 +689,72 @@ TEST_F(MLEmulationLayerGraphForVulkan, LinearTensorImageAliasingUsesImageRowPitc
     (&(*device)).updateDescriptorSets({descriptorWrite}, {});
     computePipeline.dispatchSubmit(descriptorSets, width, height, 1);
 
+    command.begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    const vk::MemoryBarrier hostBarrier{vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eHostRead};
+    command.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eHost, {},
+                            hostBarrier, {}, {});
+    submit();
+
     mappedMemory = static_cast<uint8_t *>(aliasedMemory.mapMemory(0, VK_WHOLE_SIZE));
     for (uint32_t y = 0; y < height; ++y) {
         for (uint32_t x = 0; x < width; ++x) {
             const auto expected = static_cast<uint8_t>(((y + 1) * 16) + x);
-            EXPECT_EQ(mappedMemory[imageLayout.offset + (y * imageLayout.rowPitch) + x], expected)
+            EXPECT_EQ(mappedMemory[memoryOffset + imageLayout.offset + (y * imageLayout.rowPitch) + x], expected)
                 << "Mismatch at image coordinate (" << x << ", " << y << ")";
         }
     }
     aliasedMemory.unmapMemory();
+
+    // Exercise the copy descriptors that previously covered only the original packed buffer.
+    vk::raii::DeviceMemory packedMemory{nullptr};
+    auto packedDescription = tensorDescription;
+    packedDescription.setTiling(vk::TensorTilingARM::eLinear)
+        .setUsage(vk::TensorUsageFlagBitsARM::eShader | vk::TensorUsageFlagBitsARM::eTransferSrc |
+                  vk::TensorUsageFlagBitsARM::eTransferDst);
+    const vk::TensorCreateInfoARM packedInfo{{}, &packedDescription, vk::SharingMode::eExclusive};
+    vk::raii::TensorARM packed{&(*device), packedInfo};
+    const auto packedRequirements = (&(*device)).getTensorMemoryRequirementsARM({*packed}).memoryRequirements;
+    const auto packedTypes = device->getPhysicalDevice()->getMemoryTypeIndices(
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+        packedRequirements.memoryTypeBits);
+    ASSERT_FALSE(packedTypes.empty());
+    packedMemory = vk::raii::DeviceMemory{&(*device), {packedRequirements.size, packedTypes.front(), &allocateFlags}};
+    (&(*device)).bindTensorMemoryARM(vk::BindTensorMemoryInfoARM{*packed, *packedMemory, 0});
+    const vk::TensorCopyARM region{static_cast<uint32_t>(dimensions.size())};
+    const auto copy = [&](vk::TensorARM src, vk::TensorARM dst) {
+        command.begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+        const vk::MemoryBarrier before{vk::AccessFlagBits::eMemoryWrite,
+                                       vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite};
+        command.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands | vk::PipelineStageFlagBits::eHost,
+                                vk::PipelineStageFlagBits::eAllCommands, {}, before, {}, {});
+        command.copyTensorARM(vk::CopyTensorInfoARM{src, dst, 1, &region});
+        const vk::MemoryBarrier after{vk::AccessFlagBits::eMemoryWrite, vk::AccessFlagBits::eHostRead};
+        command.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eHost, {}, after,
+                                {}, {});
+        submit();
+    };
+    copy(*destinationTensor, *packed);
+    auto *packedBytes = static_cast<uint8_t *>(packedMemory.mapMemory(0, VK_WHOLE_SIZE));
+    for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+            EXPECT_EQ(packedBytes[y * width + x], static_cast<uint8_t>(((y + 1) * 16) + x));
+            packedBytes[y * width + x] = static_cast<uint8_t>(200 - (y * width + x));
+        }
+    }
+    packedMemory.unmapMemory();
+    copy(*packed, *destinationTensor);
+    mappedMemory = static_cast<uint8_t *>(aliasedMemory.mapMemory(0, VK_WHOLE_SIZE));
+    for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+            EXPECT_EQ(mappedMemory[memoryOffset + imageLayout.offset + y * imageLayout.rowPitch + x],
+                      static_cast<uint8_t>(200 - (y * width + x)));
+        }
+    }
+    EXPECT_TRUE(std::all_of(mappedMemory, mappedMemory + memoryOffset, [](uint8_t byte) { return byte == 0; }));
+    aliasedMemory.unmapMemory();
 }
+
+INSTANTIATE_TEST_SUITE_P(BindingOrders, TensorImageAliasing, testing::Values(0u, 1u, 2u, 3u));
 
 TEST_F(MLEmulationLayerGraphForVulkan, CopyNonPackedTensorTwice) {
     const std::vector<int64_t> dimensions{2, 4};

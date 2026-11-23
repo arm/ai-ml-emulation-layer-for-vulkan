@@ -9,21 +9,35 @@
 #include <vulkan/vulkan_format_traits.hpp>
 
 namespace mlsdk::el::layer {
-namespace tensor_description_detail {
+void TensorLayout::updateAliasedImageLayout(const VkSubresourceLayout &imageLayout) {
+    if (!usesImageAliasing) {
+        return;
+    }
+    const auto rank = dimensions.size();
+    if (rank < 2) {
+        throw std::runtime_error("A tensor needs at least two dimensions to alias with an image.");
+    }
+    // The innermost axes are components, width, height and depth. Any extra leading axes
+    // are singleton for a compatible image alias; their strides do not affect addressing.
+    for (size_t i = rank - 2; i > 0; --i) {
+        strides[i - 1] = strides[i] * dimensions[i];
+        if (dimensions[i - 1] == 1) {
+            continue;
+        }
+        if (i == rank - 2) {
+            strides[i - 1] = static_cast<int64_t>(imageLayout.rowPitch);
+        } else if (i == rank - 3) {
+            // A non-singleton depth axis requires a 3D image, for which depthPitch is defined.
+            strides[i - 1] = static_cast<int64_t>(imageLayout.depthPitch);
+        }
+    }
 
-void updateAliasedStrides(const std::size_t rank, std::vector<int64_t> &strides,
-                          const VkSubresourceLayout &imageLayout) {
-    if (rank == 4) {
-        // alias to 3D image
-        strides[0] = static_cast<int64_t>(imageLayout.depthPitch);
-        strides[1] = static_cast<int64_t>(imageLayout.rowPitch);
-    } else if (rank == 3) {
-        // alias to 2D image
-        strides[0] = static_cast<int64_t>(imageLayout.rowPitch);
+    // Include every addressed element, without requiring padding after the last row or slice.
+    size = elementSize;
+    for (size_t i = 0; i < rank; ++i) {
+        size += static_cast<size_t>(dimensions[i] - 1) * static_cast<size_t>(strides[i]);
     }
 }
-
-} // namespace tensor_description_detail
 
 VkBufferCreateFlags TensorLayout::convertToBufferCreateFlags(VkTensorCreateFlagsARM tensorFlags) {
     VkBufferCreateFlags bufferFlags = {};
@@ -62,7 +76,8 @@ TensorLayout::TensorLayout(const VkTensorDescriptionARM &desc, VkTensorCreateFla
         throw std::runtime_error(std::string("Tensor dimension count not supported: ") +
                                  std::to_string(desc.dimensionCount));
     }
-    usesImageAliasing = (desc.usage & VK_TENSOR_USAGE_IMAGE_ALIASING_BIT_ARM) != 0;
+    usesImageAliasing =
+        desc.tiling == VK_TENSOR_TILING_OPTIMAL_ARM && (desc.usage & VK_TENSOR_USAGE_IMAGE_ALIASING_BIT_ARM) != 0;
 
     usage = convertToBufferUsageFlags(desc.usage);
     flags = convertToBufferCreateFlags(tensorFlags);

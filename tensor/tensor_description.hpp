@@ -19,6 +19,7 @@ struct TensorLayout {
 
     TensorLayout() = default;
     TensorLayout(const VkTensorDescriptionARM &description, VkTensorCreateFlagsARM flags);
+    void updateAliasedImageLayout(const VkSubresourceLayout &imageLayout);
 
     std::vector<int64_t> dimensions;
     std::vector<int64_t> strides;
@@ -32,9 +33,5 @@ struct TensorLayout {
     static VkBufferCreateFlags convertToBufferCreateFlags(VkTensorCreateFlagsARM flags);
     static VkBufferUsageFlags convertToBufferUsageFlags(VkTensorUsageFlagsARM usage);
 };
-
-namespace tensor_description_detail {
-void updateAliasedStrides(std::size_t rank, std::vector<int64_t> &strides, const VkSubresourceLayout &imageLayout);
-} // namespace tensor_description_detail
 
 } // namespace mlsdk::el::layer

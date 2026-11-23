@@ -53,13 +53,21 @@ class TensorARM {
                                                   VkMemoryRequirements2 *requirements);
     VkResult bindTensorMemory(const Device &dev, VkDeviceMemory memory, VkDeviceSize offset,
                               std::optional<uint32_t> planeIndex) const;
-    void updateAliasedTensorInfo(const Device &dev, VkImage image);
+    VkResult updateAliasedTensorInfo(const Device &dev, VkImage image, VkDeviceMemory memory, VkDeviceSize memoryOffset,
+                                     VkDeviceSize availableSize);
     void copyToTensor(TensorCommandBuffer &cmd, const TensorARM &dstTensor, std::optional<uint32_t> planeIndex);
     VkResult getOpaqueCaptureDescriptorDataEXT(const Device &dev, void *pData) const;
 
   private:
     TensorPlane *findPlane(std::optional<uint32_t> planeIndex);
     TensorStorage m_storage;
+    struct ImageAliasing {
+        VkMemoryRequirements packedRequirements{};
+        VkSharingMode sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        std::vector<uint32_t> queueFamilyIndices;
+        std::optional<VkAllocationCallbacks> allocator;
+    };
+    std::optional<ImageAliasing> m_imageAliasing;
 };
 
 class TensorCopyPipeline {

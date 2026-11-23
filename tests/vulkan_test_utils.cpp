@@ -118,6 +118,7 @@ std::shared_ptr<Device> createDevice() {
 
     // Enable base features
     vk::PhysicalDeviceFeatures baseFeatures = {};
+    baseFeatures.robustBufferAccess = VK_TRUE;
     baseFeatures.shaderInt64 = VK_TRUE;
     baseFeatures.shaderFloat64 = VK_TRUE;
 

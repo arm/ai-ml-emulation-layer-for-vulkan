@@ -14,6 +14,7 @@
 #include <array>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -40,6 +41,7 @@ std::shared_ptr<Device> createDevice() {
     }
 
     vk::PhysicalDeviceFeatures baseFeatures = {};
+    baseFeatures.robustBufferAccess = VK_TRUE;
     baseFeatures.shaderInt64 = VK_TRUE;
     baseFeatures.shaderFloat64 = VK_TRUE;
 
@@ -519,7 +521,13 @@ void initializeImages(const std::shared_ptr<Device> &device, vk::Image input, vk
 
     commandBuffer.begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
 
-    for (const auto image : {input, reference, flow}) {
+    // Hint/cost initialization passes the same image for all three roles. Clear each image once.
+    std::map<vk::Image, uint8_t> initialValues;
+    initialValues[input] = inputValue;
+    initialValues[reference] = referenceValue;
+    initialValues[flow] = flowSeedValue;
+    const VkImageSubresourceRange subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    for (const auto &[image, value] : initialValues) {
         VkImageMemoryBarrier2 barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
         barrier.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
@@ -531,30 +539,18 @@ void initializeImages(const std::shared_ptr<Device> &device, vk::Image input, vk
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.image = image;
-        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        barrier.subresourceRange = subresourceRange;
 
         VkDependencyInfo depInfo{};
         depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
         depInfo.imageMemoryBarrierCount = 1;
         depInfo.pImageMemoryBarriers = &barrier;
         (&(*device)).getDispatcher()->vkCmdPipelineBarrier2(*commandBuffer, &depInfo);
+        const VkClearColorValue color = {{float(value) / 255.0f, 0.0f, 0.0f, 0.0f}};
+        (&(*device))
+            .getDispatcher()
+            ->vkCmdClearColorImage(*commandBuffer, image, VK_IMAGE_LAYOUT_GENERAL, &color, 1, &subresourceRange);
     }
-
-    const VkClearColorValue inputColor = {{float(inputValue) / 255.0f, 0.0f, 0.0f, 0.0f}};
-    const VkClearColorValue referenceColor = {{float(referenceValue) / 255.0f, 0.0f, 0.0f, 0.0f}};
-    const VkClearColorValue flowColor = {{float(flowSeedValue) / 255.0f, 0.0f, 0.0f, 0.0f}};
-    const VkImageSubresourceRange subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-    (&(*device))
-        .getDispatcher()
-        ->vkCmdClearColorImage(*commandBuffer, input, VK_IMAGE_LAYOUT_GENERAL, &inputColor, 1, &subresourceRange);
-    (&(*device))
-        .getDispatcher()
-        ->vkCmdClearColorImage(*commandBuffer, reference, VK_IMAGE_LAYOUT_GENERAL, &referenceColor, 1,
-                               &subresourceRange);
-    (&(*device))
-        .getDispatcher()
-        ->vkCmdClearColorImage(*commandBuffer, flow, VK_IMAGE_LAYOUT_GENERAL, &flowColor, 1, &subresourceRange);
 
     commandBuffer.end();
 

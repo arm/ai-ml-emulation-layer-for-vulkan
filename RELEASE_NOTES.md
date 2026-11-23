@@ -50,6 +50,9 @@
 - Fixed temporary inline shader module cleanup on pipeline-creation failures,
   propagated shader-creation errors, and initialized failed pipeline outputs to
   null handles.
+- Grow backing buffers to cover image pitches for optimally tiled tensor/image
+  aliases. All aliases must be bound before tensor initialization, descriptor
+  writes, or command recording; see the README for aliasing limitations.
 - Fixed optical-flow descriptor handling to support dispatching a session multiple
   times with different descriptor sets before submission.
 - Report graph decoder exceptions as logged Vulkan® pipeline-creation errors
