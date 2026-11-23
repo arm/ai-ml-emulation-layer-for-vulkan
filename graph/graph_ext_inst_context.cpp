@@ -180,7 +180,13 @@ const analysis::TensorARM *GraphExtInstContext::getTensorType(const Operand &ope
 }
 
 const analysis::TensorARM *GraphExtInstContext::getTensorType(uint32_t id) const {
+    if (id == 0) {
+        throw std::runtime_error("SPIR-V tensor type id is zero");
+    }
     const auto *instruction = irContext.get_def_use_mgr()->GetDef(id);
+    if (instruction == nullptr) {
+        throw std::runtime_error("Missing SPIR-V tensor type or instruction for id: " + std::to_string(id));
+    }
 
     switch (instruction->opcode()) {
     case spv::Op::OpTypeTensorARM:
@@ -203,9 +209,10 @@ const analysis::TensorARM *GraphExtInstContext::getTensorType(uint32_t id) const
     }
 
     const auto *type = irContext.get_type_mgr()->GetType(id);
-    assert(type);
-    const auto *tensorType = type->AsTensorARM();
-    assert(tensorType);
+    const auto *tensorType = type ? type->AsTensorARM() : nullptr;
+    if (tensorType == nullptr) {
+        throw std::runtime_error("Expected SPIR-V tensor type for id: " + std::to_string(id));
+    }
 
     return tensorType;
 }
@@ -302,6 +309,9 @@ std::shared_ptr<TensorDescriptor> GraphExtInstContext::getTensor(const Operand &
 }
 
 std::shared_ptr<TensorDescriptor> GraphExtInstContext::makeTensor(const analysis::TensorARM *tensor) const {
+    if (tensor == nullptr || tensor->element_type() == nullptr) {
+        throw std::runtime_error("Missing SPIR-V graph tensor element type");
+    }
     const VkFormat format = getVkFormat(tensor->element_type());
     auto dimensions = tensor->is_shaped() ? getConstVector<int64_t>(tensor->shape_id()) : std::vector<int64_t>{};
 
@@ -373,6 +383,9 @@ std::shared_ptr<TensorDescriptor> GraphExtInstContext::makeCompositeTensor(const
 }
 
 VkFormat GraphExtInstContext::getVkFormat(const analysis::Type *type) const {
+    if (type == nullptr) {
+        throw std::runtime_error("Missing SPIR-V scalar type for graph tensor");
+    }
     const auto *integerType = type->AsInteger();
     if (integerType) {
         switch (integerType->width()) {
