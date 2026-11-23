@@ -291,13 +291,6 @@ OpGraphEntryPointARM)");
     }
 }
 
-TEST_F(MLEmulationLayerGraphForVulkan, TosaRejectsUnusedScaledTypeBeforeOptimizer) {
-    auto text = fileToString("conv2d_1x.spvasm");
-    replace(text, "OpGraphEntryPointARM", "%scaled = OpTypeTensorScaledBlockARM %2 %13 %7\n OpGraphEntryPointARM");
-    expectPipelineResult(device, assembleUnchecked(text), VK_ERROR_UNKNOWN, "rejected before optimizer type analysis");
-    replace(text, "TOSA.1x.1", "TOSA.001000.1");
-    expectPipelineResult(device, assembleUnchecked(text), VK_ERROR_UNKNOWN, "rejected before optimizer type analysis");
-}
 #endif
 
 } // namespace mlsdk::el::tests

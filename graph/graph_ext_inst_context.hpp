@@ -151,6 +151,8 @@ class GraphExtInstContext {
 
     const analysis::TensorARM *getTensorType(const Operand &operand) const;
     const analysis::TensorARM *getTensorType(uint32_t id) const;
+    void checkTensorDescription(const mlsdk::el::compute::TensorDescriptor &description,
+                                const analysis::TensorARM *type) const;
     std::tuple<uint64_t, uint64_t> getDescriptorSetAndBinding(const Operand &operand);
     std::tuple<uint64_t, uint64_t, std::shared_ptr<mlsdk::el::compute::TensorDescriptor>>
     getTensorByDecoration(const Operand &operand, uint32_t arrayIndex);
