@@ -1,0 +1,65 @@
+;
+; SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+; SPDX-License-Identifier: Apache-2.0
+;
+OpCapability Shader
+OpCapability VulkanMemoryModel
+OpCapability TensorsARM
+OpCapability GraphARM
+OpExtension "SPV_ARM_tensors"
+OpExtension "SPV_ARM_graph"
+%tosa = OpExtInstImport "TOSA.001000.1"
+OpMemoryModel Logical Vulkan
+OpDecorate %input DescriptorSet 0
+OpDecorate %input Binding 0
+OpDecorate %weights DescriptorSet 0
+OpDecorate %weights Binding 1
+OpDecorate %bias DescriptorSet 0
+OpDecorate %bias Binding 2
+OpDecorate %output DescriptorSet 0
+OpDecorate %output Binding 3
+%uint = OpTypeInt 32 0
+%float = OpTypeFloat 32
+%bool = OpTypeBool
+%false = OpConstantFalse %bool
+%c0 = OpConstant %uint 0
+%c1 = OpConstant %uint 1
+%c2 = OpConstant %uint 2
+%c3 = OpConstant %uint 3
+%c4 = OpConstant %uint 4
+%pt = OpConstant %uint @pad_top@
+%pb = OpConstant %uint @pad_bottom@
+%pl = OpConstant %uint @pad_left@
+%pr = OpConstant %uint @pad_right@
+%sy = OpConstant %uint @stride_y@
+%sx = OpConstant %uint @stride_x@
+%dy = OpConstant %uint @dilation_y@
+%dx = OpConstant %uint @dilation_x@
+%a1 = OpTypeArray %uint %c1
+%s1 = OpConstantComposite %a1 %c1
+%s2 = OpConstantComposite %a1 %c2
+%s4 = OpConstantComposite %a1 %c4
+%u2 = OpTypeTensorARM %uint %c1 %s2
+%u4 = OpTypeTensorARM %uint %c1 %s4
+%f1 = OpTypeTensorARM %float %c1 %s1
+%pad = OpConstantComposite %u4 %pt %pb %pl %pr
+%stride = OpConstantComposite %u2 %sy %sx
+%dilation = OpConstantComposite %u2 %dy %dx
+%zero = OpConstantNull %f1
+%tensor4 = OpTypeTensorARM %float %c4
+%tensor1 = OpTypeTensorARM %float %c1
+%ptr4 = OpTypePointer UniformConstant %tensor4
+%ptr1 = OpTypePointer UniformConstant %tensor1
+%input = OpVariable %ptr4 UniformConstant
+%weights = OpVariable %ptr4 UniformConstant
+%bias = OpVariable %ptr1 UniformConstant
+%output = OpVariable %ptr4 UniformConstant
+%graphType = OpTypeGraphARM 3 %tensor4 %tensor4 %tensor1 %tensor4
+OpGraphEntryPointARM %graph "conv2d" %input %weights %bias %output
+%graph = OpGraphARM %graphType
+%in = OpGraphInputARM %tensor4 %c0
+%w = OpGraphInputARM %tensor4 %c1
+%b = OpGraphInputARM %tensor1 %c2
+%result = OpExtInst %tensor4 %tosa CONV2D %pad %stride %dilation %c3 %false %in %w %b %zero %zero
+OpGraphSetOutputARM %result %c0
+OpGraphEndARM
