@@ -418,6 +418,7 @@ class GraphLayer : public VulkanLayerImpl {
         static const vTable vtable = {
             // Device functions
             {"vkGetDeviceProcAddr", PFN_vkVoidFunction(vkGetDeviceProcAddr)},
+            {"vkSetDebugUtilsObjectNameEXT", PFN_vkVoidFunction(vkSetDebugUtilsObjectNameEXT)},
             {"vkDeviceWaitIdle", PFN_vkVoidFunction(vkDeviceWaitIdle)},
             {"vkWaitForFences", PFN_vkVoidFunction(vkWaitForFences)},
             {"vkGetFenceStatus", PFN_vkVoidFunction(vkGetFenceStatus)},
@@ -477,6 +478,10 @@ class GraphLayer : public VulkanLayerImpl {
             {"vkCmdPipelineBarrier2", PFN_vkVoidFunction(vkCmdPipelineBarrier2)}};
 
         if (auto it = vtable.find(name); it != vtable.end()) {
+            if (it->first == "vkSetDebugUtilsObjectNameEXT") {
+                // Preserve downstream availability of this optional command.
+                return VulkanLayerImpl::vkGetDeviceProcAddr(device, name) ? it->second : nullptr;
+            }
             return it->second;
         }
 
