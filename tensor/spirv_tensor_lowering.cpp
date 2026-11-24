@@ -16,6 +16,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -77,12 +78,25 @@ void requireUses(IRContext &context, uint32_t id, std::initializer_list<spv::Op>
     });
 }
 
+void requireUniformDescriptor(IRContext &context, const Instruction &inst) {
+    const auto check = [&](const uint32_t *id) {
+        if (context.get_decoration_mgr()->HasDecoration(*id, spv::Decoration::NonUniform)) {
+            // TODO: Translate non-uniform tensor descriptor indexing.
+            throw std::runtime_error("Unsupported non-uniform TensorARM descriptor indexing");
+        }
+    };
+    inst.ForEachId(check);
+}
+
 struct TensorModule {
     std::map<uint32_t, TensorType> types;
-    std::vector<Instruction *> pointers;
+    std::vector<Instruction *> arrayTypes;
+    std::vector<Instruction *> pointerTypes;
     std::vector<Instruction *> variables;
+    std::vector<Instruction *> accessChains;
     std::vector<Instruction *> loads;
     std::vector<std::pair<Instruction *, TensorType>> accesses;
+    bool dynamicIndexing = false;
 };
 
 TensorModule collectTensors(IRContext &context) {
@@ -107,33 +121,73 @@ TensorModule collectTensors(IRContext &context) {
         }
         const auto literalRank = rank ? std::optional<uint32_t>{static_cast<uint32_t>(*rank)} : std::nullopt;
         tensors.types.emplace(inst.result_id(), TensorType{element, rankId, literalRank});
-        // TODO: Transform tensor function parameters and descriptor arrays.
-        requireUses(context, inst.result_id(), {spv::Op::OpTypePointer, spv::Op::OpLoad});
+        // TODO: Transform tensor function parameters.
+        requireUses(context, inst.result_id(), {spv::Op::OpTypePointer, spv::Op::OpTypeArray, spv::Op::OpLoad});
+    }
+    std::set<uint32_t> tensorAndArrayTypeIds;
+    for (const auto &[id, type] : tensors.types) {
+        tensorAndArrayTypeIds.insert(id);
     }
     for (auto &inst : context.types_values()) {
-        if (inst.opcode() != spv::Op::OpTypePointer || tensors.types.count(inst.GetSingleWordInOperand(1)) == 0) {
+        if (inst.opcode() != spv::Op::OpTypeArray) {
+            continue;
+        }
+        const auto elementTypeId = inst.GetSingleWordInOperand(0);
+        if (tensorAndArrayTypeIds.count(elementTypeId)) {
+            requireUses(context, inst.result_id(), {spv::Op::OpTypePointer});
+            tensorAndArrayTypeIds.insert(inst.result_id());
+            tensors.arrayTypes.push_back(&inst);
+        }
+    }
+    std::set<uint32_t> pointerTypeIds;
+    for (auto &inst : context.types_values()) {
+        if (inst.opcode() != spv::Op::OpTypePointer) {
+            continue;
+        }
+        const auto pointeeTypeId = inst.GetSingleWordInOperand(1);
+        if (tensorAndArrayTypeIds.count(pointeeTypeId) == 0) {
             continue;
         }
         if (inst.GetSingleWordInOperand(0) != static_cast<uint32_t>(spv::StorageClass::UniformConstant)) {
             throw std::runtime_error("TensorARM pointers must refer to uniform tensor descriptors");
         }
-        requireUses(context, inst.result_id(), {spv::Op::OpVariable});
-        tensors.pointers.push_back(&inst);
+        requireUses(context, inst.result_id(),
+                    {spv::Op::OpVariable, spv::Op::OpAccessChain, spv::Op::OpInBoundsAccessChain});
+        pointerTypeIds.insert(inst.result_id());
+        tensors.pointerTypes.push_back(&inst);
     }
-    for (auto *pointer : tensors.pointers) {
+    for (auto *pointer : tensors.pointerTypes) {
         context.get_def_use_mgr()->ForEachUser(pointer, [&](Instruction *inst) {
             if (inst->opcode() == spv::Op::OpVariable) {
-                requireUses(context, inst->result_id(), {spv::Op::OpEntryPoint, spv::Op::OpLoad});
+                requireUses(
+                    context, inst->result_id(),
+                    {spv::Op::OpEntryPoint, spv::Op::OpLoad, spv::Op::OpAccessChain, spv::Op::OpInBoundsAccessChain});
                 tensors.variables.push_back(inst);
             }
         });
     }
     for (auto &function : *context.module()) {
         function.ForEachInst([&](Instruction *inst) {
+            if (pointerTypeIds.count(inst->type_id()) &&
+                (inst->opcode() == spv::Op::OpAccessChain || inst->opcode() == spv::Op::OpInBoundsAccessChain)) {
+                requireUses(context, inst->result_id(),
+                            {spv::Op::OpLoad, spv::Op::OpAccessChain, spv::Op::OpInBoundsAccessChain});
+                requireUniformDescriptor(context, *inst);
+                for (uint32_t i = 1; i < inst->NumInOperands(); ++i) {
+                    const auto opcode = definition(context, inst->GetSingleWordInOperand(i)).opcode();
+                    tensors.dynamicIndexing |= opcode != spv::Op::OpConstant && opcode != spv::Op::OpConstantNull &&
+                                               opcode != spv::Op::OpSpecConstant && opcode != spv::Op::OpSpecConstantOp;
+                }
+                tensors.accessChains.push_back(inst);
+            }
             if (inst->opcode() == spv::Op::OpLoad && tensors.types.count(inst->type_id()) != 0) {
-                const auto *variable = &definition(context, inst->GetSingleWordInOperand(0));
-                if (std::find(tensors.variables.begin(), tensors.variables.end(), variable) ==
-                    tensors.variables.end()) {
+                requireUniformDescriptor(context, *inst);
+                const auto *pointer = &definition(context, inst->GetSingleWordInOperand(0));
+                const bool indexed =
+                    pointerTypeIds.count(pointer->type_id()) && (pointer->opcode() == spv::Op::OpAccessChain ||
+                                                                 pointer->opcode() == spv::Op::OpInBoundsAccessChain);
+                if (!indexed &&
+                    std::find(tensors.variables.begin(), tensors.variables.end(), pointer) == tensors.variables.end()) {
                     throw std::runtime_error("TensorARM load must refer to a uniform tensor descriptor");
                 }
                 requireUses(context, inst->result_id(),
@@ -152,9 +206,40 @@ TensorModule collectTensors(IRContext &context) {
     return tensors;
 }
 
+std::map<uint32_t, uint32_t> createReplacementTypes(AccessState &state, const TensorModule &tensors) {
+    auto &context = state.context;
+    auto *types = context.get_type_mgr();
+    const auto metadataBlockTypeId = definition(context, state.interfacePointerType).GetSingleWordInOperand(1);
+    std::map<uint32_t, uint32_t> replacementTypeIds;
+    for (const auto &[id, type] : tensors.types) {
+        replacementTypeIds.emplace(id, metadataBlockTypeId);
+    }
+    // Each array element is a separate descriptor buffer, not a packed metadata
+    // entry within one buffer. Keep array lengths and selection indices intact.
+    for (auto *array : tensors.arrayTypes) {
+        const auto elementTypeId = array->GetSingleWordInOperand(0);
+        const auto replacementElementTypeId = replacementTypeIds.at(elementTypeId);
+        const auto *arrayType = types->GetType(array->result_id())->AsArray();
+        const spvtools::opt::analysis::Array replacement(types->GetType(replacementElementTypeId),
+                                                         arrayType->length_info());
+        replacementTypeIds.emplace(array->result_id(), types->GetTypeInstruction(&replacement));
+    }
+    for (auto *pointer : tensors.pointerTypes) {
+        const auto pointeeTypeId = pointer->GetSingleWordInOperand(1);
+        const auto replacementPointeeTypeId = replacementTypeIds.at(pointeeTypeId);
+        const auto replacementPointerTypeId =
+            types->FindPointerToType(replacementPointeeTypeId, spv::StorageClass::Uniform);
+        replacementTypeIds.emplace(pointer->result_id(), replacementPointerTypeId);
+    }
+    return replacementTypeIds;
+}
+
 void transformInterfaces(AccessState &state, const TensorModule &tensors) {
     auto &context = state.context;
     auto *decorations = context.get_decoration_mgr();
+    const auto replacementTypeIds = createReplacementTypes(state, tensors);
+
+    // Replace the tensor variables while preserving their descriptor set and binding.
     for (auto *variable : tensors.variables) {
         for (const auto *decoration : decorations->GetDecorationsFor(variable->result_id(), false)) {
             switch (static_cast<spv::Decoration>(decoration->GetSingleWordInOperand(1))) {
@@ -168,24 +253,36 @@ void transformInterfaces(AccessState &state, const TensorModule &tensors) {
                 throw std::runtime_error("Unsupported TensorARM variable decoration");
             }
         }
-        const auto replacement = context.TakeNextId();
+        const auto replacementVariableId = context.TakeNextId();
+        const auto replacementPointerTypeId = replacementTypeIds.at(variable->type_id());
         context.AddGlobalValue(
-            makeInstruction(context, spv::Op::OpVariable, state.interfacePointerType, replacement,
+            makeInstruction(context, spv::Op::OpVariable, replacementPointerTypeId, replacementVariableId,
                             {{SPV_OPERAND_TYPE_STORAGE_CLASS, {static_cast<uint32_t>(spv::StorageClass::Uniform)}}}));
         // Read/write restrictions apply to tensor data; descriptor metadata is always readable.
-        decorations->CloneDecorations(variable->result_id(), replacement,
+        decorations->CloneDecorations(variable->result_id(), replacementVariableId,
                                       {spv::Decoration::DescriptorSet, spv::Decoration::Binding});
-        context.ReplaceAllUsesWithPredicate(variable->result_id(), replacement,
+        context.ReplaceAllUsesWithPredicate(variable->result_id(), replacementVariableId,
                                             [](Instruction *use) { return use->opcode() != spv::Op::OpDecorate; });
         context.KillInst(variable);
     }
-    const auto zero = context.get_constant_mgr()->GetUIntConstId(0);
+
+    // Array selections keep their indices and acquire the replacement pointer types.
+    for (auto *selection : tensors.accessChains) {
+        selection->SetResultType(replacementTypeIds.at(selection->type_id()));
+        context.UpdateDefUse(selection);
+    }
+    if (tensors.dynamicIndexing) {
+        context.AddCapability(spv::Capability::UniformBufferArrayDynamicIndexing);
+    }
+    // Each selected block contains its descriptor metadata at member zero.
+    const auto descriptorMember = context.get_constant_mgr()->GetUIntConstId(0);
     for (auto *load : tensors.loads) {
         InstructionBuilder builder(&context, load, IRContext::kAnalysisDefUse);
-        const auto pointer =
-            builder.AddAccessChain(state.descriptorPointerType, load->GetSingleWordInOperand(0), {zero})->result_id();
+        const auto selectedBlockPointer = load->GetSingleWordInOperand(0);
+        const auto descriptorMemberPointer =
+            builder.AddAccessChain(state.descriptorPointerType, selectedBlockPointer, {descriptorMember})->result_id();
         load->SetResultType(state.descriptorType);
-        load->SetInOperand(0, {pointer});
+        load->SetInOperand(0, {descriptorMemberPointer});
         context.UpdateDefUse(load);
     }
 }
@@ -286,8 +383,11 @@ void lowerAccesses(AccessState &state, const TensorModule &tensors) {
 }
 
 void removeTensorDeclarations(IRContext &context, const TensorModule &tensors) {
-    for (auto *pointer : tensors.pointers) {
+    for (auto *pointer : tensors.pointerTypes) {
         context.KillInst(pointer);
+    }
+    for (auto it = tensors.arrayTypes.rbegin(); it != tensors.arrayTypes.rend(); ++it) {
+        context.KillInst(*it);
     }
     for (const auto &[id, type] : tensors.types) {
         context.KillInst(&definition(context, id));

@@ -154,6 +154,12 @@ TEST(TensorSpirvLowering, RemovesUnusedTensorDeclarations) {
         auto spirv = assemble(shader);
         ASSERT_NO_FATAL_FAILURE(expectLowered(spirv));
     }
+    // An unused indexing capability must not prevent ordinary scalar accesses.
+    auto scalar = tensorShader("%value = OpTensorReadARM %uint %loaded %coords");
+    scalar.insert(scalar.begin() + 5, {(2u << 16) | uint32_t(spv::OpCapability),
+                                       uint32_t(spv::CapabilityStorageTensorArrayNonUniformIndexingARM)});
+    ASSERT_TRUE(spvtools::SpirvTools(SPV_ENV_VULKAN_1_3).Validate(scalar));
+    ASSERT_NO_FATAL_FAILURE(expectLowered(scalar));
 }
 
 TEST(TensorSpirvLowering, LowersDirectScalarTypesAndRanksWithStorageBuffer) {
@@ -309,6 +315,68 @@ OpTensorWriteARM %loaded %coords %value
         SCOPED_TRACE(rank);
         ASSERT_NO_FATAL_FAILURE(expectSpecialized(spirv, {{9, {rank}}}));
     }
+}
+
+TEST(TensorSpirvLowering, LowersDescriptorArraysAndPreservesSpecialization) {
+    for (const std::string index : {"1", "selection.index"}) {
+        for (const bool specialized : {false, true}) {
+            SCOPED_TRACE(index + (specialized ? " specialized length" : " literal length"));
+            std::string shader = R"(
+#version 460
+#extension GL_ARM_tensors : require
+layout(local_size_x = 1) in;
+layout(push_constant) uniform Selection { uint index; } selection;
+layout(set = 0, binding = 1, std430) buffer Results { uint width; } results;
+)";
+            shader += specialized ? "layout(constant_id = 0) const uint COUNT = 3;\n" : "const uint COUNT = 3;\n";
+            shader += "layout(set = 0, binding = 0) uniform tensorARM<uint, 2> data[COUNT];\n";
+            const auto selected = "data[" + index + "]";
+            shader += "void main() { uint value; tensorReadARM(" + selected + ", uint[](0, 0), value);\n";
+            shader += "tensorWriteARM(" + selected + ", uint[](0, 1), value);\n";
+            shader += "results.width = tensorSizeARM(" + selected + ", 1); }\n";
+            const auto input = utils::glslToSpirv(shader);
+            ASSERT_TRUE(spvtools::SpirvTools(SPV_ENV_VULKAN_1_3).Validate(input));
+            for (const bool inBounds : {false, true}) {
+                auto module = input;
+                // Both access-chain forms select descriptors without changing the indices.
+                if (inBounds) {
+                    for (size_t offset = 5; offset < module.size(); offset += module[offset] >> 16) {
+                        if ((module[offset] & 0xffff) == static_cast<uint32_t>(spv::OpAccessChain)) {
+                            module[offset] = (module[offset] & 0xffff0000) | uint32_t(spv::OpInBoundsAccessChain);
+                        }
+                    }
+                }
+                ASSERT_NO_FATAL_FAILURE(expectLowered(module));
+                EXPECT_EQ(specializationInstructions(module), specializationInstructions(input));
+                expectSpecialized(module, {{0, {2}}});
+                expectSpecialized(module, {{0, {4}}});
+                std::string disassembly;
+                ASSERT_TRUE(spvtools::SpirvTools(SPV_ENV_VULKAN_1_3).Disassemble(module, &disassembly));
+                EXPECT_EQ(disassembly.find("UniformBufferArrayDynamicIndexing") != std::string::npos,
+                          index == "selection.index");
+            }
+        }
+    }
+}
+
+TEST(TensorSpirvLowering, RejectsNonUniformDescriptorIndexing) {
+    const auto input = utils::glslToSpirv(R"(
+#version 460
+#extension GL_ARM_tensors : require
+#extension GL_EXT_nonuniform_qualifier : require
+layout(local_size_x = 2) in;
+layout(set = 0, binding = 0) uniform tensorARM<uint, 1> data[2];
+void main() {
+    tensorWriteARM(data[nonuniformEXT(gl_LocalInvocationID.x)], uint[](0), 1u);
+}
+)");
+    auto spirv = input;
+    bool loweredTensorCompute = true;
+    std::string diagnostic;
+    EXPECT_FALSE(lowerTensorSpirv(spirv, loweredTensorCompute, captureDiagnostic(diagnostic)));
+    EXPECT_FALSE(loweredTensorCompute);
+    EXPECT_TRUE(spirv.empty());
+    EXPECT_NE(diagnostic.find("non-uniform"), std::string::npos);
 }
 
 TEST(TensorSpirvLowering, LowersNumericScalarLayoutVariants) {
