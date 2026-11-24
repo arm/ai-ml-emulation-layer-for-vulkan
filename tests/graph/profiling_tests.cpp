@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -23,6 +24,14 @@ namespace mlsdk::el::tests {
 using namespace utilities;
 
 namespace {
+
+VKAPI_ATTR vk::Bool32 VKAPI_CALL collectTimestampValidationErrors(vk::DebugUtilsMessageSeverityFlagBitsEXT,
+                                                                  vk::DebugUtilsMessageTypeFlagsEXT,
+                                                                  const vk::DebugUtilsMessengerCallbackDataEXT *data,
+                                                                  void *userData) {
+    static_cast<std::vector<std::string> *>(userData)->emplace_back(data->pMessage);
+    return VK_FALSE;
+}
 
 ProfilingGraph makeRawSadProfilingGraph(std::shared_ptr<Device> &device) {
     const int64_t height = 5;
@@ -151,6 +160,52 @@ void expectRawSadProfileProperty(const std::shared_ptr<Device> &device, const Pr
                                       "\"time_ms\"",
                                   });
 }
+
+TEST(MLEmulationLayerForVulkan, GraphTimestampStagesAreTranslated) {
+    const vk::raii::Context context;
+    const auto layers = context.enumerateInstanceLayerProperties();
+    if (std::none_of(layers.begin(), layers.end(), [](const auto &layer) {
+            return std::strcmp(layer.layerName, "VK_LAYER_KHRONOS_validation") == 0;
+        })) {
+        GTEST_SKIP() << "Validation layer is required to detect untranslated timestamp stages";
+    }
+    const ScopedEnvironment validation{"VMEL_VALIDATION", "1"};
+    const auto device = createDevice();
+    if (!computeQueueSupportsTimestampQueries(device)) {
+        GTEST_SKIP() << "Compute queue family does not support timestamp queries";
+    }
+    std::vector<std::string> errors;
+    const auto &instance = &(*device->getPhysicalDevice()->getInstance());
+    const vk::raii::DebugUtilsMessengerEXT messenger{
+        instance, vk::DebugUtilsMessengerCreateInfoEXT({}, vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
+                                                       vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation,
+                                                       collectTimestampValidationErrors, &errors)};
+    const auto &vkDevice = &(*device);
+    const auto family = device->getPhysicalDevice()->getComputeFamilyIndex();
+    const vk::raii::CommandPool pool(vkDevice, vk::CommandPoolCreateInfo({}, family));
+    auto command = std::move(vkDevice.allocateCommandBuffers({*pool, vk::CommandBufferLevel::ePrimary, 1}).front());
+    const vk::raii::QueryPool queries(vkDevice, vk::QueryPoolCreateInfo({}, vk::QueryType::eTimestamp, 4));
+    const auto core = reinterpret_cast<PFN_vkCmdWriteTimestamp2>(vkDevice.getProcAddr("vkCmdWriteTimestamp2"));
+    const auto khr = reinterpret_cast<PFN_vkCmdWriteTimestamp2KHR>(vkDevice.getProcAddr("vkCmdWriteTimestamp2KHR"));
+    ASSERT_NE(core, nullptr);
+    ASSERT_NE(khr, nullptr);
+    command.begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+    command.resetQueryPool(*queries, 0, 4);
+    core(*command, VK_PIPELINE_STAGE_2_DATA_GRAPH_BIT_ARM, *queries, 0);
+    khr(*command, VK_PIPELINE_STAGE_2_DATA_GRAPH_BIT_ARM, *queries, 1);
+    core(*command, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, *queries, 2);
+    khr(*command, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, *queries, 3);
+    command.end();
+    const vk::raii::Queue queue(vkDevice, family, 0);
+    queue.submit(vk::SubmitInfo({}, {}, *command));
+    queue.waitIdle();
+    const auto [result, timestamps] = queries.getResults<uint64_t>(
+        0, 4, 4 * sizeof(uint64_t), sizeof(uint64_t), vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWait);
+    EXPECT_EQ(result, vk::Result::eSuccess);
+    EXPECT_EQ(timestamps.size(), 4u);
+    EXPECT_TRUE(errors.empty()) << testing::PrintToString(errors);
+}
+
 TEST(MLEmulationLayerForVulkan, GraphProfilingQueryableProperty) {
     ScopedEnvironment enableProfiling{"VMEL_GRAPH_PROFILING", "1"};
 

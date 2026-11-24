@@ -50,6 +50,13 @@ namespace mlsdk::el::layer {
 namespace {
 constexpr std::string_view graphPipelineCreatedLog = "Graph pipeline created";
 
+VkPipelineStageFlags2 replaceGraphStage(VkPipelineStageFlags2 flags) {
+    if (flags & VK_PIPELINE_STAGE_2_DATA_GRAPH_BIT_ARM) {
+        flags = (flags & ~VK_PIPELINE_STAGE_2_DATA_GRAPH_BIT_ARM) | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+    }
+    return flags;
+}
+
 std::unordered_map<uint32_t, std::vector<uint32_t>>
 makeSpecConstantDefaultValues(const VkSpecializationInfo &specializationInfo) {
     std::unordered_map<uint32_t, std::vector<uint32_t>> values;
@@ -461,6 +468,10 @@ class GraphLayer : public VulkanLayerImpl {
             // ShaderModule
             {"vkCreateShaderModule", PFN_vkVoidFunction(vkCreateShaderModule)},
             {"vkDestroyShaderModule", PFN_vkVoidFunction(vkDestroyShaderModule)},
+
+            // Timestamps
+            {"vkCmdWriteTimestamp2", PFN_vkVoidFunction(vkCmdWriteTimestamp2)},
+            {"vkCmdWriteTimestamp2KHR", PFN_vkVoidFunction(vkCmdWriteTimestamp2KHR)},
 
             // Barrier
             {"vkCmdPipelineBarrier2", PFN_vkVoidFunction(vkCmdPipelineBarrier2)}};
@@ -2010,6 +2021,26 @@ class GraphLayer : public VulkanLayerImpl {
     }
 
     /*******************************************************************************
+     * Timestamps
+     *******************************************************************************/
+
+    static void VKAPI_CALL vkCmdWriteTimestamp2(VkCommandBuffer commandBuffer, VkPipelineStageFlags2 stage,
+                                                VkQueryPool queryPool, uint32_t query) {
+        const auto handle = VulkanLayerImpl::getHandle(commandBuffer);
+        const auto write = handle->loader->vkCmdWriteTimestamp2 ? handle->loader->vkCmdWriteTimestamp2
+                                                                : handle->loader->vkCmdWriteTimestamp2KHR;
+        write(commandBuffer, replaceGraphStage(stage), queryPool, query);
+    }
+
+    static void VKAPI_CALL vkCmdWriteTimestamp2KHR(VkCommandBuffer commandBuffer, VkPipelineStageFlags2 stage,
+                                                   VkQueryPool queryPool, uint32_t query) {
+        const auto handle = VulkanLayerImpl::getHandle(commandBuffer);
+        const auto write = handle->loader->vkCmdWriteTimestamp2KHR ? handle->loader->vkCmdWriteTimestamp2KHR
+                                                                   : handle->loader->vkCmdWriteTimestamp2;
+        write(commandBuffer, replaceGraphStage(stage), queryPool, query);
+    }
+
+    /*******************************************************************************
      * Barrier
      *******************************************************************************/
 
@@ -2036,21 +2067,13 @@ class GraphLayer : public VulkanLayerImpl {
             return newFlag;
         };
 
-        auto replaceStageFlag = [](const auto flag) {
-            auto newFlag = flag;
-            if (newFlag & VK_PIPELINE_STAGE_2_DATA_GRAPH_BIT_ARM) {
-                newFlag = (newFlag ^ VK_PIPELINE_STAGE_2_DATA_GRAPH_BIT_ARM) | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-            }
-            return newFlag;
-        };
-
         auto replaceBarriersGraphFlag = [&](auto &barriers) {
             for (auto &barrier : barriers) {
                 barrier.srcAccessMask = replaceAccessFlag(barrier.srcAccessMask);
-                barrier.srcStageMask = replaceStageFlag(barrier.srcStageMask);
+                barrier.srcStageMask = replaceGraphStage(barrier.srcStageMask);
 
                 barrier.dstAccessMask = replaceAccessFlag(barrier.dstAccessMask);
-                barrier.dstStageMask = replaceStageFlag(barrier.dstStageMask);
+                barrier.dstStageMask = replaceGraphStage(barrier.dstStageMask);
             }
         };
 
