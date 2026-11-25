@@ -260,12 +260,6 @@ macro(mlel_spv_reduce NAME INIT OPERATION TYPES)
     endforeach()
 endmacro()
 
-if(WIN32 AND (CMAKE_GENERATOR MATCHES "Visual Studio"))
-    set(ESCAPE_CHAR "%")
-else()
-    set(ESCAPE_CHAR "")
-endif()
-
 include(tosa_shader_variants.cmake)
 
 # Block Match
