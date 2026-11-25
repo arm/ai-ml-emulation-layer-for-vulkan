@@ -506,6 +506,28 @@ INSTANTIATE_TEST_SUITE_P(TosaConversions, TosaPoolingStorage,
                                     (std::string(std::get<1>(info.param)) == "TOSA.1x.1" ? "_Tosa1x" : "");
                          });
 
+// TOSA divides the AVG_POOL2D sum with reciprocal_scale() and apply_scale_32(). For this 133x133 window the means
+// are 32766.49997 and -32766.49997: TOSA gives 32767 and -32767, while rounding the exact quotient gives 32766 and
+// -32766.
+TEST_P(TosaGraphTest, TosaInt16AveragePoolLargeWindowRounding) {
+    constexpr int64_t size = 133;
+    constexpr size_t count = size * size;
+    std::vector<int16_t> values(count * 2);
+    for (size_t i = 0; i < count; ++i) {
+        const int16_t value = i < count / 2 ? 32767 : 32766;
+        values[2 * i] = value;
+        values[(2 * i) + 1] = static_cast<int16_t>(-value);
+    }
+    auto input = storageTestTensor(device, vk::Format::eR16Sint, {1, size, size, 2}, values);
+    const std::string constants =
+        "%u133 = OpConstant %i32 133\n%kernel133 = OpConstantComposite %const_pair %u133 %u133\n";
+    expectStorageOperation(device, {input}, vk::Format::eR16Sint, {1, 1, 1, 2},
+                           makeStorageConversionGraph("%i16", "%i16", 4, 4, false,
+                                                      "AVG_POOL2D %kernel133 %stride %pad %u1 %a %zp16 %zp16",
+                                                      constants, GetParam()),
+                           std::vector<int16_t>{32767, -32767});
+}
+
 TEST_P(TosaGraphTest, TosaIntegerStorageReduceMin) {
     auto input = storageTestTensor(device, vk::Format::eR32Uint, {4}, std::vector<int32_t>{-128, -2, -1, 127});
     expectStorageOperation(
