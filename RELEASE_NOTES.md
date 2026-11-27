@@ -58,6 +58,8 @@
 - Grow backing buffers to cover image pitches for optimally tiled tensor/image
   aliases. All aliases must be bound before tensor initialization, descriptor
   writes, or command recording; see the README for aliasing limitations.
+- Route device-level debug object naming through graph and tensor emulation,
+  preventing invalid emulated handles from reaching the driver.
 - Translate data graph timestamp stages to compute stages for core and KHR
   timestamp commands.
 - Fixed optical-flow descriptor handling to support dispatching a session multiple

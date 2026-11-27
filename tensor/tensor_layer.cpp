@@ -105,6 +105,7 @@ class TensorLayer : public VulkanLayerImpl {
         static const vTable vtable = {
             // Device functions
             {"vkGetDeviceProcAddr", PFN_vkVoidFunction(vkGetDeviceProcAddr)},
+            {"vkSetDebugUtilsObjectNameEXT", PFN_vkVoidFunction(vkSetDebugUtilsObjectNameEXT)},
 
             // Tensor extension
             {"vkCreateTensorARM", PFN_vkVoidFunction(vkCreateTensorARM)},
@@ -147,6 +148,10 @@ class TensorLayer : public VulkanLayerImpl {
             {"vkFreeMemory", PFN_vkVoidFunction(vkFreeMemory)}};
 
         if (auto it = vtable.find(name); it != vtable.end()) {
+            if (it->first == "vkSetDebugUtilsObjectNameEXT") {
+                // Preserve downstream availability of this optional command.
+                return VulkanLayerImpl::vkGetDeviceProcAddr(device, name) ? it->second : nullptr;
+            }
             return it->second;
         }
 

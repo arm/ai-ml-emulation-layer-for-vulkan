@@ -25,10 +25,10 @@ using namespace utilities;
 
 namespace {
 
-VKAPI_ATTR vk::Bool32 VKAPI_CALL collectTimestampValidationErrors(vk::DebugUtilsMessageSeverityFlagBitsEXT,
-                                                                  vk::DebugUtilsMessageTypeFlagsEXT,
-                                                                  const vk::DebugUtilsMessengerCallbackDataEXT *data,
-                                                                  void *userData) {
+VKAPI_ATTR vk::Bool32 VKAPI_CALL collectValidationErrors(vk::DebugUtilsMessageSeverityFlagBitsEXT,
+                                                         vk::DebugUtilsMessageTypeFlagsEXT,
+                                                         const vk::DebugUtilsMessengerCallbackDataEXT *data,
+                                                         void *userData) {
     static_cast<std::vector<std::string> *>(userData)->emplace_back(data->pMessage);
     return VK_FALSE;
 }
@@ -161,6 +161,44 @@ void expectRawSadProfileProperty(const std::shared_ptr<Device> &device, const Pr
                                   });
 }
 
+TEST(MLEmulationLayerForVulkan, DeviceLookupRoutesEmulatedObjectNames) {
+    const vk::raii::Context context;
+    const auto layers = context.enumerateInstanceLayerProperties();
+    if (std::none_of(layers.begin(), layers.end(), [](const auto &layer) {
+            return std::strcmp(layer.layerName, "VK_LAYER_KHRONOS_validation") == 0;
+        })) {
+        GTEST_SKIP() << "Validation layer is required to detect untranslated object names";
+    }
+    const ScopedEnvironment validation{"VMEL_VALIDATION", "1"};
+    auto device = createDevice();
+    std::vector<std::string> errors;
+    const auto &instance = &(*device->getPhysicalDevice()->getInstance());
+    const vk::raii::DebugUtilsMessengerEXT messenger{
+        instance, vk::DebugUtilsMessengerCreateInfoEXT({}, vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
+                                                       vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation,
+                                                       collectValidationErrors, &errors)};
+    const auto graph = makeMaxPoolProfilingGraph(device);
+    const auto &tensor = graph.descriptorMap.at(0).at(0).front();
+    const auto &vkDevice = &(*device);
+    const vk::raii::TensorViewARM view(vkDevice, vk::TensorViewCreateInfoARM({}, &(*tensor), tensor->getFormat()));
+    const auto nameObject =
+        reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT>(vkDevice.getProcAddr("vkSetDebugUtilsObjectNameEXT"));
+    ASSERT_NE(nameObject, nullptr);
+    for (const auto &name : std::array{
+             VkDebugUtilsObjectNameInfoEXT{VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT, nullptr,
+                                           VK_OBJECT_TYPE_TENSOR_ARM,
+                                           reinterpret_cast<uint64_t>(static_cast<VkTensorARM>(&(*tensor))), "input"},
+             VkDebugUtilsObjectNameInfoEXT{VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT, nullptr,
+                                           VK_OBJECT_TYPE_TENSOR_VIEW_ARM,
+                                           reinterpret_cast<uint64_t>(static_cast<VkTensorViewARM>(*view)), "view"},
+             VkDebugUtilsObjectNameInfoEXT{
+                 VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT, nullptr, VK_OBJECT_TYPE_PIPELINE,
+                 reinterpret_cast<uint64_t>(static_cast<VkPipeline>(*graph.pipeline->getPipeline())), "graph"}}) {
+        EXPECT_EQ(nameObject(*vkDevice, &name), VK_SUCCESS);
+    }
+    EXPECT_TRUE(errors.empty()) << testing::PrintToString(errors);
+}
+
 TEST(MLEmulationLayerForVulkan, GraphTimestampStagesAreTranslated) {
     const vk::raii::Context context;
     const auto layers = context.enumerateInstanceLayerProperties();
@@ -179,7 +217,7 @@ TEST(MLEmulationLayerForVulkan, GraphTimestampStagesAreTranslated) {
     const vk::raii::DebugUtilsMessengerEXT messenger{
         instance, vk::DebugUtilsMessengerCreateInfoEXT({}, vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
                                                        vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation,
-                                                       collectTimestampValidationErrors, &errors)};
+                                                       collectValidationErrors, &errors)};
     const auto &vkDevice = &(*device);
     const auto family = device->getPhysicalDevice()->getComputeFamilyIndex();
     const vk::raii::CommandPool pool(vkDevice, vk::CommandPoolCreateInfo({}, family));
