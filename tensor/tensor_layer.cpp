@@ -860,17 +860,13 @@ class TensorLayer : public VulkanLayerImpl {
 #ifdef VK_ARM_tensors2
             switch (format) {
             case VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM:
-                // Storage and copies are supported; shader/graph lowering is not yet implemented.
-                pTensorFormatProp->optimalTilingTensorFeatures =
-                    VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT;
-                pTensorFormatProp->linearTilingTensorFeatures = pTensorFormatProp->optimalTilingTensorFeatures;
-                return;
             case VK_FORMAT_R8_SFLOAT_FPENCODING_MXINT8_ARM:
             case VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT4E2M1_ARM:
             case VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT6E2M3_ARM:
             case VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT6E3M2_ARM:
-                pTensorFormatProp->optimalTilingTensorFeatures = 0;
-                pTensorFormatProp->linearTilingTensorFeatures = 0;
+                pTensorFormatProp->optimalTilingTensorFeatures =
+                    VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT;
+                pTensorFormatProp->linearTilingTensorFeatures = pTensorFormatProp->optimalTilingTensorFeatures;
                 return;
             default:
                 break;

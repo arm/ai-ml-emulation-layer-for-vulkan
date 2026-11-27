@@ -28,7 +28,7 @@ using namespace utilities;
 namespace {
 
 #ifdef VK_ARM_tensors2
-vk::raii::Device createTensors2Device(const std::shared_ptr<Device> &device) {
+vk::raii::Device createTensors2Device(const std::shared_ptr<Device> &device, bool enable8BitStorage = false) {
     const auto &physical = &(*device->getPhysicalDevice());
     const float priority = 1.0f;
     const VkDeviceQueueCreateInfo queue{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,           nullptr, 0,
@@ -37,6 +37,13 @@ vk::raii::Device createTensors2Device(const std::shared_ptr<Device> &device) {
     tensorFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_FEATURES_ARM;
     tensorFeatures.tensorNonPacked = VK_TRUE;
     tensorFeatures.tensors = VK_TRUE;
+    VkPhysicalDeviceVulkan12Features vulkan12{};
+    if (enable8BitStorage) {
+        vulkan12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+        vulkan12.storageBuffer8BitAccess = VK_TRUE;
+        vulkan12.shaderInt8 = VK_TRUE;
+        tensorFeatures.pNext = &vulkan12;
+    }
     const VkPhysicalDeviceTensors2FeaturesARM features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSORS_2_FEATURES_ARM,
                                                        &tensorFeatures, VK_FALSE, VK_TRUE};
     VkDeviceCreateInfo create{};
@@ -261,6 +268,100 @@ TEST_F(MLEmulationLayerGraphForVulkan, Tensors2PlanesHaveIndependentMemory) {
     }
 }
 
+TEST_F(MLEmulationLayerGraphForVulkan, PackedScaledTensorCopiesBetweenDifferentStrides) {
+    const auto blockDevice = createTensors2Device(device, true);
+    const auto *dispatch = blockDevice.getDispatcher();
+    const VkFormat formats[] = {
+        VK_FORMAT_R8_SFLOAT_FPENCODING_MXINT8_ARM,
+        VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT4E2M1_ARM,
+        VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT6E2M3_ARM,
+        VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT6E3M2_ARM,
+    };
+    const int64_t dimensions[][2] = {{2, 64}, {2, 2}};
+    const VkTensorPlaneARM planeTypes[] = {VK_TENSOR_PLANE_VALUES_ARM, VK_TENSOR_PLANE_SCALES_ARM};
+    const VkTensorPlaneInfoARM valuePlane{VK_STRUCTURE_TYPE_TENSOR_PLANE_INFO_ARM, nullptr, 0};
+    const vk::MemoryAllocateFlagsInfo allocationFlags{vk::MemoryAllocateFlagBits::eDeviceAddress};
+    const auto family = device->getPhysicalDevice()->getComputeFamilyIndex();
+
+    for (const auto format : formats) {
+        SCOPED_TRACE(format);
+        const auto block = utils::getFormatStorageBlock(format);
+        const size_t rowBytes = 64 / block.elementCount * block.byteSize;
+        const int64_t valueStrides[][2] = {
+            {static_cast<int64_t>(rowBytes), static_cast<int64_t>(block.byteSize)},
+            {static_cast<int64_t>(2 * rowBytes), static_cast<int64_t>(block.byteSize)},
+        };
+        const int64_t scaleStrides[][2] = {{2, 1}, {4, 1}};
+        std::vector<vk::raii::TensorARM> tensors;
+        std::vector<vk::raii::DeviceMemory> memories;
+        for (uint32_t tensorIndex = 0; tensorIndex < 2; ++tensorIndex) {
+            const VkTensorDescriptionARM planes[] = {
+                {VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM, nullptr, VK_TENSOR_TILING_LINEAR_ARM, format, 2,
+                 dimensions[0], valueStrides[tensorIndex],
+                 VK_TENSOR_USAGE_TRANSFER_SRC_BIT_ARM | VK_TENSOR_USAGE_TRANSFER_DST_BIT_ARM},
+                {VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM, nullptr, VK_TENSOR_TILING_LINEAR_ARM,
+                 VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM, 2, dimensions[1], scaleStrides[tensorIndex],
+                 VK_TENSOR_USAGE_TRANSFER_SRC_BIT_ARM | VK_TENSOR_USAGE_TRANSFER_DST_BIT_ARM},
+            };
+            const VkBlockScaledTensorDescriptionARM scaled{VK_STRUCTURE_TYPE_BLOCK_SCALED_TENSOR_DESCRIPTION_ARM,
+                                                           nullptr,
+                                                           VK_TENSOR_BLOCK_SCALING_SCHEME_PLANAR_OCP_MICROSCALING_ARM,
+                                                           2,
+                                                           planeTypes,
+                                                           planes};
+            const VkTensorCreateInfoARM create{
+                VK_STRUCTURE_TYPE_TENSOR_CREATE_INFO_ARM, &scaled, 0, nullptr, VK_SHARING_MODE_EXCLUSIVE, 0, nullptr};
+            tensors.emplace_back(blockDevice, vk::TensorCreateInfoARM(create));
+            const VkTensorMemoryRequirementsInfoARM query{VK_STRUCTURE_TYPE_TENSOR_MEMORY_REQUIREMENTS_INFO_ARM,
+                                                          &valuePlane, *tensors.back()};
+            VkMemoryRequirements2 requirements{VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2, nullptr, {}};
+            dispatch->vkGetTensorMemoryRequirementsARM(*blockDevice, &query, &requirements);
+            const auto &req = requirements.memoryRequirements;
+            const auto memoryTypes = device->getPhysicalDevice()->getMemoryTypeIndices(
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                req.memoryTypeBits);
+            ASSERT_FALSE(memoryTypes.empty());
+            memories.emplace_back(blockDevice, vk::MemoryAllocateInfo{req.size, memoryTypes.front(), &allocationFlags});
+            auto *bytes = static_cast<uint8_t *>(memories.back().mapMemory(0, req.size));
+            std::memset(bytes, 0xa5, req.size);
+            if (tensorIndex == 0) {
+                for (size_t row = 0; row < 2; ++row) {
+                    for (size_t byte = 0; byte < rowBytes; ++byte) {
+                        bytes[row * rowBytes + byte] = static_cast<uint8_t>((row * rowBytes + byte) % 251 + 1);
+                    }
+                }
+            }
+            memories.back().unmapMemory();
+            const VkBindTensorMemoryInfoARM bind{VK_STRUCTURE_TYPE_BIND_TENSOR_MEMORY_INFO_ARM, &valuePlane,
+                                                 *tensors.back(), *memories.back(), 0};
+            ASSERT_EQ(dispatch->vkBindTensorMemoryARM(*blockDevice, 1, &bind), VK_SUCCESS);
+        }
+
+        vk::raii::CommandPool pool(blockDevice, vk::CommandPoolCreateInfo{{}, family});
+        vk::raii::CommandBuffers commands(blockDevice, {*pool, vk::CommandBufferLevel::ePrimary, 1});
+        auto &command = commands.front();
+        command.begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+        const uint64_t extents[] = {2, 64};
+        const VkTensorCopyARM region{VK_STRUCTURE_TYPE_TENSOR_COPY_ARM, nullptr, 2, nullptr, nullptr, extents};
+        const VkCopyTensorInfoARM copy{
+            VK_STRUCTURE_TYPE_COPY_TENSOR_INFO_ARM, &valuePlane, *tensors[0], *tensors[1], 1, &region};
+        dispatch->vkCmdCopyTensorARM(*command, &copy);
+        command.end();
+        vk::raii::Queue queue(blockDevice, family, 0);
+        queue.submit(vk::SubmitInfo{{}, {}, {}, 1, &(*command)});
+        queue.waitIdle();
+
+        const auto *result = static_cast<const uint8_t *>(memories[1].mapMemory(0, VK_WHOLE_SIZE));
+        for (size_t row = 0; row < 2; ++row) {
+            for (size_t byte = 0; byte < rowBytes; ++byte) {
+                EXPECT_EQ(result[row * 2 * rowBytes + byte], static_cast<uint8_t>((row * rowBytes + byte) % 251 + 1));
+                EXPECT_EQ(result[row * 2 * rowBytes + rowBytes + byte], uint8_t{0xa5});
+            }
+        }
+        memories[1].unmapMemory();
+    }
+}
+
 TEST_F(MLEmulationLayerGraphForVulkan, Tensors2InvalidPlanePairsAreRejected) {
     const auto blockDevice = createTensors2Device(device);
     const auto *dispatch = blockDevice.getDispatcher();
@@ -354,13 +455,22 @@ TEST_F(MLEmulationLayerGraphForVulkan, Tensors2QueriesReportCapabilities) {
     dispatch->vkGetPhysicalDeviceFeatures2(*physical, &features);
     EXPECT_FALSE(tensors2.tensorFlexibleStrides);
     EXPECT_TRUE(tensors2.tensorBlockScaled);
-    VkTensorFormatPropertiesARM tensorFormat{VK_STRUCTURE_TYPE_TENSOR_FORMAT_PROPERTIES_ARM, nullptr, 1, 1};
-    VkFormatProperties2 format{VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2, &tensorFormat, {}};
-    dispatch->vkGetPhysicalDeviceFormatProperties2(*physical, VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM,
-                                                   &format);
-    EXPECT_EQ(tensorFormat.optimalTilingTensorFeatures,
-              VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT);
-    EXPECT_EQ(tensorFormat.linearTilingTensorFeatures, tensorFormat.optimalTilingTensorFeatures);
+    const VkFormat transferFormats[] = {
+        VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM,
+        VK_FORMAT_R8_SFLOAT_FPENCODING_MXINT8_ARM,
+        VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT4E2M1_ARM,
+        VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT6E2M3_ARM,
+        VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT6E3M2_ARM,
+    };
+    for (const auto valueFormat : transferFormats) {
+        SCOPED_TRACE(valueFormat);
+        VkTensorFormatPropertiesARM tensorFormat{VK_STRUCTURE_TYPE_TENSOR_FORMAT_PROPERTIES_ARM, nullptr, 1, 1};
+        VkFormatProperties2 format{VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2, &tensorFormat, {}};
+        dispatch->vkGetPhysicalDeviceFormatProperties2(*physical, valueFormat, &format);
+        EXPECT_EQ(tensorFormat.optimalTilingTensorFeatures,
+                  VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT);
+        EXPECT_EQ(tensorFormat.linearTilingTensorFeatures, tensorFormat.optimalTilingTensorFeatures);
+    }
     const float priority = 1.0f;
     const VkDeviceQueueCreateInfo queue{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,           nullptr, 0,
                                         device->getPhysicalDevice()->getComputeFamilyIndex(), 1,       &priority};

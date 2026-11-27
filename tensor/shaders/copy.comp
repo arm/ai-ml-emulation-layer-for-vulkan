@@ -1,6 +1,6 @@
 R"(
 /*
- * SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2024-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 #version 460
@@ -10,6 +10,7 @@ R"(
 
 #define TYPE %type%
 #define TYPE_SIZE %type_size%
+#define COPY_ITEMS %copy_items%
 
 layout(local_size_x = %warpX%) in;
 
@@ -50,6 +51,8 @@ void main() {
     srcOffset /= TYPE_SIZE;
     dstOffset /= TYPE_SIZE;
 
-    outputData[uint(dstOffset)] = inputData[uint(srcOffset)];
+    for (uint32_t i = 0; i < COPY_ITEMS; ++i) {
+        outputData[uint(dstOffset + i)] = inputData[uint(srcOffset + i)];
+    }
 }
 )"

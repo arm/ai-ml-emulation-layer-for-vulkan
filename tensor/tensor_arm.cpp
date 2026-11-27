@@ -22,6 +22,10 @@ void validateBlockScaledDescription(const VkTensorDescriptionARM &values, const 
     switch (values.format) {
     case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM:
     case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM:
+    case VK_FORMAT_R8_SFLOAT_FPENCODING_MXINT8_ARM:
+    case VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT6E2M3_ARM:
+    case VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT6E3M2_ARM:
+    case VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT4E2M1_ARM:
         break;
     default:
         throw std::invalid_argument("Unsupported block-scaled value format.");
@@ -44,6 +48,7 @@ void validateBlockScaledDescription(const VkTensorDescriptionARM &values, const 
 
 void validateBlockScaledStrides(const TensorLayout &valueLayout, const TensorLayout &scaleLayout, int64_t strideRatio) {
     const auto last = valueLayout.dimensions.size() - 1;
+    const auto valueBlockExtent = getFormatStorageBlock(valueLayout.format).elementCount;
     for (size_t i = 0; i < last; ++i) {
         if (valueLayout.strides[i] % strideRatio != 0 ||
             valueLayout.strides[i] / strideRatio != scaleLayout.strides[i]) {
@@ -58,7 +63,8 @@ void validateBlockScaledStrides(const TensorLayout &valueLayout, const TensorLay
             throw std::invalid_argument("Unsupported block-scaled tensor strides.");
         }
         for (size_t i = 1; i <= last; ++i) {
-            if (layout->strides[i - 1] / layout->dimensions[i] < layout->strides[i]) {
+            const auto dimension = layout->dimensions[i] / (layout == &valueLayout && i == last ? valueBlockExtent : 1);
+            if (layout->strides[i - 1] / dimension < layout->strides[i]) {
                 throw std::invalid_argument("Overlapping block-scaled tensor strides are not supported.");
             }
         }
@@ -69,7 +75,8 @@ void updateBlockScaledLayouts(const VkTensorDescriptionARM &values, const VkTens
     auto &valueLayout = planes[0].layout;
     auto &scaleLayout = planes[1].layout;
     // OCP microscaling couples each outer value stride to the scale stride by the bytes in 32 values.
-    const auto strideRatio = static_cast<int64_t>(32 * valueLayout.elementSize);
+    const auto strideRatio =
+        static_cast<int64_t>(32 * valueLayout.elementSize / getFormatStorageBlock(values.format).elementCount);
     deriveBlockScaledStrides(values, scales, valueLayout.strides, scaleLayout.strides);
     validateBlockScaledStrides(valueLayout, scaleLayout, strideRatio);
     for (auto &plane : planes) {
@@ -289,15 +296,19 @@ void TensorARM::copyToTensor(TensorCommandBuffer &cmd, const TensorARM &dstTenso
     if (!srcPlane || !dstPlane) {
         throw std::runtime_error("Tensor copy requires a valid plane selector.");
     }
+    const auto srcBlock = getFormatStorageBlock(srcPlane->layout.format);
+    const auto dstBlock = getFormatStorageBlock(dstPlane->layout.format);
     if (srcPlane->layout.dimensions != dstPlane->layout.dimensions ||
-        srcPlane->layout.elementSize != dstPlane->layout.elementSize) {
-        throw std::runtime_error("Src tensor and dst tensor should have same dimensions and element size.");
+        srcPlane->layout.elementSize != dstPlane->layout.elementSize ||
+        srcBlock.elementCount != dstBlock.elementCount) {
+        throw std::runtime_error("Src tensor and dst tensor should have same dimensions and storage block size.");
     }
     if (srcPlane->layout.strides == dstPlane->layout.strides) {
         const VkBufferCopy copyInfo{0, 0, std::min(srcPlane->layout.size, dstPlane->layout.size)};
         cmd.loader->vkCmdCopyBuffer(cmd.commandBuffer, srcPlane->buffer, dstPlane->buffer, 1, &copyInfo);
     } else {
-        auto regionCount = utils::getElementCount(srcPlane->layout.dimensions);
+        // A packed storage block is copied by one shader invocation.
+        auto regionCount = utils::getElementCount(srcPlane->layout.dimensions) / srcBlock.elementCount;
         assert(regionCount < std::numeric_limits<uint32_t>::max());
         auto pipeline = std::make_unique<TensorCopyPipeline>(cmd.loader, cmd.device->device, *srcPlane, *dstPlane);
         cmd.recordSecondaryCommandBuffer([&](VkCommandBuffer secondary) {
@@ -345,33 +356,43 @@ TensorCopyPipeline::PushConstant TensorCopyPipeline::createPushConstant(const Te
     const auto &srcStrides = srcPlane.layout.strides;
     const auto &dstStrides = dstPlane.layout.strides;
     std::copy(dimensions.begin(), dimensions.end(), &constant.dimensions[0]);
+    constant.dimensions[dimensions.size() - 1] /= getFormatStorageBlock(srcPlane.layout.format).elementCount;
     std::copy(srcStrides.begin(), srcStrides.end(), &constant.srcStrides[0]);
     std::copy(dstStrides.begin(), dstStrides.end(), &constant.dstStrides[0]);
     return constant;
 }
 
 VkShaderModule TensorCopyPipeline::createShaderModule(const TensorPlane &srcPlane) const {
+    const auto block = getFormatStorageBlock(srcPlane.layout.format);
     std::string srcType;
-    switch (srcPlane.layout.format) {
-    case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM:
-    case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM:
-#ifdef VK_ARM_tensors2
-    case VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM:
-#endif
-        // Copy encoded values and scales as raw bytes without decoding.
+    if (block.elementCount > 1) {
         srcType = "uint8_t";
-        break;
-    default:
-        srcType = getFormatInfo(srcPlane.layout.format)->glslType;
-        break;
+    } else {
+        switch (srcPlane.layout.format) {
+        case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM:
+        case VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM:
+#ifdef VK_ARM_tensors2
+        case VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM:
+        case VK_FORMAT_R8_SFLOAT_FPENCODING_MXINT8_ARM:
+#endif
+            // Copy encoded values and scales as raw bytes without decoding.
+            srcType = "uint8_t";
+            break;
+        default:
+            srcType = getFormatInfo(srcPlane.layout.format)->glslType;
+            break;
+        }
     }
+    const auto typeSize = block.elementCount > 1 ? 1 : block.byteSize;
+    const auto copyItems = block.elementCount > 1 ? block.byteSize : 1;
     const std::lock_guard lock(cacheMutex);
-    auto &spirv = spirvCache[srcType];
+    auto &spirv = spirvCache[srcType + ":" + std::to_string(typeSize) + ":" + std::to_string(copyItems)];
     if (spirv.empty()) {
         std::string tmp = glsl;
         replaceAll(tmp, "%warpX%", std::to_string(warp1D));
         replaceAll(tmp, "%type%", srcType);
-        replaceAll(tmp, "%type_size%", std::to_string(srcPlane.layout.elementSize));
+        replaceAll(tmp, "%type_size%", std::to_string(typeSize));
+        replaceAll(tmp, "%copy_items%", std::to_string(copyItems));
         spirv = glslToSpirv(tmp);
     }
 

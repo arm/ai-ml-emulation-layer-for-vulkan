@@ -7,9 +7,11 @@
 #include <gtest/gtest.h>
 
 #include "copy_backed_aliasing.hpp"
+#include "mlel/utils.hpp"
 #include "tensor_arm.hpp"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <map>
@@ -50,6 +52,50 @@ TEST(TensorARM, BlockScaledLayoutsDeriveOmittedStrides) {
         EXPECT_EQ(storage.planes[1].layout.strides, (std::vector<int64_t>{32, 8, 1}));
         EXPECT_EQ(storage.planes[0].layout.size, 2048u);
         EXPECT_EQ(storage.planes[1].layout.size, 64u);
+    }
+}
+
+TEST(TensorARM, PackedBlockScaledLayoutsUsePackedByteSizes) {
+    struct Case {
+        VkFormat format;
+        int64_t innerStride;
+        int64_t outerStride;
+        size_t payloadBytes;
+    };
+    const Case cases[] = {
+        {VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT4E2M1_ARM, 16, 32, 64},
+        {VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT6E2M3_ARM, 24, 48, 96},
+        {VK_FORMAT_OCPMXFP_32_SFLOAT_BLOCK_FPENCODING_FLOAT6E3M2_ARM, 24, 48, 96},
+        {VK_FORMAT_R8_SFLOAT_FPENCODING_MXINT8_ARM, 1, 64, 128},
+    };
+    const int64_t dimensions[][2] = {{2, 64}, {2, 2}};
+    const VkTensorPlaneARM types[] = {VK_TENSOR_PLANE_VALUES_ARM, VK_TENSOR_PLANE_SCALES_ARM};
+    for (const auto &test : cases) {
+        SCOPED_TRACE(test.format);
+        const VkTensorDescriptionARM planes[] = {
+            {VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM, nullptr, VK_TENSOR_TILING_LINEAR_ARM, test.format, 2,
+             dimensions[0], nullptr, VK_TENSOR_USAGE_TRANSFER_SRC_BIT_ARM},
+            {VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM, nullptr, VK_TENSOR_TILING_LINEAR_ARM,
+             VK_FORMAT_R8_UFLOAT_FPENCODING_FLOAT8UNSIGNEDE8M0_ARM, 2, dimensions[1], nullptr,
+             VK_TENSOR_USAGE_TRANSFER_SRC_BIT_ARM},
+        };
+        const VkBlockScaledTensorDescriptionARM scaled{VK_STRUCTURE_TYPE_BLOCK_SCALED_TENSOR_DESCRIPTION_ARM,
+                                                       nullptr,
+                                                       VK_TENSOR_BLOCK_SCALING_SCHEME_PLANAR_OCP_MICROSCALING_ARM,
+                                                       2,
+                                                       types,
+                                                       planes};
+        const VkTensorCreateInfoARM create{
+            VK_STRUCTURE_TYPE_TENSOR_CREATE_INFO_ARM, &scaled, 0, nullptr, VK_SHARING_MODE_EXCLUSIVE, 0, nullptr};
+
+        const mlsdk::el::layer::TensorStorage storage(create);
+        ASSERT_EQ(storage.planes.size(), 2u);
+        EXPECT_EQ(storage.planes[0].layout.strides, (std::vector<int64_t>{test.outerStride, test.innerStride}));
+        EXPECT_EQ(storage.planes[0].layout.size, test.payloadBytes);
+        EXPECT_EQ(storage.planes[1].layout.strides, (std::vector<int64_t>{2, 1}));
+        EXPECT_EQ(storage.planes[1].layout.size, 4u);
+        EXPECT_EQ(mlsdk::el::utils::getTensorSize(planes[0]), test.payloadBytes);
+        EXPECT_EQ(mlsdk::el::utils::getTensorSize(planes[1]), 4u);
     }
 }
 #endif
